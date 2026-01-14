@@ -24,6 +24,7 @@ class QueueItemType(str, Enum):
     """Types of items that can be queued."""
 
     SPAN = "span"
+    FINISH_SPAN = "finish_span"
     START_AGENT = "start_agent"
     FINISH_AGENT = "finish_agent"
 
@@ -34,6 +35,14 @@ class QueueItem:
 
     item_type: QueueItemType
     data: Any
+
+
+@dataclass
+class SpanFinishData:
+    """Data needed to finish a span."""
+
+    span_id: str  # SDK span ID
+    timestamp: str  # ISO 8601 timestamp
 
 
 class HttpTransport(Transport):
@@ -61,6 +70,9 @@ class HttpTransport(Transport):
         self._registration_failed = False
         self._agent_instance_started = False
         self._agent_instance_finished = False
+
+        # Span ID mapping (SDK span_id -> backend span ID)
+        self._span_id_map: dict[str, str] = {}
 
         # Async infrastructure
         self._queue: Optional[asyncio.Queue] = None
@@ -100,6 +112,35 @@ class HttpTransport(Transport):
         except Exception as e:
             # Never raise - fail gracefully
             logger.error(f"Failed to enqueue span: {e}", exc_info=True)
+
+    def finish_span(self, span_id: str, end_time: float) -> None:
+        """
+        Finish a previously created span (synchronous, non-blocking).
+
+        Args:
+            span_id: The SDK span ID.
+            end_time: The end time (perf_counter value).
+        """
+        if self._closed:
+            logger.warning("Attempted to finish span after transport closed")
+            return
+
+        if not self._started:
+            logger.warning("Transport not started")
+            return
+
+        try:
+            # Convert end_time to ISO 8601
+            timestamp = datetime.fromtimestamp(end_time, tz=timezone.utc).isoformat()
+
+            # Queue finish request
+            finish_data = SpanFinishData(span_id=span_id, timestamp=timestamp)
+            item = QueueItem(item_type=QueueItemType.FINISH_SPAN, data=finish_data)
+            self._loop.call_soon_threadsafe(self._queue.put_nowait, item)
+            logger.debug(f"Queued span finish request for {span_id}")
+        except Exception as e:
+            # Never raise - fail gracefully
+            logger.error(f"Failed to enqueue span finish: {e}", exc_info=True)
 
     def start_agent_instance(self) -> None:
         """
@@ -218,6 +259,8 @@ class HttpTransport(Transport):
                     # Process item based on type
                     if item.item_type == QueueItemType.SPAN:
                         await self._send_span(item.data)
+                    elif item.item_type == QueueItemType.FINISH_SPAN:
+                        await self._finish_span(item.data)
                     elif item.item_type == QueueItemType.START_AGENT:
                         await self._start_agent_instance()
                     elif item.item_type == QueueItemType.FINISH_AGENT:
@@ -259,6 +302,8 @@ class HttpTransport(Transport):
                     if await self._ensure_agent_registered():
                         if item.item_type == QueueItemType.SPAN:
                             await self._send_span(item.data)
+                        elif item.item_type == QueueItemType.FINISH_SPAN:
+                            await self._finish_span(item.data)
                         elif item.item_type == QueueItemType.START_AGENT:
                             await self._start_agent_instance()
                         elif item.item_type == QueueItemType.FINISH_AGENT:
@@ -529,6 +574,51 @@ class HttpTransport(Transport):
                 f"Error finishing agent instance: {e}", exc_info=True
             )
 
+    async def _finish_span(self, finish_data: SpanFinishData) -> None:
+        """
+        Finish a span using the backend API.
+
+        Args:
+            finish_data: Data containing span_id and timestamp.
+        """
+        # Look up backend span ID
+        backend_span_id = self._span_id_map.get(finish_data.span_id)
+        if not backend_span_id:
+            logger.warning(
+                f"Cannot finish span {finish_data.span_id}: backend ID not found"
+            )
+            return
+
+        url = f"{self._config.api_url}/api/v1/agent_spans/{backend_span_id}/finish"
+        headers = {
+            "Authorization": f"Bearer {self._config.api_token}",
+            "Content-Type": "application/json",
+        }
+
+        payload = {"timestamp": finish_data.timestamp}
+
+        try:
+            async with self._session.post(
+                url,
+                json=payload,
+                headers=headers,
+                timeout=aiohttp.ClientTimeout(total=self._config.request_timeout),
+            ) as response:
+                if response.status == 200:
+                    logger.debug(
+                        f"Successfully finished span {finish_data.span_id} (backend ID: {backend_span_id})"
+                    )
+                    # Remove from mapping after successful finish
+                    del self._span_id_map[finish_data.span_id]
+                else:
+                    error_text = await response.text()
+                    logger.error(
+                        f"Failed to finish span: {response.status} - {error_text}"
+                    )
+
+        except Exception as e:
+            logger.error(f"Error finishing span: {e}", exc_info=True)
+
     async def _send_span(self, span: Span, retry: int = 0) -> None:
         """
         Send span to backend with exponential backoff retry.
@@ -553,7 +643,20 @@ class HttpTransport(Transport):
                 timeout=aiohttp.ClientTimeout(total=self._config.request_timeout),
             ) as response:
                 if response.status == 200:
-                    logger.debug(f"Successfully sent span {span.span_id}")
+                    # Parse response to get backend span ID
+                    response_data = await response.json()
+                    backend_span_id = response_data.get("details", {}).get("id")
+
+                    if backend_span_id:
+                        # Store mapping for future finish calls
+                        self._span_id_map[span.span_id] = backend_span_id
+                        logger.debug(
+                            f"Successfully sent span {span.span_id} (backend ID: {backend_span_id})"
+                        )
+                    else:
+                        logger.warning(
+                            f"Sent span {span.span_id} but no backend ID in response"
+                        )
                     return
                 elif response.status >= 500 or response.status == 429:
                     # Server error or rate limit - retry

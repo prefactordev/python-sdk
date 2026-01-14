@@ -61,7 +61,7 @@ class Tracer:
             trace_id=trace_id,
             name=name,
             span_type=span_type,
-            start_time=time.perf_counter(),
+            start_time=time.time(),
             end_time=None,
             status=SpanStatus.RUNNING,
             inputs=inputs,
@@ -73,6 +73,15 @@ class Tracer:
         )
 
         logger.debug(f"Started span: {span_id} ({name})")
+
+        # For agent spans, emit immediately so they show as "active" in real-time
+        if span_type == SpanType.AGENT:
+            try:
+                self._transport.emit(span)
+                logger.debug(f"Emitted active agent span: {span_id}")
+            except Exception as e:
+                logger.error(f"Failed to emit active span: {e}", exc_info=True)
+
         return span
 
     def end_span(
@@ -91,7 +100,7 @@ class Tracer:
             error: Optional error that occurred.
             token_usage: Optional token usage information.
         """
-        span.end_time = time.perf_counter()
+        span.end_time = time.time()
         span.outputs = outputs
         span.token_usage = token_usage
 
@@ -107,11 +116,15 @@ class Tracer:
 
         logger.debug(f"Ended span: {span.span_id} ({span.name}) - {span.status}")
 
-        # Emit the span
+        # For agent spans, call finish API (they were already emitted when started)
+        # For other spans, emit the complete span
         try:
-            self._transport.emit(span)
+            if span.span_type == SpanType.AGENT:
+                self._transport.finish_span(span.span_id, span.end_time)
+            else:
+                self._transport.emit(span)
         except Exception as e:
-            logger.error(f"Failed to emit span: {e}", exc_info=True)
+            logger.error(f"Failed to emit/finish span: {e}", exc_info=True)
 
     def start_agent_instance(self) -> None:
         """Mark the agent instance as started."""

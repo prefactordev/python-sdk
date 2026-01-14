@@ -16,9 +16,13 @@ class MockTransport(Transport):
 
     def __init__(self):
         self.emitted_spans = []
+        self.finished_spans = []
 
     def emit(self, span):
         self.emitted_spans.append(span)
+
+    def finish_span(self, span_id, end_time):
+        self.finished_spans.append(span_id)
 
     def close(self):
         pass
@@ -84,16 +88,20 @@ class TestPrefactorMiddleware:
 
         # Start agent
         middleware.before_agent(state, runtime)
-        assert len(transport.emitted_spans) == 0
+        # Agent spans are emitted immediately when started
+        assert len(transport.emitted_spans) == 1
+        assert transport.emitted_spans[0].status == SpanStatus.RUNNING
+        assert transport.emitted_spans[0].end_time is None
 
         # End agent
         middleware.after_agent(state, runtime)
 
-        # Should have emitted the span
-        assert len(transport.emitted_spans) == 1
-        span = transport.emitted_spans[0]
-        assert span.span_type == SpanType.AGENT
-        assert span.status == SpanStatus.SUCCESS
+        # Should have called finish_span (not emitted again)
+        assert len(transport.emitted_spans) == 1  # Still just the one from start
+        assert len(transport.finished_spans) == 1  # Finish was called
+
+        span_id = transport.finished_spans[0]
+        assert span_id == transport.emitted_spans[0].span_id
 
         # Should clear context
         assert SpanContext.get_current() is None
@@ -154,16 +162,17 @@ class TestPrefactorMiddleware:
         # Wrap model call
         middleware.wrap_model_call(request, handler)
 
-        # LLM span should have been emitted immediately
-        assert len(transport.emitted_spans) == 1
-        llm_span = transport.emitted_spans[0]
+        # Should have both spans: agent (emitted on start) and LLM (emitted on end)
+        assert len(transport.emitted_spans) == 2
+        agent_span = transport.emitted_spans[0]  # Agent emitted first (on start)
+        llm_span = transport.emitted_spans[1]  # LLM emitted second (on end)
 
-        # End agent to emit agent span
+        # End agent to finish agent span
         middleware.after_agent(state, runtime)
 
-        # Should now have both spans
+        # Should still have 2 emitted spans (agent not re-emitted, just finished)
         assert len(transport.emitted_spans) == 2
-        agent_span = transport.emitted_spans[1]
+        assert len(transport.finished_spans) == 1
 
         # Verify parent-child relationship
         assert llm_span.parent_span_id == parent_span.span_id
@@ -250,16 +259,17 @@ class TestPrefactorMiddleware:
         # Wrap tool call
         middleware.wrap_tool_call(request, handler)
 
-        # Tool span should have been emitted immediately
-        assert len(transport.emitted_spans) == 1
-        tool_span = transport.emitted_spans[0]
+        # Should have both spans: agent (emitted on start) and tool (emitted on end)
+        assert len(transport.emitted_spans) == 2
+        agent_span = transport.emitted_spans[0]  # Agent emitted first (on start)
+        tool_span = transport.emitted_spans[1]  # Tool emitted second (on end)
 
-        # End agent to emit agent span
+        # End agent to finish agent span
         middleware.after_agent(state, runtime)
 
-        # Should now have both spans
+        # Should still have 2 emitted spans (agent not re-emitted, just finished)
         assert len(transport.emitted_spans) == 2
-        agent_span = transport.emitted_spans[1]
+        assert len(transport.finished_spans) == 1
 
         # Verify parent-child relationship
         assert tool_span.parent_span_id == parent_span.span_id
@@ -332,14 +342,14 @@ class TestPrefactorMiddleware:
         # End agent
         middleware.after_agent(state, runtime)
 
-        # Should have 4 spans total
+        # Should have 4 spans total: agent (emitted on start), llm1, tool, llm2
         assert len(transport.emitted_spans) == 4
 
-        # Spans are emitted in order: llm1, tool, llm2, agent
-        llm_span1 = transport.emitted_spans[0]
-        tool_span = transport.emitted_spans[1]
-        llm_span2 = transport.emitted_spans[2]
-        agent_span = transport.emitted_spans[3]
+        # Spans are emitted in order: agent (on start), llm1, tool, llm2
+        agent_span = transport.emitted_spans[0]
+        llm_span1 = transport.emitted_spans[1]
+        tool_span = transport.emitted_spans[2]
+        llm_span2 = transport.emitted_spans[3]
 
         # All children should have agent as parent
         assert llm_span1.parent_span_id == parent_span.span_id
@@ -350,3 +360,6 @@ class TestPrefactorMiddleware:
         assert llm_span1.trace_id == parent_span.trace_id
         assert tool_span.trace_id == parent_span.trace_id
         assert llm_span2.trace_id == parent_span.trace_id
+
+        # Agent span should be finished (not re-emitted)
+        assert len(transport.finished_spans) == 1

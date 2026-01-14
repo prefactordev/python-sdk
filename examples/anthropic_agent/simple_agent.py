@@ -131,6 +131,12 @@ def main():
     print("For legacy callback usage, use prefactor_sdk.init_callback() instead.")
     print()
 
+    # Explicitly flush pending spans (also happens automatically via atexit)
+    print("Flushing pending spans...")
+    prefactor_sdk.shutdown()
+    print("✓ Shutdown complete")
+    print()
+
 
 if __name__ == "__main__":
     main()

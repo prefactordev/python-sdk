@@ -1,5 +1,6 @@
 """Prefactor SDK - Automatic observability for LangChain agents."""
 
+import atexit
 import warnings
 from typing import Optional
 
@@ -185,4 +186,59 @@ def get_tracer() -> Tracer:
     return _global_tracer
 
 
-__all__ = ["init", "init_callback", "get_tracer", "Config"]
+def shutdown() -> None:
+    """
+    Shutdown the Prefactor SDK and flush all pending spans.
+
+    This closes the tracer and ensures all queued spans are sent before
+    the program exits. This is automatically registered with atexit, but
+    can also be called manually for explicit cleanup.
+
+    It's safe to call this multiple times - subsequent calls will be no-ops.
+
+    Example:
+        ```python
+        import prefactor_sdk
+
+        middleware = prefactor_sdk.init()
+        # ... use the agent ...
+
+        # Explicitly flush and cleanup
+        prefactor_sdk.shutdown()
+        ```
+
+    Note:
+        This function is automatically called at program exit via atexit.
+        Manual calls are only needed if you want to ensure cleanup at a
+        specific point in your code.
+    """
+    global _global_tracer
+
+    if _global_tracer is not None:
+        try:
+            logger.debug("Shutting down Prefactor SDK")
+        except Exception:
+            # Logging may already be shut down during atexit
+            pass
+
+        try:
+            _global_tracer.close()
+        except Exception as e:
+            try:
+                logger.error(f"Error during shutdown: {e}", exc_info=True)
+            except Exception:
+                # Logging may already be shut down during atexit
+                pass
+
+        try:
+            logger.info("Prefactor SDK shutdown complete")
+        except Exception:
+            # Logging may already be shut down during atexit
+            pass
+
+
+# Register automatic cleanup on program exit
+atexit.register(shutdown)
+
+
+__all__ = ["init", "init_callback", "get_tracer", "shutdown", "Config"]

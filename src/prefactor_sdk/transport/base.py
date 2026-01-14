@@ -18,6 +18,20 @@ class Transport(ABC):
         """
         pass
 
+    def finish_span(self, span_id: str, end_time: float) -> None:
+        """
+        Finish a previously emitted span.
+
+        This is called for long-running spans that were emitted with end_time=None.
+        The default implementation does nothing - transports that support the
+        two-step span lifecycle should override this method.
+
+        Args:
+            span_id: The span ID.
+            end_time: The end time (perf_counter value).
+        """
+        pass
+
     @abstractmethod
     def close(self) -> None:
         """Close the transport and cleanup resources."""
