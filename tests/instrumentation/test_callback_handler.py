@@ -1,9 +1,7 @@
 """Tests for LangChain callback handler."""
 
 from unittest.mock import Mock
-from uuid import UUID, uuid4
-
-import pytest
+from uuid import uuid4
 
 from prefactor_sdk.instrumentation.langchain.callback_handler import (
     PrefactorCallbackHandler,

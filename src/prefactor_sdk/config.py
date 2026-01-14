@@ -50,7 +50,7 @@ def _get_env_or_default(
 
     try:
         return converter(value)
-    except (ValueError, TypeError) as e:
+    except (ValueError, TypeError):
         logger.warning(f"Invalid value for {key}: {value}, using default: {default}")
         return default
 

@@ -6,11 +6,12 @@ import sys
 # Add parent directory to path for local development
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
-import prefactor_sdk
-from langchain_anthropic import ChatAnthropic
 from langchain.agents import AgentExecutor, create_tool_calling_agent
 from langchain.prompts import ChatPromptTemplate
 from langchain.tools import tool
+from langchain_anthropic import ChatAnthropic
+
+import prefactor_sdk
 
 
 # Define a simple tool

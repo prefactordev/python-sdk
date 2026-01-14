@@ -3,8 +3,6 @@
 import time
 from unittest.mock import Mock
 
-import pytest
-
 from prefactor_sdk.tracing.context import SpanContext
 from prefactor_sdk.tracing.span import SpanStatus, SpanType
 from prefactor_sdk.tracing.tracer import Tracer

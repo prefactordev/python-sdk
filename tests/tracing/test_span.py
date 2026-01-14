@@ -1,9 +1,6 @@
 """Tests for Span data models."""
 
-import json
 from dataclasses import asdict
-
-import pytest
 
 from prefactor_sdk.tracing.span import (
     ErrorInfo,

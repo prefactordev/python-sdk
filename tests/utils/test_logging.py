@@ -1,9 +1,6 @@
 """Tests for logging setup."""
 
 import logging
-import os
-
-import pytest
 
 from prefactor_sdk.utils.logging import configure_logging, get_logger
 

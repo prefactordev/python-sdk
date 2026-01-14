@@ -1,7 +1,5 @@
 """Tests for public API."""
 
-import pytest
-
 import prefactor_sdk
 from prefactor_sdk import get_tracer, init
 from prefactor_sdk.config import Config

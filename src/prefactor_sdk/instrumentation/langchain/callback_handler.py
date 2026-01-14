@@ -6,7 +6,6 @@ from uuid import UUID
 from langchain_core.callbacks.base import BaseCallbackHandler
 
 from prefactor_sdk.instrumentation.langchain.metadata_extractor import (
-    extract_error_info,
     extract_token_usage,
 )
 from prefactor_sdk.tracing.span import Span, SpanType
@@ -92,7 +91,9 @@ class PrefactorCallbackHandler(BaseCallbackHandler):
                 trace_id = parent_span.trace_id
 
             span = self._tracer.start_span(
-                name=self._get_name(serialized=serialized, metadata=metadata, tags=tags, **kwargs),
+                name=self._get_name(
+                    serialized=serialized, metadata=metadata, tags=tags, **kwargs
+                ),
                 span_type=SpanType.LLM,
                 inputs={"prompts": prompts},
                 parent_span_id=parent_span.span_id if parent_span else None,
@@ -207,7 +208,9 @@ class PrefactorCallbackHandler(BaseCallbackHandler):
                 trace_id = parent_span.trace_id
 
             span = self._tracer.start_span(
-                name=self._get_name(serialized=serialized, metadata=metadata, tags=tags, **kwargs),
+                name=self._get_name(
+                    serialized=serialized, metadata=metadata, tags=tags, **kwargs
+                ),
                 span_type=SpanType.TOOL,
                 inputs={"input": input_str},
                 parent_span_id=parent_span.span_id if parent_span else None,
@@ -303,7 +306,9 @@ class PrefactorCallbackHandler(BaseCallbackHandler):
                 trace_id = parent_span.trace_id
 
             span = self._tracer.start_span(
-                name=self._get_name(serialized=serialized, metadata=metadata, tags=tags, **kwargs),
+                name=self._get_name(
+                    serialized=serialized, metadata=metadata, tags=tags, **kwargs
+                ),
                 span_type=SpanType.CHAIN,
                 inputs=inputs,
                 parent_span_id=parent_span.span_id if parent_span else None,

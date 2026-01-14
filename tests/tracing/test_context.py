@@ -2,8 +2,6 @@
 
 import asyncio
 
-import pytest
-
 from prefactor_sdk.tracing.context import SpanContext
 from prefactor_sdk.tracing.span import Span, SpanStatus, SpanType
 

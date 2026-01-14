@@ -4,7 +4,6 @@ import asyncio
 import hashlib
 import subprocess
 import threading
-from dataclasses import asdict
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -260,7 +259,7 @@ class HttpTransport(Transport):
             ) as response:
                 if response.status == 200:
                     data = await response.json()
-                    return data.get("details", {}).get("agent_instance_id")
+                    return data.get("details", {}).get("id")
                 else:
                     error_text = await response.text()
                     logger.error(
@@ -290,11 +289,36 @@ class HttpTransport(Transport):
             "agent_schema_version": {
                 "external_identifier": "1.0.0",
                 "span_schemas": {
-                    "agent": {"properties": {"type": "agent"}},
-                    "llm": {"properties": {"type": "llm"}},
-                    "tool": {"properties": {"type": "tool"}},
-                    "chain": {"properties": {"type": "chain"}},
-                    "retriever": {"properties": {"type": "retriever"}},
+                    "agent": {
+                        "type": "object",
+                        "properties": {
+                            "type": {"type": "string", "const": "agent"}
+                        },
+                    },
+                    "llm": {
+                        "type": "object",
+                        "properties": {
+                            "type": {"type": "string", "const": "llm"}
+                        },
+                    },
+                    "tool": {
+                        "type": "object",
+                        "properties": {
+                            "type": {"type": "string", "const": "tool"}
+                        },
+                    },
+                    "chain": {
+                        "type": "object",
+                        "properties": {
+                            "type": {"type": "string", "const": "chain"}
+                        },
+                    },
+                    "retriever": {
+                        "type": "object",
+                        "properties": {
+                            "type": {"type": "string", "const": "retriever"}
+                        },
+                    },
                 },
             },
         }
@@ -451,10 +475,12 @@ class HttpTransport(Transport):
 
         # Return API request format
         return {
-            "agent_instance_id": self._agent_instance_id,
-            "schema_name": schema_name_map[span.span_type],
-            "payload": serialize_value(payload),
-            "parent_span_id": span.parent_span_id,
-            "started_at": started_at,
-            "finished_at": finished_at,
+            "details": {
+                "agent_instance_id": self._agent_instance_id,
+                "schema_name": schema_name_map[span.span_type],
+                "payload": serialize_value(payload),
+                "parent_span_id": span.parent_span_id,
+                "started_at": started_at,
+                "finished_at": finished_at,
+            }
         }

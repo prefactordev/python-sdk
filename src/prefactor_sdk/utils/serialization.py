@@ -55,10 +55,7 @@ def serialize_value(value: Any, max_length: int | None = 10000) -> Any:
 
     # Handle dicts recursively
     if isinstance(value, dict):
-        return {
-            key: serialize_value(val, max_length)
-            for key, val in value.items()
-        }
+        return {key: serialize_value(val, max_length) for key, val in value.items()}
 
     # Handle bytes
     if isinstance(value, bytes):

@@ -1,7 +1,5 @@
 """Tests for JSON serialization utilities."""
 
-import pytest
-
 from prefactor_sdk.utils.serialization import serialize_value, truncate_string
 
 
@@ -59,13 +57,7 @@ class TestSerializeValue:
 
     def test_serialize_nested_dict(self):
         """Test serializing a nested dict."""
-        data = {
-            "outer": {
-                "inner": {
-                    "value": 42
-                }
-            }
-        }
+        data = {"outer": {"inner": {"value": 42}}}
         assert serialize_value(data) == data
 
     def test_serialize_long_string(self):
@@ -93,6 +85,7 @@ class TestSerializeValue:
 
     def test_serialize_non_serializable_object(self):
         """Test serializing a non-serializable object."""
+
         class CustomClass:
             def __init__(self, value):
                 self.value = value
@@ -103,6 +96,7 @@ class TestSerializeValue:
 
     def test_serialize_non_serializable_in_dict(self):
         """Test serializing a dict with non-serializable value."""
+
         class CustomClass:
             pass
 

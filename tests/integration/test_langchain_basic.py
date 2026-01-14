@@ -2,7 +2,7 @@
 
 import json
 from io import StringIO
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import patch
 
 import pytest
 from langchain_core.messages import HumanMessage

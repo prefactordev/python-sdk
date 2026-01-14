@@ -194,7 +194,9 @@ class PrefactorMiddleware(AgentMiddleware):
             span = self._tracer.start_span(
                 name="agent",
                 span_type=SpanType.AGENT,
-                inputs={"messages": [str(m) for m in messages[-3:]] if messages else []},
+                inputs={
+                    "messages": [str(m) for m in messages[-3:]] if messages else []
+                },
                 parent_span_id=parent_span.span_id if parent_span else None,
                 trace_id=parent_span.trace_id if parent_span else None,
                 metadata={},

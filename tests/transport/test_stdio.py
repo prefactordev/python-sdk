@@ -1,12 +1,7 @@
 """Tests for STDIO transport."""
 
-import io
 import json
-import sys
 import threading
-from dataclasses import asdict
-
-import pytest
 
 from prefactor_sdk.tracing.span import Span, SpanStatus, SpanType, TokenUsage
 from prefactor_sdk.transport.stdio import StdioTransport
@@ -237,6 +232,7 @@ class TestStdioTransport:
             raise ValueError("Serialization error")
 
         import prefactor_sdk.transport.stdio as stdio_module
+
         monkeypatch.setattr(stdio_module.orjson, "dumps", mock_dumps)
 
         # Should not raise, just log the error

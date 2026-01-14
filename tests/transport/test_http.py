@@ -2,7 +2,6 @@
 
 import asyncio
 import time
-from unittest.mock import MagicMock, patch
 
 import pytest
 from aioresponses import aioresponses
@@ -130,7 +129,7 @@ class TestAgentRegistration:
                 f"{config.api_url}/api/v1/agent_instance/register",
                 payload={
                     "status": "success",
-                    "details": {"agent_instance_id": "test-instance-abc123"},
+                    "details": {"id": "test-instance-abc123"},
                 },
                 status=200,
             )
@@ -182,7 +181,7 @@ class TestAgentRegistration:
                 f"{config.api_url}/api/v1/agent_instance/register",
                 payload={
                     "status": "success",
-                    "details": {"agent_instance_id": "test-instance-abc123"},
+                    "details": {"id": "test-instance-abc123"},
                 },
                 status=200,
             )
@@ -221,9 +220,7 @@ class TestAgentRegistration:
 
     def test_extract_agent_metadata(self):
         """Test agent metadata extraction."""
-        config = create_test_config(
-            agent_id="my-agent", agent_version="1.0.0"
-        )
+        config = create_test_config(agent_id="my-agent", agent_version="1.0.0")
         transport = HttpTransport(config)
 
         metadata = transport._extract_agent_metadata()
@@ -252,7 +249,7 @@ class TestSpanSending:
                 f"{config.api_url}/api/v1/agent_instance/register",
                 payload={
                     "status": "success",
-                    "details": {"agent_instance_id": "test-instance-abc123"},
+                    "details": {"id": "test-instance-abc123"},
                 },
                 status=200,
             )
@@ -300,13 +297,17 @@ class TestSpanSending:
 
         result = transport._transform_span_to_api_format(span)
 
-        assert result["agent_instance_id"] == "test-instance-123"
-        assert result["schema_name"] == "llm"
-        assert result["parent_span_id"] is None
-        assert "started_at" in result
-        assert "finished_at" in result
+        # Check wrapper structure
+        assert "details" in result
+        details = result["details"]
 
-        payload = result["payload"]
+        assert details["agent_instance_id"] == "test-instance-123"
+        assert details["schema_name"] == "llm"
+        assert details["parent_span_id"] is None
+        assert "started_at" in details
+        assert "finished_at" in details
+
+        payload = details["payload"]
         assert payload["span_id"] == "test-span-123"
         assert payload["trace_id"] == "test-trace-456"
         assert payload["name"] == "test"
@@ -320,9 +321,7 @@ class TestSpanSending:
     @pytest.mark.asyncio
     async def test_retry_on_500_error(self):
         """Test retry logic on 500 errors."""
-        config = create_test_config(
-            max_retries=2, initial_retry_delay=0.1
-        )
+        config = create_test_config(max_retries=2, initial_retry_delay=0.1)
 
         with aioresponses() as mock:
             # Mock registration
@@ -330,7 +329,7 @@ class TestSpanSending:
                 f"{config.api_url}/api/v1/agent_instance/register",
                 payload={
                     "status": "success",
-                    "details": {"agent_instance_id": "test-instance-abc123"},
+                    "details": {"id": "test-instance-abc123"},
                 },
                 status=200,
                 repeat=True,
@@ -354,6 +353,7 @@ class TestSpanSending:
 
             # Should have made 1 registration + 3 span attempts (initial + 2 retries)
             from yarl import URL
+
             span_url_key = ("POST", URL(f"{config.api_url}/api/v1/agent_spans"))
             span_requests = mock.requests.get(span_url_key, [])
             assert len(span_requests) == 3  # initial + 2 retries
@@ -371,7 +371,7 @@ class TestSpanSending:
                 f"{config.api_url}/api/v1/agent_instance/register",
                 payload={
                     "status": "success",
-                    "details": {"agent_instance_id": "test-instance-abc123"},
+                    "details": {"id": "test-instance-abc123"},
                 },
                 status=200,
             )
@@ -398,9 +398,7 @@ class TestSpanSending:
     @pytest.mark.asyncio
     async def test_retry_on_429_rate_limit(self):
         """Test retry on rate limit (429)."""
-        config = create_test_config(
-            max_retries=1, initial_retry_delay=0.1
-        )
+        config = create_test_config(max_retries=1, initial_retry_delay=0.1)
 
         with aioresponses() as mock:
             # Mock registration
@@ -408,7 +406,7 @@ class TestSpanSending:
                 f"{config.api_url}/api/v1/agent_instance/register",
                 payload={
                     "status": "success",
-                    "details": {"agent_instance_id": "test-instance-abc123"},
+                    "details": {"id": "test-instance-abc123"},
                 },
                 status=200,
                 repeat=True,
@@ -431,6 +429,7 @@ class TestSpanSending:
 
             # Should have made 2 span attempts (initial + 1 retry)
             from yarl import URL
+
             span_url_key = ("POST", URL(f"{config.api_url}/api/v1/agent_spans"))
             span_requests = mock.requests.get(span_url_key, [])
             assert len(span_requests) == 2  # initial + 1 retry
@@ -452,7 +451,7 @@ class TestThreadSafety:
                 f"{config.api_url}/api/v1/agent_instance/register",
                 payload={
                     "status": "success",
-                    "details": {"agent_instance_id": "test-instance-abc123"},
+                    "details": {"id": "test-instance-abc123"},
                 },
                 status=200,
                 repeat=True,
@@ -478,6 +477,7 @@ class TestThreadSafety:
 
             # Should have processed all spans
             from yarl import URL
+
             span_url_key = ("POST", URL(f"{config.api_url}/api/v1/agent_spans"))
             span_requests = mock.requests.get(span_url_key, [])
             assert len(span_requests) == 10  # All 10 spans
@@ -525,7 +525,7 @@ class TestErrorHandling:
                 f"{config.api_url}/api/v1/agent_instance/register",
                 payload={
                     "status": "success",
-                    "details": {"agent_instance_id": "test-instance-abc123"},
+                    "details": {"id": "test-instance-abc123"},
                 },
                 status=200,
             )
@@ -560,7 +560,7 @@ class TestErrorHandling:
                 f"{config.api_url}/api/v1/agent_instance/register",
                 payload={
                     "status": "success",
-                    "details": {"agent_instance_id": "test-instance-abc123"},
+                    "details": {"id": "test-instance-abc123"},
                 },
                 status=200,
             )

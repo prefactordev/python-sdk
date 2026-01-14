@@ -2,13 +2,10 @@
 
 from unittest.mock import Mock
 
-import pytest
-
 from prefactor_sdk.instrumentation.langchain.metadata_extractor import (
     extract_error_info,
     extract_token_usage,
 )
-from prefactor_sdk.tracing.span import ErrorInfo, TokenUsage
 
 
 class TestExtractTokenUsage:

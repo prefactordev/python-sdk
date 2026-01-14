@@ -1,7 +1,5 @@
 """Tests for configuration."""
 
-import os
-
 import pytest
 
 from prefactor_sdk.config import Config
