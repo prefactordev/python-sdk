@@ -1,0 +1,1 @@
+/nix/store/4j8y3cj8k413asr2ys3c84r1n4gflvv9-claude-CLAUDE.md
