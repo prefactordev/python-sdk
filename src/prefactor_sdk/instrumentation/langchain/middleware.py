@@ -190,6 +190,9 @@ class PrefactorMiddleware(AgentMiddleware):
             elif hasattr(state, "messages"):
                 messages = state.messages
 
+            # Mark agent instance as started
+            self._tracer.start_agent_instance()
+
             # Create root agent span
             span = self._tracer.start_span(
                 name="agent",
@@ -220,7 +223,7 @@ class PrefactorMiddleware(AgentMiddleware):
         """
         Hook called after agent completes execution.
 
-        Ends the root span created in before_agent.
+        Ends the root span created in before_agent and marks the agent instance as finished.
 
         Args:
             state: The agent state.
@@ -248,6 +251,9 @@ class PrefactorMiddleware(AgentMiddleware):
 
             # End the span
             self._tracer.end_span(span=span, outputs=outputs)
+
+            # Mark agent instance as finished
+            self._tracer.finish_agent_instance()
 
             # Clear context
             SpanContext.clear()

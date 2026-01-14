@@ -235,6 +235,98 @@ class TestAgentRegistration:
         transport.close()
 
 
+class TestAgentInstanceFinishing:
+    """Tests for agent instance finishing functionality."""
+
+    @pytest.mark.asyncio
+    async def test_finish_agent_instance_success(self):
+        """Test successful agent instance finishing."""
+        config = create_test_config()
+
+        with aioresponses() as mock:
+            # Mock registration
+            mock.post(
+                f"{config.api_url}/api/v1/agent_instance/register",
+                payload={
+                    "status": "success",
+                    "details": {"id": "test-instance-abc123"},
+                },
+                status=200,
+            )
+
+            # Mock finish endpoint
+            mock.post(
+                f"{config.api_url}/api/v1/agent_instance/test-instance-abc123/finish",
+                payload={"status": "success"},
+                status=200,
+            )
+
+            transport = HttpTransport(config)
+            await asyncio.sleep(0.1)
+
+            # Register first
+            await transport._ensure_agent_registered()
+
+            # Call finish
+            await transport._finish_agent_instance()
+
+            # Check that finish endpoint was called
+            finish_requests = [
+                req
+                for (method, url), req in mock.requests.items()
+                if "/finish" in str(url)
+            ]
+            assert len(finish_requests) == 1
+
+            transport.close()
+
+    @pytest.mark.asyncio
+    async def test_finish_agent_instance_without_registration(self):
+        """Test finishing agent instance when not registered."""
+        config = create_test_config()
+        transport = HttpTransport(config)
+
+        await asyncio.sleep(0.1)
+
+        # Try to finish without registering (should log warning but not crash)
+        await transport._finish_agent_instance()
+
+        transport.close()
+
+    def test_finish_agent_instance_public_api(self):
+        """Test public finish_agent_instance method."""
+        config = create_test_config()
+
+        with aioresponses() as mock:
+            # Mock registration
+            mock.post(
+                f"{config.api_url}/api/v1/agent_instance/register",
+                payload={
+                    "status": "success",
+                    "details": {"id": "test-instance-abc123"},
+                },
+                status=200,
+            )
+
+            # Mock finish endpoint
+            mock.post(
+                f"{config.api_url}/api/v1/agent_instance/test-instance-abc123/finish",
+                payload={"status": "success"},
+                status=200,
+            )
+
+            transport = HttpTransport(config)
+            time.sleep(0.2)
+
+            # Call public API (synchronous)
+            transport.finish_agent_instance()
+
+            # Wait for async processing
+            time.sleep(0.5)
+
+            transport.close()
+
+
 class TestSpanSending:
     """Tests for span sending."""
 

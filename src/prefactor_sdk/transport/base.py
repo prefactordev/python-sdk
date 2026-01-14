@@ -22,3 +22,23 @@ class Transport(ABC):
     def close(self) -> None:
         """Close the transport and cleanup resources."""
         pass
+
+    def start_agent_instance(self) -> None:
+        """
+        Mark the agent instance as started.
+
+        This is called when the agent begins execution. The default
+        implementation does nothing - transports that need to track
+        agent instance lifecycle should override this method.
+        """
+        pass
+
+    def finish_agent_instance(self) -> None:
+        """
+        Mark the agent instance as finished.
+
+        This is called when the agent execution completes. The default
+        implementation does nothing - transports that need to track
+        agent instance lifecycle should override this method.
+        """
+        pass

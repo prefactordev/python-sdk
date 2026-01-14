@@ -4,8 +4,10 @@ import asyncio
 import hashlib
 import subprocess
 import threading
+from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Optional
+from enum import Enum
+from typing import Any, Optional, Union
 
 import aiohttp
 
@@ -16,6 +18,22 @@ from prefactor_sdk.utils.logging import get_logger
 from prefactor_sdk.utils.serialization import serialize_value
 
 logger = get_logger("transport.http")
+
+
+class QueueItemType(str, Enum):
+    """Types of items that can be queued."""
+
+    SPAN = "span"
+    START_AGENT = "start_agent"
+    FINISH_AGENT = "finish_agent"
+
+
+@dataclass
+class QueueItem:
+    """Item in the processing queue."""
+
+    item_type: QueueItemType
+    data: Any
 
 
 class HttpTransport(Transport):
@@ -41,6 +59,8 @@ class HttpTransport(Transport):
         self._agent_instance_id: Optional[str] = None
         self._registration_lock = threading.Lock()
         self._registration_failed = False
+        self._agent_instance_started = False
+        self._agent_instance_finished = False
 
         # Async infrastructure
         self._queue: Optional[asyncio.Queue] = None
@@ -75,10 +95,57 @@ class HttpTransport(Transport):
 
         try:
             # Thread-safe call to put span in asyncio queue
-            self._loop.call_soon_threadsafe(self._queue.put_nowait, span)
+            item = QueueItem(item_type=QueueItemType.SPAN, data=span)
+            self._loop.call_soon_threadsafe(self._queue.put_nowait, item)
         except Exception as e:
             # Never raise - fail gracefully
             logger.error(f"Failed to enqueue span: {e}", exc_info=True)
+
+    def start_agent_instance(self) -> None:
+        """
+        Mark the agent instance as started (synchronous, non-blocking).
+
+        This should be called when agent execution begins.
+        """
+        if self._closed:
+            logger.warning("Attempted to start agent instance after transport closed")
+            return
+
+        if not self._started:
+            logger.warning("Transport not started")
+            return
+
+        try:
+            # Queue start request
+            item = QueueItem(item_type=QueueItemType.START_AGENT, data=None)
+            self._loop.call_soon_threadsafe(self._queue.put_nowait, item)
+            logger.debug("Queued agent instance start request")
+        except Exception as e:
+            # Never raise - fail gracefully
+            logger.error(f"Failed to enqueue start request: {e}", exc_info=True)
+
+    def finish_agent_instance(self) -> None:
+        """
+        Mark the agent instance as finished (synchronous, non-blocking).
+
+        This should be called when agent execution completes.
+        """
+        if self._closed:
+            logger.warning("Attempted to finish agent instance after transport closed")
+            return
+
+        if not self._started:
+            logger.warning("Transport not started")
+            return
+
+        try:
+            # Queue finish request
+            item = QueueItem(item_type=QueueItemType.FINISH_AGENT, data=None)
+            self._loop.call_soon_threadsafe(self._queue.put_nowait, item)
+            logger.debug("Queued agent instance finish request")
+        except Exception as e:
+            # Never raise - fail gracefully
+            logger.error(f"Failed to enqueue finish request: {e}", exc_info=True)
 
     def close(self) -> None:
         """Close the transport and wait for pending spans to be sent."""
@@ -130,31 +197,39 @@ class HttpTransport(Transport):
             self._loop.close()
 
     async def _worker_loop(self) -> None:
-        """Main worker loop that processes spans from the queue."""
+        """Main worker loop that processes items from the queue."""
         # Create HTTP session
         self._session = aiohttp.ClientSession()
 
         try:
             while not self._shutdown_event.is_set():
                 try:
-                    # Wait for span with timeout (allows checking shutdown)
-                    span = await asyncio.wait_for(self._queue.get(), timeout=0.5)
+                    # Wait for item with timeout (allows checking shutdown)
+                    item = await asyncio.wait_for(self._queue.get(), timeout=0.5)
                 except asyncio.TimeoutError:
                     continue
 
                 try:
-                    # Ensure agent is registered before sending spans
+                    # Ensure agent is registered before processing
                     if not await self._ensure_agent_registered():
-                        logger.warning("Agent not registered, dropping span")
+                        logger.warning("Agent not registered, dropping item")
                         continue
 
-                    # Send span with retry logic
-                    await self._send_span(span)
-                except Exception as e:
-                    logger.error(f"Error processing span: {e}", exc_info=True)
+                    # Process item based on type
+                    if item.item_type == QueueItemType.SPAN:
+                        await self._send_span(item.data)
+                    elif item.item_type == QueueItemType.START_AGENT:
+                        await self._start_agent_instance()
+                    elif item.item_type == QueueItemType.FINISH_AGENT:
+                        await self._finish_agent_instance()
+                    else:
+                        logger.warning(f"Unknown queue item type: {item.item_type}")
 
-            # Drain remaining spans with timeout
-            logger.info("Draining remaining spans...")
+                except Exception as e:
+                    logger.error(f"Error processing queue item: {e}", exc_info=True)
+
+            # Drain remaining items with timeout
+            logger.info("Draining remaining queue items...")
             await self._drain_queue(timeout=5.0)
 
         finally:
@@ -163,7 +238,7 @@ class HttpTransport(Transport):
 
     async def _drain_queue(self, timeout: float) -> None:
         """
-        Drain remaining spans from queue with timeout.
+        Drain remaining items from queue with timeout.
 
         Args:
             timeout: Maximum time to spend draining in seconds.
@@ -174,22 +249,27 @@ class HttpTransport(Transport):
             while not self._queue.empty():
                 if asyncio.get_event_loop().time() > end_time:
                     logger.warning(
-                        f"Drain timeout reached, {self._queue.qsize()} spans remaining"
+                        f"Drain timeout reached, {self._queue.qsize()} items remaining"
                     )
                     break
 
                 try:
-                    span = await asyncio.wait_for(self._queue.get(), timeout=0.1)
+                    item = await asyncio.wait_for(self._queue.get(), timeout=0.1)
 
                     if await self._ensure_agent_registered():
-                        await self._send_span(span)
+                        if item.item_type == QueueItemType.SPAN:
+                            await self._send_span(item.data)
+                        elif item.item_type == QueueItemType.START_AGENT:
+                            await self._start_agent_instance()
+                        elif item.item_type == QueueItemType.FINISH_AGENT:
+                            await self._finish_agent_instance()
                     else:
-                        logger.warning("Cannot drain span, agent not registered")
+                        logger.warning("Cannot drain item, agent not registered")
 
                 except asyncio.TimeoutError:
                     continue
                 except Exception as e:
-                    logger.error(f"Error draining span: {e}", exc_info=True)
+                    logger.error(f"Error draining item: {e}", exc_info=True)
 
         except Exception as e:
             logger.error(f"Error in drain_queue: {e}", exc_info=True)
@@ -354,6 +434,100 @@ class HttpTransport(Transport):
         except Exception:
             pass
         return "unknown"
+
+    async def _start_agent_instance(self) -> None:
+        """
+        Mark the agent instance as started in the backend.
+
+        This updates the agent instance status from "pending" to "active".
+        Only allows starting once per agent instance.
+        """
+        if not self._agent_instance_id:
+            logger.warning("Cannot start agent instance: not registered")
+            return
+
+        if self._agent_instance_started:
+            logger.debug("Agent instance already started, skipping")
+            return
+
+        url = f"{self._config.api_url}/api/v1/agent_instance/{self._agent_instance_id}/start"
+        headers = {
+            "Authorization": f"Bearer {self._config.api_token}",
+            "Content-Type": "application/json",
+        }
+
+        # Use current timestamp
+        payload = {"timestamp": datetime.now(timezone.utc).isoformat()}
+
+        try:
+            async with self._session.post(
+                url,
+                json=payload,
+                headers=headers,
+                timeout=aiohttp.ClientTimeout(total=self._config.request_timeout),
+            ) as response:
+                if response.status == 200:
+                    self._agent_instance_started = True
+                    logger.info(
+                        f"Agent instance started: {self._agent_instance_id}"
+                    )
+                else:
+                    error_text = await response.text()
+                    logger.error(
+                        f"Failed to start agent instance: {response.status} - {error_text}"
+                    )
+
+        except Exception as e:
+            logger.error(
+                f"Error starting agent instance: {e}", exc_info=True
+            )
+
+    async def _finish_agent_instance(self) -> None:
+        """
+        Mark the agent instance as finished in the backend.
+
+        This updates the agent instance status from "active" to "complete".
+        Only allows finishing once per agent instance.
+        """
+        if not self._agent_instance_id:
+            logger.warning("Cannot finish agent instance: not registered")
+            return
+
+        if self._agent_instance_finished:
+            logger.debug("Agent instance already finished, skipping")
+            return
+
+        url = f"{self._config.api_url}/api/v1/agent_instance/{self._agent_instance_id}/finish"
+        headers = {
+            "Authorization": f"Bearer {self._config.api_token}",
+            "Content-Type": "application/json",
+        }
+
+        # Use current timestamp
+        payload = {"timestamp": datetime.now(timezone.utc).isoformat()}
+
+        try:
+            async with self._session.post(
+                url,
+                json=payload,
+                headers=headers,
+                timeout=aiohttp.ClientTimeout(total=self._config.request_timeout),
+            ) as response:
+                if response.status == 200:
+                    self._agent_instance_finished = True
+                    logger.info(
+                        f"Agent instance finished: {self._agent_instance_id}"
+                    )
+                else:
+                    error_text = await response.text()
+                    logger.error(
+                        f"Failed to finish agent instance: {response.status} - {error_text}"
+                    )
+
+        except Exception as e:
+            logger.error(
+                f"Error finishing agent instance: {e}", exc_info=True
+            )
 
     async def _send_span(self, span: Span, retry: int = 0) -> None:
         """

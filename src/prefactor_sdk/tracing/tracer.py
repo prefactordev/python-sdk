@@ -113,6 +113,22 @@ class Tracer:
         except Exception as e:
             logger.error(f"Failed to emit span: {e}", exc_info=True)
 
+    def start_agent_instance(self) -> None:
+        """Mark the agent instance as started."""
+        logger.debug("Starting agent instance")
+        try:
+            self._transport.start_agent_instance()
+        except Exception as e:
+            logger.error(f"Failed to start agent instance: {e}", exc_info=True)
+
+    def finish_agent_instance(self) -> None:
+        """Mark the agent instance as finished."""
+        logger.debug("Finishing agent instance")
+        try:
+            self._transport.finish_agent_instance()
+        except Exception as e:
+            logger.error(f"Failed to finish agent instance: {e}", exc_info=True)
+
     def close(self) -> None:
         """Close the tracer and cleanup resources."""
         logger.debug("Closing tracer")
