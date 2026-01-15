@@ -10,8 +10,6 @@ pip install prefactor-sdk
 
 ## Quick Start
 
-### Middleware API (Recommended for LangChain 1.0+)
-
 ```python
 import prefactor_sdk
 from langchain.agents import create_agent
@@ -29,24 +27,6 @@ agent = create_agent(
 # All operations are automatically traced
 result = agent.invoke({"messages": [{"role": "user", "content": "Hello!"}]})
 ```
-
-### Legacy Callback API
-
-For codebases not yet using `create_agent()`:
-
-```python
-import prefactor_sdk
-from langchain_openai import ChatOpenAI
-
-# Initialize Prefactor (legacy mode)
-handler = prefactor_sdk.init_callback()
-
-# Pass handler to LangChain components
-llm = ChatOpenAI(model="gpt-4", callbacks=[handler])
-response = llm.invoke("Hello!")
-```
-
-See [MIGRATION.md](docs/MIGRATION.md) for migration guidance.
 
 ## Features
 
