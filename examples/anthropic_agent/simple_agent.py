@@ -10,7 +10,6 @@ import os
 from datetime import datetime
 
 from langchain.agents import create_agent
-from langchain_anthropic import ChatAnthropic
 from langchain_core.tools import tool
 
 import prefactor_sdk
@@ -59,22 +58,13 @@ def main():
     print("✓ Prefactor middleware initialized")
     print()
 
-    # Create Claude model
-    print("Creating ChatAnthropic model (claude-haiku-4-5-20251001)...")
-    llm = ChatAnthropic(
-        model="claude-haiku-4-5-20251001",
-        temperature=0,
-    )
-    print("✓ Model initialized")
-    print()
-
     # Create tools list
     tools = [calculator, get_current_time]
 
     # Create agent using the create_agent API with middleware
     print("Creating agent with create_agent API and Prefactor middleware...")
     agent = create_agent(
-        model=llm,
+        model="claude-haiku-4-5-20251001",
         tools=tools,
         system_prompt="You are a helpful assistant. Use the available tools to answer questions.",
         middleware=[middleware],
@@ -90,7 +80,11 @@ def main():
 
     try:
         result = agent.invoke(
-            {"messages": [("user", "What is the current date and time?")]},
+            {
+                "messages": [
+                    {"role": "user", "content": "What is the current date and time?"}
+                ]
+            },
         )
         print("\nAgent Response:")
         print(result["messages"][-1].content)
@@ -106,7 +100,7 @@ def main():
 
     try:
         result = agent.invoke(
-            {"messages": [("user", "What is 42 multiplied by 17?")]},
+            {"messages": [{"role": "user", "content": "What is 42 multiplied by 17?"}]},
         )
         print("\nAgent Response:")
         print(result["messages"][-1].content)
