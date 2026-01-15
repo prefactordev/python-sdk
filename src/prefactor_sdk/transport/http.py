@@ -7,7 +7,7 @@ import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Optional, Union
+from typing import Any, Optional
 
 import aiohttp
 
@@ -105,6 +105,9 @@ class HttpTransport(Transport):
             logger.warning("Transport not started")
             return
 
+        assert self._loop is not None, "Event loop should be initialized"
+        assert self._queue is not None, "Queue should be initialized"
+
         try:
             # Thread-safe call to put span in asyncio queue
             item = QueueItem(item_type=QueueItemType.SPAN, data=span)
@@ -128,6 +131,9 @@ class HttpTransport(Transport):
         if not self._started:
             logger.warning("Transport not started")
             return
+
+        assert self._loop is not None, "Event loop should be initialized"
+        assert self._queue is not None, "Queue should be initialized"
 
         try:
             # Convert end_time to ISO 8601
@@ -156,6 +162,9 @@ class HttpTransport(Transport):
             logger.warning("Transport not started")
             return
 
+        assert self._loop is not None, "Event loop should be initialized"
+        assert self._queue is not None, "Queue should be initialized"
+
         try:
             # Queue start request
             item = QueueItem(item_type=QueueItemType.START_AGENT, data=None)
@@ -178,6 +187,9 @@ class HttpTransport(Transport):
         if not self._started:
             logger.warning("Transport not started")
             return
+
+        assert self._loop is not None, "Event loop should be initialized"
+        assert self._queue is not None, "Queue should be initialized"
 
         try:
             # Queue finish request
@@ -229,6 +241,7 @@ class HttpTransport(Transport):
 
     def _run_worker(self) -> None:
         """Run the worker event loop (called in worker thread)."""
+        assert self._loop is not None, "Event loop should be initialized"
         asyncio.set_event_loop(self._loop)
         try:
             self._loop.run_until_complete(self._worker_loop())
@@ -239,6 +252,8 @@ class HttpTransport(Transport):
 
     async def _worker_loop(self) -> None:
         """Main worker loop that processes items from the queue."""
+        assert self._queue is not None, "Queue should be initialized"
+
         # Create HTTP session
         self._session = aiohttp.ClientSession()
 
@@ -286,6 +301,8 @@ class HttpTransport(Transport):
         Args:
             timeout: Maximum time to spend draining in seconds.
         """
+        assert self._queue is not None, "Queue should be initialized"
+
         try:
             end_time = asyncio.get_event_loop().time() + timeout
 
@@ -367,6 +384,8 @@ class HttpTransport(Transport):
         Returns:
             Agent instance ID if successful, None otherwise.
         """
+        assert self._session is not None, "HTTP session should be initialized"
+
         url = f"{self._config.api_url}/api/v1/agent_instance/register"
         headers = {
             "Authorization": f"Bearer {self._config.api_token}",
@@ -416,27 +435,19 @@ class HttpTransport(Transport):
                 "span_schemas": {
                     "agent": {
                         "type": "object",
-                        "properties": {
-                            "type": {"type": "string", "const": "agent"}
-                        },
+                        "properties": {"type": {"type": "string", "const": "agent"}},
                     },
                     "llm": {
                         "type": "object",
-                        "properties": {
-                            "type": {"type": "string", "const": "llm"}
-                        },
+                        "properties": {"type": {"type": "string", "const": "llm"}},
                     },
                     "tool": {
                         "type": "object",
-                        "properties": {
-                            "type": {"type": "string", "const": "tool"}
-                        },
+                        "properties": {"type": {"type": "string", "const": "tool"}},
                     },
                     "chain": {
                         "type": "object",
-                        "properties": {
-                            "type": {"type": "string", "const": "chain"}
-                        },
+                        "properties": {"type": {"type": "string", "const": "chain"}},
                     },
                     "retriever": {
                         "type": "object",
@@ -487,6 +498,8 @@ class HttpTransport(Transport):
         This updates the agent instance status from "pending" to "active".
         Only allows starting once per agent instance.
         """
+        assert self._session is not None, "HTTP session should be initialized"
+
         if not self._agent_instance_id:
             logger.warning("Cannot start agent instance: not registered")
             return
@@ -513,9 +526,7 @@ class HttpTransport(Transport):
             ) as response:
                 if response.status == 200:
                     self._agent_instance_started = True
-                    logger.info(
-                        f"Agent instance started: {self._agent_instance_id}"
-                    )
+                    logger.info(f"Agent instance started: {self._agent_instance_id}")
                 else:
                     error_text = await response.text()
                     logger.error(
@@ -523,9 +534,7 @@ class HttpTransport(Transport):
                     )
 
         except Exception as e:
-            logger.error(
-                f"Error starting agent instance: {e}", exc_info=True
-            )
+            logger.error(f"Error starting agent instance: {e}", exc_info=True)
 
     async def _finish_agent_instance(self) -> None:
         """
@@ -534,6 +543,8 @@ class HttpTransport(Transport):
         This updates the agent instance status from "active" to "complete".
         Only allows finishing once per agent instance.
         """
+        assert self._session is not None, "HTTP session should be initialized"
+
         if not self._agent_instance_id:
             logger.warning("Cannot finish agent instance: not registered")
             return
@@ -560,9 +571,7 @@ class HttpTransport(Transport):
             ) as response:
                 if response.status == 200:
                     self._agent_instance_finished = True
-                    logger.info(
-                        f"Agent instance finished: {self._agent_instance_id}"
-                    )
+                    logger.info(f"Agent instance finished: {self._agent_instance_id}")
                 else:
                     error_text = await response.text()
                     logger.error(
@@ -570,9 +579,7 @@ class HttpTransport(Transport):
                     )
 
         except Exception as e:
-            logger.error(
-                f"Error finishing agent instance: {e}", exc_info=True
-            )
+            logger.error(f"Error finishing agent instance: {e}", exc_info=True)
 
     async def _finish_span(self, finish_data: SpanFinishData) -> None:
         """
@@ -581,6 +588,8 @@ class HttpTransport(Transport):
         Args:
             finish_data: Data containing span_id and timestamp.
         """
+        assert self._session is not None, "HTTP session should be initialized"
+
         # Look up backend span ID
         backend_span_id = self._span_id_map.get(finish_data.span_id)
         if not backend_span_id:
@@ -627,6 +636,8 @@ class HttpTransport(Transport):
             span: The span to send.
             retry: Current retry attempt (0-indexed).
         """
+        assert self._session is not None, "HTTP session should be initialized"
+
         url = f"{self._config.api_url}/api/v1/agent_spans"
         headers = {
             "Authorization": f"Bearer {self._config.api_token}",

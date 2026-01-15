@@ -88,7 +88,7 @@ class Tracer:
         self,
         span: Span,
         outputs: Optional[dict[str, Any]] = None,
-        error: Optional[Exception] = None,
+        error: Optional[BaseException] = None,
         token_usage: Optional[TokenUsage] = None,
     ) -> None:
         """

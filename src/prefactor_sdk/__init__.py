@@ -183,6 +183,7 @@ def get_tracer() -> Tracer:
         logger.debug("Tracer not initialized, calling init()")
         init()
 
+    assert _global_tracer is not None, "Tracer should be initialized after init()"
     return _global_tracer
 
 

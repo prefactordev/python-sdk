@@ -1,8 +1,9 @@
 """Configuration for Prefactor SDK."""
 
 import os
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Optional
 
 from prefactor_sdk.utils.logging import get_logger
 
@@ -40,9 +41,9 @@ def _parse_bool(value: str) -> bool:
 
 def _get_env_or_default(
     key: str,
-    default: any,
-    converter: callable = str,
-) -> any:
+    default: Any,
+    converter: Callable[[str], Any] = str,
+) -> Any:
     """Get environment variable or return default."""
     value = os.getenv(key)
     if value is None:
