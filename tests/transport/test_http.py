@@ -17,7 +17,7 @@ from prefactor_sdk.tracing.span import (
 from prefactor_sdk.transport.http import HttpTransport
 
 
-def create_test_span(**kwargs) -> Span:
+def create_test_span(**kwargs) -> Span:  # type: ignore[misc]
     """Create a test span with default values."""
     defaults = {
         "span_id": "test-span-123",
@@ -36,17 +36,17 @@ def create_test_span(**kwargs) -> Span:
         "tags": [],
     }
     defaults.update(kwargs)
-    return Span(**defaults)
+    return Span(**defaults)  # type: ignore[arg-type]
 
 
-def create_test_config(**kwargs) -> HttpTransportConfig:
+def create_test_config(**kwargs) -> HttpTransportConfig:  # type: ignore[misc]
     """Create a test HTTP config with default values."""
     defaults = {
         "api_url": "https://api.test.prefactor.ai",
         "api_token": "test-token-123",
     }
     defaults.update(kwargs)
-    return HttpTransportConfig(**defaults)
+    return HttpTransportConfig(**defaults)  # type: ignore[arg-type]
 
 
 class TestHttpTransportConfig:
@@ -200,7 +200,7 @@ class TestAgentRegistration:
             assert result3 is True
 
             # Should only have made one request
-            assert len(mock.requests) == 1
+            assert len(mock.requests) == 1  # type: ignore[arg-type]
 
             transport.close()
 
@@ -362,7 +362,7 @@ class TestSpanSending:
             await asyncio.sleep(0.5)
 
             # Check that requests were made
-            assert len(mock.requests) >= 2  # registration + span
+            assert len(mock.requests) >= 2  # type: ignore[arg-type]  # registration + span
 
             transport.close()
 
@@ -484,7 +484,7 @@ class TestSpanSending:
             await asyncio.sleep(0.5)
 
             # Should have made only 1 registration + 1 span attempt (no retries)
-            assert len(mock.requests) == 2
+            assert len(mock.requests) == 2  # type: ignore[arg-type]
 
             transport.close()
 
@@ -677,4 +677,4 @@ class TestErrorHandling:
 
             # Should have attempted to send all spans
             # (registration + some spans, exact count depends on timing)
-            assert len(mock.requests) >= 1
+            assert len(mock.requests) >= 1  # type: ignore[arg-type]

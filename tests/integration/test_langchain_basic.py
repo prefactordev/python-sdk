@@ -56,7 +56,7 @@ class TestLangChainIntegration:
             mock_generate.return_value = mock_result
 
             # Create LLM with callback
-            llm = ChatOpenAI(model="gpt-4", callbacks=[handler])
+            llm = ChatOpenAI(name="gpt-4", callbacks=[handler])
 
             # Make a call
             llm.invoke([HumanMessage(content="Hi!")])
@@ -101,7 +101,7 @@ class TestLangChainIntegration:
             )
             mock_generate.return_value = mock_result
 
-            llm = ChatOpenAI(model="gpt-4", callbacks=[handler])
+            llm = ChatOpenAI(name="gpt-4", callbacks=[handler])
 
             # Make multiple calls
             llm.invoke([HumanMessage(content="First")])
@@ -131,7 +131,7 @@ class TestLangChainIntegration:
             # Make the LLM call raise an error
             mock_generate.side_effect = ValueError("API error")
 
-            llm = ChatOpenAI(model="gpt-4", callbacks=[handler])
+            llm = ChatOpenAI(name="gpt-4", callbacks=[handler])
 
             # Make a call that will error
             with pytest.raises(ValueError):
@@ -189,7 +189,7 @@ class TestTokenUsageTracking:
             )
             mock_generate.return_value = mock_result
 
-            llm = ChatOpenAI(model="gpt-4", callbacks=[handler])
+            llm = ChatOpenAI(name="gpt-4", callbacks=[handler])
             llm.invoke([HumanMessage(content="Test")])
 
         # Check output
