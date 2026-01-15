@@ -94,7 +94,6 @@
       entry = lib.mkForce "${pkgs.ruff}/bin/ruff check --fix";
     };
 
-    # Type check with ty
     ty-check = {
       enable = true;
       name = "ty type check";

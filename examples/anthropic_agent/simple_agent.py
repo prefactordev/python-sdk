@@ -66,7 +66,9 @@ def main():
     agent = create_agent(
         model="claude-haiku-4-5-20251001",
         tools=tools,
-        system_prompt="You are a helpful assistant. Use the available tools to answer questions.",
+        system_prompt=(
+            "You are a helpful assistant. Use the available tools to answer questions."
+        ),
         middleware=[middleware],
     )
     print("✓ Agent created with Prefactor tracing")

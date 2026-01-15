@@ -163,12 +163,14 @@ class Config:
 
             if not final_api_url:
                 raise ValueError(
-                    "HTTP transport requires api_url parameter or PREFACTOR_API_URL environment variable"
+                    "HTTP transport requires api_url parameter or "
+                    "PREFACTOR_API_URL environment variable"
                 )
 
             if not final_api_token:
                 raise ValueError(
-                    "HTTP transport requires api_token parameter or PREFACTOR_API_TOKEN environment variable"
+                    "HTTP transport requires api_token parameter or "
+                    "PREFACTOR_API_TOKEN environment variable"
                 )
 
             self.http_config = HttpTransportConfig(

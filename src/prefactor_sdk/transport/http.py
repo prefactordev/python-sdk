@@ -508,7 +508,10 @@ class HttpTransport(Transport):
             logger.debug("Agent instance already started, skipping")
             return
 
-        url = f"{self._config.api_url}/api/v1/agent_instance/{self._agent_instance_id}/start"
+        url = (
+            f"{self._config.api_url}/api/v1/agent_instance/"
+            f"{self._agent_instance_id}/start"
+        )
         headers = {
             "Authorization": f"Bearer {self._config.api_token}",
             "Content-Type": "application/json",
@@ -530,7 +533,8 @@ class HttpTransport(Transport):
                 else:
                     error_text = await response.text()
                     logger.error(
-                        f"Failed to start agent instance: {response.status} - {error_text}"
+                        f"Failed to start agent instance: "
+                        f"{response.status} - {error_text}"
                     )
 
         except Exception as e:
@@ -553,7 +557,10 @@ class HttpTransport(Transport):
             logger.debug("Agent instance already finished, skipping")
             return
 
-        url = f"{self._config.api_url}/api/v1/agent_instance/{self._agent_instance_id}/finish"
+        url = (
+            f"{self._config.api_url}/api/v1/agent_instance/"
+            f"{self._agent_instance_id}/finish"
+        )
         headers = {
             "Authorization": f"Bearer {self._config.api_token}",
             "Content-Type": "application/json",
@@ -575,7 +582,8 @@ class HttpTransport(Transport):
                 else:
                     error_text = await response.text()
                     logger.error(
-                        f"Failed to finish agent instance: {response.status} - {error_text}"
+                        f"Failed to finish agent instance: "
+                        f"{response.status} - {error_text}"
                     )
 
         except Exception as e:
@@ -615,7 +623,8 @@ class HttpTransport(Transport):
             ) as response:
                 if response.status == 200:
                     logger.debug(
-                        f"Successfully finished span {finish_data.span_id} (backend ID: {backend_span_id})"
+                        f"Successfully finished span {finish_data.span_id} "
+                        f"(backend ID: {backend_span_id})"
                     )
                     # Remove from mapping after successful finish
                     del self._span_id_map[finish_data.span_id]
@@ -662,7 +671,8 @@ class HttpTransport(Transport):
                         # Store mapping for future finish calls
                         self._span_id_map[span.span_id] = backend_span_id
                         logger.debug(
-                            f"Successfully sent span {span.span_id} (backend ID: {backend_span_id})"
+                            f"Successfully sent span {span.span_id} "
+                            f"(backend ID: {backend_span_id})"
                         )
                     else:
                         logger.warning(
@@ -679,7 +689,8 @@ class HttpTransport(Transport):
                     # Client error - don't retry
                     error_text = await response.text()
                     logger.error(
-                        f"Non-retryable error for span {span.span_id}: {response.status} - {error_text}"
+                        f"Non-retryable error for span {span.span_id}: "
+                        f"{response.status} - {error_text}"
                     )
                     return
 
@@ -692,13 +703,15 @@ class HttpTransport(Transport):
                     self._config.max_retry_delay,
                 )
                 logger.warning(
-                    f"Retry {retry + 1}/{self._config.max_retries} for span {span.span_id} in {delay}s: {e}"
+                    f"Retry {retry + 1}/{self._config.max_retries} "
+                    f"for span {span.span_id} in {delay}s: {e}"
                 )
                 await asyncio.sleep(delay)
                 await self._send_span(span, retry + 1)
             else:
                 logger.error(
-                    f"Failed to send span {span.span_id} after {self._config.max_retries + 1} attempts: {e}"
+                    f"Failed to send span {span.span_id} after "
+                    f"{self._config.max_retries + 1} attempts: {e}"
                 )
 
         except Exception as e:

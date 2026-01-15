@@ -15,20 +15,19 @@ pip install prefactor-sdk
 ```python
 import prefactor_sdk
 from langchain.agents import create_agent
-from langchain_anthropic import ChatAnthropic
 
 # Initialize Prefactor
 middleware = prefactor_sdk.init()
 
 # Create agent with middleware
 agent = create_agent(
-    model=ChatAnthropic(model="claude-sonnet-4-5-20250929"),
+    model="claude-sonnet-4-5-20250929",
     tools=[...],
     middleware=[middleware]
 )
 
 # All operations are automatically traced
-result = agent.invoke({"messages": [("user", "Hello!")]})
+result = agent.invoke({"messages": [{"role": "user", "content": "Hello!"}]})
 ```
 
 ### Legacy Callback API

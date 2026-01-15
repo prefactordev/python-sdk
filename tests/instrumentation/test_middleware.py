@@ -164,7 +164,7 @@ class TestPrefactorMiddleware:
 
         # Should have both spans: agent (emitted on start) and LLM (emitted on end)
         assert len(transport.emitted_spans) == 2
-        agent_span = transport.emitted_spans[0]  # Agent emitted first (on start)
+        _agent_span = transport.emitted_spans[0]  # Agent emitted first (on start)
         llm_span = transport.emitted_spans[1]  # LLM emitted second (on end)
 
         # End agent to finish agent span
@@ -261,7 +261,7 @@ class TestPrefactorMiddleware:
 
         # Should have both spans: agent (emitted on start) and tool (emitted on end)
         assert len(transport.emitted_spans) == 2
-        agent_span = transport.emitted_spans[0]  # Agent emitted first (on start)
+        _agent_span = transport.emitted_spans[0]  # Agent emitted first (on start)
         tool_span = transport.emitted_spans[1]  # Tool emitted second (on end)
 
         # End agent to finish agent span
@@ -346,7 +346,7 @@ class TestPrefactorMiddleware:
         assert len(transport.emitted_spans) == 4
 
         # Spans are emitted in order: agent (on start), llm1, tool, llm2
-        agent_span = transport.emitted_spans[0]
+        _agent_span = transport.emitted_spans[0]
         llm_span1 = transport.emitted_spans[1]
         tool_span = transport.emitted_spans[2]
         llm_span2 = transport.emitted_spans[3]

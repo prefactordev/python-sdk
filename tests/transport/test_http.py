@@ -428,7 +428,8 @@ class TestSpanSending:
             )
 
             # Mock span endpoint - use repeat=True for multiple responses
-            # First two calls will be 500, subsequent will also be 500 (testing max retries)
+            # First two calls will be 500, subsequent will also be 500
+            # (testing max retries)
             mock.post(
                 f"{config.api_url}/api/v1/agent_spans",
                 status=500,

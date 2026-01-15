@@ -117,7 +117,8 @@ class TestSerializeValue:
         long_string = "a" * 20000
         result = serialize_value(long_string)
         assert result.endswith("... [truncated]")
-        # Default max_length is 10000, so result should be 10000 + len("... [truncated]")
+        # Default max_length is 10000, so result should be
+        # 10000 + len("... [truncated]")
         assert len(result) == 10015
 
     def test_serialize_none_max_length(self):

@@ -1,7 +1,6 @@
 """Prefactor SDK - Automatic observability for LangChain agents."""
 
 import atexit
-import warnings
 from typing import Optional
 
 from prefactor_sdk.config import Config

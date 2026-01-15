@@ -223,7 +223,8 @@ class PrefactorMiddleware(AgentMiddleware):
         """
         Hook called after agent completes execution.
 
-        Ends the root span created in before_agent and marks the agent instance as finished.
+        Ends the root span created in before_agent and marks the agent
+        instance as finished.
 
         Args:
             state: The agent state.
