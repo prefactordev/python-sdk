@@ -529,6 +529,232 @@ class TestSpanSending:
 
             transport.close()
 
+    @pytest.mark.asyncio
+    async def test_parent_span_id_mapping(self):
+        """Test that parent_span_id is correctly mapped to backend ID."""
+        config = create_test_config()
+
+        with aioresponses() as mock:
+            # Mock registration
+            mock.post(
+                f"{config.api_url}/api/v1/agent_instance/register",
+                payload={
+                    "status": "success",
+                    "details": {"id": "test-instance-abc123"},
+                },
+                status=200,
+            )
+
+            # Mock parent span endpoint - returns backend ID
+            mock.post(
+                f"{config.api_url}/api/v1/agent_spans",
+                payload={
+                    "status": "success",
+                    "details": {"id": "backend-parent-id-xyz"},
+                },
+                status=200,
+            )
+
+            # Mock child span endpoint
+            mock.post(
+                f"{config.api_url}/api/v1/agent_spans",
+                payload={
+                    "status": "success",
+                    "details": {"id": "backend-child-id-abc"},
+                },
+                status=200,
+            )
+
+            transport = HttpTransport(config)
+
+            # Create and emit parent span
+            parent_span = create_test_span(
+                span_id="sdk-parent-123",
+                parent_span_id=None,
+                span_type=SpanType.AGENT,
+            )
+            transport.emit(parent_span)
+
+            # Wait for parent to be processed
+            await asyncio.sleep(0.3)
+
+            # Verify parent span ID mapping was stored
+            assert "sdk-parent-123" in transport._span_id_map
+            assert transport._span_id_map["sdk-parent-123"] == "backend-parent-id-xyz"
+
+            # Create and emit child span (using SDK parent ID)
+            child_span = create_test_span(
+                span_id="sdk-child-456",
+                parent_span_id="sdk-parent-123",  # SDK parent ID
+                span_type=SpanType.LLM,
+            )
+            transport.emit(child_span)
+
+            # Wait for child to be processed
+            await asyncio.sleep(0.3)
+
+            # Verify the child span was sent with mapped parent ID
+            from yarl import URL
+
+            span_url_key = ("POST", URL(f"{config.api_url}/api/v1/agent_spans"))
+            span_requests = mock.requests.get(span_url_key, [])
+
+            # Should have 2 span requests (parent + child)
+            assert len(span_requests) >= 2
+
+            # Check the child span request (second span request)
+            child_request = span_requests[1]
+            child_payload = child_request.kwargs["json"]
+
+            # Verify parent_span_id was mapped to backend ID
+            assert child_payload["details"]["parent_span_id"] == "backend-parent-id-xyz"
+
+            transport.close()
+
+    @pytest.mark.asyncio
+    async def test_nested_span_hierarchy(self):
+        """Test that deeply nested spans maintain correct parent ID mapping."""
+        config = create_test_config()
+
+        with aioresponses() as mock:
+            # Mock registration
+            mock.post(
+                f"{config.api_url}/api/v1/agent_instance/register",
+                payload={
+                    "status": "success",
+                    "details": {"id": "test-instance-abc123"},
+                },
+                status=200,
+            )
+
+            # Mock span endpoints - each returns a backend ID
+            mock.post(
+                f"{config.api_url}/api/v1/agent_spans",
+                payload={
+                    "status": "success",
+                    "details": {"id": "backend-root-id"},
+                },
+                status=200,
+            )
+            mock.post(
+                f"{config.api_url}/api/v1/agent_spans",
+                payload={
+                    "status": "success",
+                    "details": {"id": "backend-level1-id"},
+                },
+                status=200,
+            )
+            mock.post(
+                f"{config.api_url}/api/v1/agent_spans",
+                payload={
+                    "status": "success",
+                    "details": {"id": "backend-level2-id"},
+                },
+                status=200,
+            )
+
+            transport = HttpTransport(config)
+
+            # Root span (no parent)
+            root_span = create_test_span(
+                span_id="sdk-root",
+                parent_span_id=None,
+                span_type=SpanType.AGENT,
+            )
+            transport.emit(root_span)
+            await asyncio.sleep(0.2)
+
+            # Level 1 child (parent: root)
+            level1_span = create_test_span(
+                span_id="sdk-level1",
+                parent_span_id="sdk-root",
+                span_type=SpanType.CHAIN,
+            )
+            transport.emit(level1_span)
+            await asyncio.sleep(0.2)
+
+            # Level 2 child (parent: level1)
+            level2_span = create_test_span(
+                span_id="sdk-level2",
+                parent_span_id="sdk-level1",
+                span_type=SpanType.LLM,
+            )
+            transport.emit(level2_span)
+            await asyncio.sleep(0.2)
+
+            # Verify all mappings were stored
+            assert transport._span_id_map["sdk-root"] == "backend-root-id"
+            assert transport._span_id_map["sdk-level1"] == "backend-level1-id"
+            assert transport._span_id_map["sdk-level2"] == "backend-level2-id"
+
+            # Verify requests were sent with correct parent mappings
+            from yarl import URL
+
+            span_url_key = ("POST", URL(f"{config.api_url}/api/v1/agent_spans"))
+            span_requests = mock.requests.get(span_url_key, [])
+
+            # Should have 3 span requests
+            assert len(span_requests) == 3
+
+            # Root span should have None parent
+            root_request = span_requests[0]
+            root_payload = root_request.kwargs["json"]
+            assert root_payload["details"]["parent_span_id"] is None
+
+            # Level 1 should reference backend root ID
+            level1_request = span_requests[1]
+            level1_payload = level1_request.kwargs["json"]
+            assert level1_payload["details"]["parent_span_id"] == "backend-root-id"
+
+            # Level 2 should reference backend level1 ID
+            level2_request = span_requests[2]
+            level2_payload = level2_request.kwargs["json"]
+            assert level2_payload["details"]["parent_span_id"] == "backend-level1-id"
+
+            transport.close()
+
+    @pytest.mark.asyncio
+    async def test_parent_span_id_none_for_root(self):
+        """Test that root spans (no parent) correctly send None as parent_span_id."""
+        config = create_test_config()
+        transport = HttpTransport(config)
+        transport._agent_instance_id = "test-instance-123"
+
+        # Create root span (no parent)
+        root_span = create_test_span(
+            span_id="sdk-root",
+            parent_span_id=None,
+            span_type=SpanType.AGENT,
+        )
+
+        result = transport._transform_span_to_api_format(root_span)
+
+        # Verify parent_span_id is None
+        assert result["details"]["parent_span_id"] is None
+
+        transport.close()
+
+    @pytest.mark.asyncio
+    async def test_parent_span_id_fallback_when_no_mapping(self):
+        """Test that parent_span_id falls back to SDK ID if no mapping exists."""
+        config = create_test_config()
+        transport = HttpTransport(config)
+        transport._agent_instance_id = "test-instance-123"
+
+        # Create child span with parent that hasn't been sent yet
+        child_span = create_test_span(
+            span_id="sdk-child",
+            parent_span_id="sdk-parent-unknown",
+            span_type=SpanType.LLM,
+        )
+
+        result = transport._transform_span_to_api_format(child_span)
+
+        # Should fallback to SDK ID when no mapping exists
+        assert result["details"]["parent_span_id"] == "sdk-parent-unknown"
+
+        transport.close()
+
 
 class TestThreadSafety:
     """Tests for thread safety."""

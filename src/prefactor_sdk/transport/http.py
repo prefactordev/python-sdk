@@ -816,13 +816,20 @@ class HttpTransport(Transport):
                 "stacktrace": span.error.stacktrace,
             }
 
+        # Map parent_span_id from SDK ID to backend ID
+        parent_span_id: Optional[str] = None
+        if span.parent_span_id is not None:
+            parent_span_id = self._span_id_map.get(
+                span.parent_span_id, span.parent_span_id
+            )
+
         # Return API request format
         return {
             "details": {
                 "agent_instance_id": self._agent_instance_id,
                 "schema_name": schema_name_map[span.span_type],
                 "payload": serialize_value(payload),
-                "parent_span_id": span.parent_span_id,
+                "parent_span_id": parent_span_id,
                 "started_at": started_at,
                 "finished_at": finished_at,
             }
