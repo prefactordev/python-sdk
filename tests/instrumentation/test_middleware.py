@@ -363,3 +363,122 @@ class TestPrefactorMiddleware:
 
         # Agent span should be finished (not re-emitted)
         assert len(transport.finished_spans) == 1
+
+    async def test_awrap_model_call_creates_span(self):
+        """Test that awrap_model_call creates LLM spans for async handlers."""
+        transport = MockTransport()
+        tracer = Tracer(transport=transport)
+        middleware = PrefactorMiddleware(tracer=tracer)
+
+        # Mock request and response
+        request = Mock()
+        request.metadata = {"name": "gpt-4"}
+        request.messages = ["Hello"]
+
+        response = Mock()
+        response.content = "Hi there!"
+
+        # Mock async handler
+        async def async_handler(req):
+            return response
+
+        # Wrap model call
+        result = await middleware.awrap_model_call(request, async_handler)
+
+        # Should return response
+        assert result == response
+
+        # Should have emitted a span
+        assert len(transport.emitted_spans) == 1
+        span = transport.emitted_spans[0]
+        assert span.span_type == SpanType.LLM
+        assert span.status == SpanStatus.SUCCESS
+        assert "response" in span.outputs
+
+    async def test_awrap_model_call_handles_errors(self):
+        """Test that awrap_model_call handles errors properly."""
+        transport = MockTransport()
+        tracer = Tracer(transport=transport)
+        middleware = PrefactorMiddleware(tracer=tracer)
+
+        # Mock request
+        request = Mock()
+        request.metadata = {}
+        request.messages = ["Hello"]
+
+        # Mock async handler that raises
+        error = ValueError("Model failed")
+
+        async def failing_handler(req):
+            raise error
+
+        # Wrap model call - should raise
+        with pytest.raises(ValueError, match="Model failed"):
+            await middleware.awrap_model_call(request, failing_handler)
+
+        # Should have emitted error span
+        assert len(transport.emitted_spans) == 1
+        span = transport.emitted_spans[0]
+        assert span.status == SpanStatus.ERROR
+        assert span.error is not None
+        assert span.error.error_type == "ValueError"
+        assert "Model failed" in span.error.message
+
+    async def test_awrap_tool_call_creates_span(self):
+        """Test that awrap_tool_call creates tool spans for async handlers."""
+        transport = MockTransport()
+        tracer = Tracer(transport=transport)
+        middleware = PrefactorMiddleware(tracer=tracer)
+
+        # Mock request and response
+        request = Mock()
+        request.tool_call = {"name": "calculator", "args": {"expression": "2+2"}}
+
+        response = Mock()
+        response.content = "4"
+
+        # Mock async handler
+        async def async_handler(req):
+            return response
+
+        # Wrap tool call
+        result = await middleware.awrap_tool_call(request, async_handler)
+
+        # Should return response
+        assert result == response
+
+        # Should have emitted a span
+        assert len(transport.emitted_spans) == 1
+        span = transport.emitted_spans[0]
+        assert span.name == "calculator"
+        assert span.span_type == SpanType.TOOL
+        assert span.status == SpanStatus.SUCCESS
+        assert "output" in span.outputs
+
+    async def test_awrap_tool_call_handles_errors(self):
+        """Test that awrap_tool_call handles errors properly."""
+        transport = MockTransport()
+        tracer = Tracer(transport=transport)
+        middleware = PrefactorMiddleware(tracer=tracer)
+
+        # Mock request
+        request = Mock()
+        request.tool_call = {"name": "failing_tool", "args": {}}
+
+        # Mock async handler that raises
+        error = RuntimeError("Tool execution failed")
+
+        async def failing_handler(req):
+            raise error
+
+        # Wrap tool call - should raise
+        with pytest.raises(RuntimeError, match="Tool execution failed"):
+            await middleware.awrap_tool_call(request, failing_handler)
+
+        # Should have emitted error span
+        assert len(transport.emitted_spans) == 1
+        span = transport.emitted_spans[0]
+        assert span.name == "failing_tool"
+        assert span.status == SpanStatus.ERROR
+        assert span.error is not None
+        assert span.error.error_type == "RuntimeError"

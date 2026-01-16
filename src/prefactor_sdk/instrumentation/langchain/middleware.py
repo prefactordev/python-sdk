@@ -275,7 +275,7 @@ class PrefactorMiddleware(AgentMiddleware):
         handler: Callable[[Any], Any],
     ) -> Any:
         """
-        Wrap model calls to trace LLM execution.
+        Wrap synchronous model calls to trace LLM execution.
 
         Args:
             request: The model request.
@@ -329,9 +329,128 @@ class PrefactorMiddleware(AgentMiddleware):
             # Restore parent span context
             SpanContext.set_current(parent_span)
 
+    async def awrap_model_call(
+        self,
+        request: Any,
+        handler: Callable[[Any], Any],
+    ) -> Any:
+        """
+        Wrap model calls to trace LLM execution.
+
+        Args:
+            request: The model request.
+            handler: The function that executes the model call.
+
+        Returns:
+            The model response.
+        """
+        # Get parent span from context
+        parent_span = SpanContext.get_current()
+
+        # Start LLM span
+        span = self._tracer.start_span(
+            name=self._get_name_from_request(request),
+            span_type=SpanType.LLM,
+            inputs=self._extract_model_inputs(request),
+            parent_span_id=parent_span.span_id if parent_span else None,
+            trace_id=parent_span.trace_id if parent_span else None,
+            metadata={},
+            tags=[],
+        )
+
+        # Set as current span for nested operations
+        SpanContext.set_current(span)
+
+        try:
+            # Call the model
+            response = await handler(request)
+
+            # Extract outputs and token usage
+            outputs = self._extract_model_outputs(response)
+            token_usage = self._extract_token_usage(response)
+
+            # End span successfully
+            self._tracer.end_span(
+                span=span,
+                outputs=outputs,
+                token_usage=token_usage,
+            )
+
+            logger.debug(f"Model call completed: {span.span_id}")
+            return response
+
+        except Exception as e:
+            # End span with error
+            self._tracer.end_span(span=span, error=e)
+            logger.error(f"Model call failed: {e}", exc_info=True)
+            raise
+
+        finally:
+            # Restore parent span context
+            SpanContext.set_current(parent_span)
+
     # Tool call wrapping
 
     def wrap_tool_call(
+        self,
+        request: Any,
+        handler: Callable[[Any], Any],
+    ) -> Any:
+        """
+        Wrap synchronous tool calls to trace tool execution.
+
+        Args:
+            request: The tool request.
+            handler: The function that executes the tool call.
+
+        Returns:
+            The tool response.
+        """
+        # Get parent span from context
+        parent_span = SpanContext.get_current()
+
+        # Extract tool information
+        inputs = self._extract_tool_inputs(request)
+        tool_name = inputs.get("tool_name", "unknown_tool")
+
+        # Start tool span
+        span = self._tracer.start_span(
+            name=tool_name,
+            span_type=SpanType.TOOL,
+            inputs=inputs,
+            parent_span_id=parent_span.span_id if parent_span else None,
+            trace_id=parent_span.trace_id if parent_span else None,
+            metadata={},
+            tags=[],
+        )
+
+        # Set as current span for nested operations
+        SpanContext.set_current(span)
+
+        try:
+            # Call the tool
+            response = handler(request)
+
+            # Extract output
+            outputs = self._extract_tool_output(response)
+
+            # End span successfully
+            self._tracer.end_span(span=span, outputs=outputs)
+
+            logger.debug(f"Tool call completed: {span.span_id} ({tool_name})")
+            return response
+
+        except Exception as e:
+            # End span with error
+            self._tracer.end_span(span=span, error=e)
+            logger.error(f"Tool call failed: {e}", exc_info=True)
+            raise
+
+        finally:
+            # Restore parent span context
+            SpanContext.set_current(parent_span)
+
+    async def awrap_tool_call(
         self,
         request: Any,
         handler: Callable[[Any], Any],
@@ -369,7 +488,7 @@ class PrefactorMiddleware(AgentMiddleware):
 
         try:
             # Call the tool
-            response = handler(request)
+            response = await handler(request)
 
             # Extract output
             outputs = self._extract_tool_output(response)
