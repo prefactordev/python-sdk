@@ -419,45 +419,51 @@ class HttpTransport(Transport):
         """
         Extract agent metadata for registration.
 
+        Schema inclusion depends on configuration:
+        - skip_schema=True: No schema in payload (pre-registered)
+        - agent_schema provided: Use custom schema dict
+        - agent_schema_version provided: Use version identifier only
+        - None of above: Use default hardcoded v1.0.0 schema
+
         Returns:
             Agent metadata dict for API call.
         """
-        return {
+        # Base metadata (always included)
+        metadata = {
             "agent_id": self._config.agent_id or self._generate_agent_id(),
             "agent_version": {
                 "name": self._config.agent_version or "unknown",
                 "description": "Prefactor SDK",
-                "external_identifier": self._config.agent_version
-                or self._get_git_version(),
-            },
-            "agent_schema_version": {
-                "external_identifier": "1.0.0",
-                "span_schemas": {
-                    "agent": {
-                        "type": "object",
-                        "properties": {"type": {"type": "string", "const": "agent"}},
-                    },
-                    "llm": {
-                        "type": "object",
-                        "properties": {"type": {"type": "string", "const": "llm"}},
-                    },
-                    "tool": {
-                        "type": "object",
-                        "properties": {"type": {"type": "string", "const": "tool"}},
-                    },
-                    "chain": {
-                        "type": "object",
-                        "properties": {"type": {"type": "string", "const": "chain"}},
-                    },
-                    "retriever": {
-                        "type": "object",
-                        "properties": {
-                            "type": {"type": "string", "const": "retriever"}
-                        },
-                    },
-                },
+                "external_identifier": (
+                    self._config.agent_version or self._get_git_version()
+                ),
             },
         }
+
+        # Determine schema mode and add schema if applicable
+        if self._config.skip_schema:
+            # Mode 1: Skip schema (pre-registered on backend)
+            logger.debug("Skipping schema in registration (skip_schema=True)")
+            # Do not add agent_schema_version key
+
+        elif self._config.agent_schema is not None:
+            # Mode 2: Use custom schema
+            logger.debug("Using custom agent schema")
+            metadata["agent_schema_version"] = self._config.agent_schema
+
+        elif self._config.agent_schema_version is not None:
+            # Mode 3: Use schema version identifier only
+            logger.debug(f"Using schema version: {self._config.agent_schema_version}")
+            metadata["agent_schema_version"] = {
+                "external_identifier": self._config.agent_schema_version,
+            }
+
+        else:
+            # Mode 4: Default hardcoded schema (backward compatible)
+            logger.debug("Using default hardcoded schema (v1.0.0)")
+            metadata["agent_schema_version"] = self._get_default_schema()
+
+        return metadata
 
     def _generate_agent_id(self) -> str:
         """
@@ -490,6 +496,42 @@ class HttpTransport(Transport):
         except Exception:
             pass
         return "unknown"
+
+    def _get_default_schema(self) -> dict[str, Any]:
+        """
+        Get the default hardcoded schema (v1.0.0).
+
+        Returns the v1.0.0 schema structure that was previously
+        hardcoded in _extract_agent_metadata().
+
+        Returns:
+            Default schema with external_identifier and span_schemas.
+        """
+        return {
+            "external_identifier": "1.0.0",
+            "span_schemas": {
+                "agent": {
+                    "type": "object",
+                    "properties": {"type": {"type": "string", "const": "agent"}},
+                },
+                "llm": {
+                    "type": "object",
+                    "properties": {"type": {"type": "string", "const": "llm"}},
+                },
+                "tool": {
+                    "type": "object",
+                    "properties": {"type": {"type": "string", "const": "tool"}},
+                },
+                "chain": {
+                    "type": "object",
+                    "properties": {"type": {"type": "string", "const": "chain"}},
+                },
+                "retriever": {
+                    "type": "object",
+                    "properties": {"type": {"type": "string", "const": "retriever"}},
+                },
+            },
+        }
 
     async def _start_agent_instance(self) -> None:
         """

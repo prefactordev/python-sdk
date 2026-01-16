@@ -158,16 +158,30 @@ class TestConfig:
         assert config.http_config.agent_id == "test-agent"
         assert config.http_config.agent_version == "1.0.0"
 
-    def test_http_transport_missing_url(self):
+    def test_http_transport_missing_url(self, monkeypatch):
         """Test HTTP transport with missing URL raises ValueError."""
+        # Clear env vars that could interfere
+        monkeypatch.delenv("PREFACTOR_API_URL", raising=False)
+        monkeypatch.delenv("PREFACTOR_API_TOKEN", raising=False)
+        monkeypatch.delenv("PREFACTOR_SKIP_SCHEMA", raising=False)
+        monkeypatch.delenv("PREFACTOR_AGENT_SCHEMA", raising=False)
+        monkeypatch.delenv("PREFACTOR_AGENT_SCHEMA_VERSION", raising=False)
+
         with pytest.raises(ValueError, match="api_url"):
             Config(
                 transport_type="http",
                 api_token="test-token",
             )
 
-    def test_http_transport_missing_token(self):
+    def test_http_transport_missing_token(self, monkeypatch):
         """Test HTTP transport with missing token raises ValueError."""
+        # Clear env vars that could interfere
+        monkeypatch.delenv("PREFACTOR_API_URL", raising=False)
+        monkeypatch.delenv("PREFACTOR_API_TOKEN", raising=False)
+        monkeypatch.delenv("PREFACTOR_SKIP_SCHEMA", raising=False)
+        monkeypatch.delenv("PREFACTOR_AGENT_SCHEMA", raising=False)
+        monkeypatch.delenv("PREFACTOR_AGENT_SCHEMA_VERSION", raising=False)
+
         with pytest.raises(ValueError, match="api_token"):
             Config(
                 transport_type="http",
@@ -190,3 +204,288 @@ class TestConfig:
         assert config.http_config.api_token == "test-token"
         assert config.http_config.agent_id == "test-agent"
         assert config.http_config.agent_version == "1.0.0"
+
+    def test_schema_default_mode(self):
+        """Test default schema mode (no schema params)."""
+        config = Config(
+            transport_type="http",
+            api_url="https://api.test.prefactor.ai",
+            api_token="test-token",
+        )
+
+        assert config.http_config is not None
+        assert config.http_config.skip_schema is False
+        assert config.http_config.agent_schema is None
+        assert config.http_config.agent_schema_version is None
+
+    def test_schema_skip_mode(self):
+        """Test skip schema mode."""
+        config = Config(
+            transport_type="http",
+            api_url="https://api.test.prefactor.ai",
+            api_token="test-token",
+            skip_schema=True,
+        )
+
+        assert config.http_config is not None
+        assert config.http_config.skip_schema is True
+        assert config.http_config.agent_schema is None
+        assert config.http_config.agent_schema_version is None
+
+    def test_schema_skip_mode_from_env(self, monkeypatch):
+        """Test skip schema mode from environment variable."""
+        monkeypatch.setenv("PREFACTOR_SKIP_SCHEMA", "true")
+
+        config = Config(
+            transport_type="http",
+            api_url="https://api.test.prefactor.ai",
+            api_token="test-token",
+        )
+
+        assert config.http_config is not None
+        assert config.http_config.skip_schema is True
+
+    def test_schema_custom_mode(self):
+        """Test custom schema mode."""
+        custom_schema = {
+            "external_identifier": "custom-v2",
+            "span_schemas": {"llm": {"type": "object"}},
+        }
+
+        config = Config(
+            transport_type="http",
+            api_url="https://api.test.prefactor.ai",
+            api_token="test-token",
+            agent_schema=custom_schema,
+        )
+
+        assert config.http_config is not None
+        assert config.http_config.agent_schema == custom_schema
+        assert config.http_config.skip_schema is False
+        assert config.http_config.agent_schema_version is None
+
+    def test_schema_custom_mode_from_env(self, monkeypatch):
+        """Test custom schema mode from environment variable."""
+        schema_json = '{"external_identifier": "v2", "span_schemas": {}}'
+        monkeypatch.setenv("PREFACTOR_AGENT_SCHEMA", schema_json)
+
+        config = Config(
+            transport_type="http",
+            api_url="https://api.test.prefactor.ai",
+            api_token="test-token",
+        )
+
+        assert config.http_config is not None
+        assert config.http_config.agent_schema is not None
+        assert config.http_config.agent_schema["external_identifier"] == "v2"
+
+    def test_schema_version_mode(self):
+        """Test schema version mode."""
+        config = Config(
+            transport_type="http",
+            api_url="https://api.test.prefactor.ai",
+            api_token="test-token",
+            agent_schema_version="2.0.0",
+        )
+
+        assert config.http_config is not None
+        assert config.http_config.agent_schema_version == "2.0.0"
+        assert config.http_config.skip_schema is False
+        assert config.http_config.agent_schema is None
+
+    def test_schema_version_mode_from_env(self, monkeypatch):
+        """Test schema version mode from environment variable."""
+        monkeypatch.setenv("PREFACTOR_AGENT_SCHEMA_VERSION", "3.0.0")
+
+        config = Config(
+            transport_type="http",
+            api_url="https://api.test.prefactor.ai",
+            api_token="test-token",
+        )
+
+        assert config.http_config is not None
+        assert config.http_config.agent_schema_version == "3.0.0"
+
+    def test_schema_mutual_exclusivity_skip_and_custom(self):
+        """Test that skip_schema and agent_schema are mutually exclusive."""
+        custom_schema = {
+            "external_identifier": "v2",
+            "span_schemas": {},
+        }
+
+        with pytest.raises(ValueError, match="Only one schema option"):
+            Config(
+                transport_type="http",
+                api_url="https://api.test.prefactor.ai",
+                api_token="test-token",
+                skip_schema=True,
+                agent_schema=custom_schema,
+            )
+
+    def test_schema_mutual_exclusivity_skip_and_version(self):
+        """Test that skip_schema and agent_schema_version are mutually exclusive."""
+        with pytest.raises(ValueError, match="Only one schema option"):
+            Config(
+                transport_type="http",
+                api_url="https://api.test.prefactor.ai",
+                api_token="test-token",
+                skip_schema=True,
+                agent_schema_version="2.0.0",
+            )
+
+    def test_schema_mutual_exclusivity_custom_and_version(self):
+        """Test that agent_schema and agent_schema_version are mutually exclusive."""
+        custom_schema = {
+            "external_identifier": "v2",
+            "span_schemas": {},
+        }
+
+        with pytest.raises(ValueError, match="Only one schema option"):
+            Config(
+                transport_type="http",
+                api_url="https://api.test.prefactor.ai",
+                api_token="test-token",
+                agent_schema=custom_schema,
+                agent_schema_version="2.0.0",
+            )
+
+    def test_schema_mutual_exclusivity_all_three(self):
+        """Test that all three schema options are mutually exclusive."""
+        custom_schema = {
+            "external_identifier": "v2",
+            "span_schemas": {},
+        }
+
+        with pytest.raises(ValueError, match="Only one schema option"):
+            Config(
+                transport_type="http",
+                api_url="https://api.test.prefactor.ai",
+                api_token="test-token",
+                skip_schema=True,
+                agent_schema=custom_schema,
+                agent_schema_version="2.0.0",
+            )
+
+    def test_schema_validation_missing_external_identifier(self):
+        """Test that agent_schema must have external_identifier."""
+        invalid_schema = {"span_schemas": {}}
+
+        with pytest.raises(ValueError, match="missing required keys"):
+            Config(
+                transport_type="http",
+                api_url="https://api.test.prefactor.ai",
+                api_token="test-token",
+                agent_schema=invalid_schema,
+            )
+
+    def test_schema_validation_missing_span_schemas(self):
+        """Test that agent_schema must have span_schemas."""
+        invalid_schema = {"external_identifier": "v2"}
+
+        with pytest.raises(ValueError, match="missing required keys"):
+            Config(
+                transport_type="http",
+                api_url="https://api.test.prefactor.ai",
+                api_token="test-token",
+                agent_schema=invalid_schema,
+            )
+
+    def test_schema_validation_wrong_type(self):
+        """Test that agent_schema must be a dict."""
+        with pytest.raises(ValueError, match="must be a dictionary"):
+            Config(
+                transport_type="http",
+                api_url="https://api.test.prefactor.ai",
+                api_token="test-token",
+                agent_schema="not-a-dict",  # type: ignore[arg-type]
+            )
+
+    def test_schema_validation_span_schemas_wrong_type(self):
+        """Test that span_schemas must be a dict."""
+        invalid_schema = {
+            "external_identifier": "v2",
+            "span_schemas": "not-a-dict",
+        }
+
+        with pytest.raises(ValueError, match="span_schemas.*must be a dictionary"):
+            Config(
+                transport_type="http",
+                api_url="https://api.test.prefactor.ai",
+                api_token="test-token",
+                agent_schema=invalid_schema,
+            )
+
+    def test_schema_validation_external_identifier_wrong_type(self):
+        """Test that external_identifier must be a string."""
+        invalid_schema = {
+            "external_identifier": 123,
+            "span_schemas": {},
+        }
+
+        with pytest.raises(ValueError, match="external_identifier.*must be a string"):
+            Config(
+                transport_type="http",
+                api_url="https://api.test.prefactor.ai",
+                api_token="test-token",
+                agent_schema=invalid_schema,
+            )
+
+    def test_schema_version_validation_empty_string(self, monkeypatch):
+        """Test that agent_schema_version cannot be empty."""
+        # Clear env vars that could interfere
+        monkeypatch.delenv("PREFACTOR_SKIP_SCHEMA", raising=False)
+        monkeypatch.delenv("PREFACTOR_AGENT_SCHEMA", raising=False)
+        monkeypatch.delenv("PREFACTOR_AGENT_SCHEMA_VERSION", raising=False)
+
+        with pytest.raises(ValueError, match="cannot be empty"):
+            Config(
+                transport_type="http",
+                api_url="https://api.test.prefactor.ai",
+                api_token="test-token",
+                agent_schema_version="",
+            )
+
+    def test_schema_version_validation_wrong_type(self):
+        """Test that agent_schema_version must be a string."""
+        with pytest.raises(ValueError, match="must be a string"):
+            Config(
+                transport_type="http",
+                api_url="https://api.test.prefactor.ai",
+                api_token="test-token",
+                agent_schema_version=123,  # type: ignore[arg-type]
+            )
+
+    def test_schema_invalid_json_from_env(self, monkeypatch):
+        """Test handling of invalid JSON in PREFACTOR_AGENT_SCHEMA."""
+        monkeypatch.setenv("PREFACTOR_AGENT_SCHEMA", "{invalid json}")
+
+        # Should not raise, just log warning and use default
+        config = Config(
+            transport_type="http",
+            api_url="https://api.test.prefactor.ai",
+            api_token="test-token",
+        )
+
+        assert config.http_config is not None
+        assert config.http_config.agent_schema is None  # Falls back to None
+
+    def test_schema_explicit_overrides_env(self, monkeypatch):
+        """Test that explicit schema params override environment variables."""
+        # Set env var for agent_schema_version
+        monkeypatch.setenv("PREFACTOR_AGENT_SCHEMA_VERSION", "env-version")
+        monkeypatch.delenv("PREFACTOR_SKIP_SCHEMA", raising=False)
+        monkeypatch.delenv("PREFACTOR_AGENT_SCHEMA", raising=False)
+
+        # Explicitly override with a different schema version
+        config = Config(
+            transport_type="http",
+            api_url="https://api.test.prefactor.ai",
+            api_token="test-token",
+            agent_schema_version="explicit-version",
+        )
+
+        assert config.http_config is not None
+        # Explicit param should override env var
+        assert config.http_config.agent_schema_version == "explicit-version"
+        assert config.http_config.skip_schema is False
+        assert config.http_config.agent_schema is None

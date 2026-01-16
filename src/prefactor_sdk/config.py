@@ -23,6 +23,11 @@ class HttpTransportConfig:
     agent_version: Optional[str] = None
     agent_name: Optional[str] = None
 
+    # Schema configuration (BYO schema support)
+    agent_schema: Optional[dict[str, Any]] = None  # Full custom schema
+    agent_schema_version: Optional[str] = None  # Schema version identifier only
+    skip_schema: bool = False  # Skip schema in registration
+
     # HTTP settings
     request_timeout: float = 30.0
     connect_timeout: float = 10.0
@@ -80,6 +85,9 @@ class Config:
         api_token: Optional[str] = None,
         agent_id: Optional[str] = None,
         agent_version: Optional[str] = None,
+        agent_schema: Optional[dict[str, Any]] = None,
+        agent_schema_version: Optional[str] = None,
+        skip_schema: Optional[bool] = None,
     ):
         """
         Initialize configuration.
@@ -95,6 +103,11 @@ class Config:
             api_token: API token for HTTP transport (env: PREFACTOR_API_TOKEN).
             agent_id: Agent ID (env: PREFACTOR_AGENT_ID).
             agent_version: Agent version (env: PREFACTOR_AGENT_VERSION).
+            agent_schema: Full custom schema dict
+                (env: PREFACTOR_AGENT_SCHEMA as JSON).
+            agent_schema_version: Schema version identifier
+                (env: PREFACTOR_AGENT_SCHEMA_VERSION).
+            skip_schema: Skip schema in registration (env: PREFACTOR_SKIP_SCHEMA).
         """
         # Load from environment variables or use defaults
         self.transport_type = transport_type or _get_env_or_default(
@@ -173,12 +186,98 @@ class Config:
                     "PREFACTOR_API_TOKEN environment variable"
                 )
 
+            # Parse schema configuration (with env var fallbacks)
+            final_skip_schema = (
+                skip_schema
+                if skip_schema is not None
+                else _get_env_or_default("PREFACTOR_SKIP_SCHEMA", False, _parse_bool)
+            )
+
+            final_schema_version = (
+                agent_schema_version
+                if agent_schema_version is not None
+                else os.getenv("PREFACTOR_AGENT_SCHEMA_VERSION")
+            )
+
+            # Parse agent_schema from env or param (with JSON parsing)
+            final_agent_schema = agent_schema
+            if final_agent_schema is None:
+                schema_json = os.getenv("PREFACTOR_AGENT_SCHEMA")
+                if schema_json:
+                    try:
+                        import json
+
+                        final_agent_schema = json.loads(schema_json)
+                    except (json.JSONDecodeError, ValueError) as e:
+                        logger.warning(
+                            f"Failed to parse PREFACTOR_AGENT_SCHEMA: {e}, "
+                            "using default schema"
+                        )
+                        final_agent_schema = None
+
             self.http_config = HttpTransportConfig(
                 api_url=final_api_url,
                 api_token=final_api_token,
                 agent_id=agent_id or os.getenv("PREFACTOR_AGENT_ID"),
                 agent_version=agent_version or os.getenv("PREFACTOR_AGENT_VERSION"),
+                agent_schema=final_agent_schema,
+                agent_schema_version=final_schema_version,
+                skip_schema=final_skip_schema,
             )
+
+            # Validate schema configuration (mutual exclusivity)
+            schema_options_set = sum(
+                [
+                    self.http_config.skip_schema,
+                    self.http_config.agent_schema is not None,
+                    self.http_config.agent_schema_version is not None,
+                ]
+            )
+
+            if schema_options_set > 1:
+                raise ValueError(
+                    "Only one schema option can be specified: "
+                    "skip_schema=True, agent_schema, or agent_schema_version. "
+                    f"Currently {schema_options_set} options are set."
+                )
+
+            # Validate agent_schema structure if provided
+            if self.http_config.agent_schema is not None:
+                schema = self.http_config.agent_schema
+
+                if not isinstance(schema, dict):
+                    raise ValueError(
+                        f"agent_schema must be a dictionary, "
+                        f"got {type(schema).__name__}"
+                    )
+
+                required_keys = {"external_identifier", "span_schemas"}
+                missing_keys = required_keys - set(schema.keys())
+                if missing_keys:
+                    raise ValueError(
+                        f"agent_schema missing required keys: {missing_keys}"
+                    )
+
+                if not isinstance(schema["span_schemas"], dict):
+                    raise ValueError(
+                        "agent_schema['span_schemas'] must be a dictionary"
+                    )
+
+                if not isinstance(schema["external_identifier"], str):
+                    raise ValueError(
+                        "agent_schema['external_identifier'] must be a string"
+                    )
+
+            # Validate agent_schema_version if provided
+            if self.http_config.agent_schema_version is not None:
+                if not isinstance(self.http_config.agent_schema_version, str):
+                    raise ValueError(
+                        "agent_schema_version must be a string, "
+                        f"got {type(self.http_config.agent_schema_version).__name__}"
+                    )
+
+                if not self.http_config.agent_schema_version.strip():
+                    raise ValueError("agent_schema_version cannot be empty")
 
     def __repr__(self) -> str:
         """Return string representation of config."""

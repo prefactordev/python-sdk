@@ -145,6 +145,94 @@ Capture settings:
 - `PREFACTOR_MAX_INPUT_LENGTH`: bytes (default: 10000)
 - `PREFACTOR_MAX_OUTPUT_LENGTH`: bytes (default: 10000)
 
+Schema configuration (HTTP transport only):
+- `PREFACTOR_SKIP_SCHEMA`: true/false - Skip schema in registration (default: false)
+- `PREFACTOR_AGENT_SCHEMA`: JSON string - Full custom schema definition
+- `PREFACTOR_AGENT_SCHEMA_VERSION`: string - Schema version identifier only
+
+## Schema Configuration
+
+The SDK supports flexible schema management for HTTP transport with four modes:
+
+### Default Mode (Backward Compatible)
+
+Uses the hardcoded v1.0.0 schema automatically. No configuration needed.
+
+```python
+config = Config(
+    transport_type="http",
+    api_url="https://api.prefactor.ai",
+    api_token="token"
+)
+middleware = prefactor_sdk.init(config)
+```
+
+### Skip Mode (Pre-Registered Schemas)
+
+Omit schema from registration when using a pre-registered schema on the backend:
+
+```python
+config = Config(
+    transport_type="http",
+    api_url="https://api.prefactor.ai",
+    api_token="token",
+    skip_schema=True
+)
+middleware = prefactor_sdk.init(config)
+
+# Or via environment variable:
+# export PREFACTOR_SKIP_SCHEMA=true
+```
+
+### Custom Schema Mode
+
+Provide a full custom schema definition:
+
+```python
+custom_schema = {
+    "external_identifier": "my-schema-v2",
+    "span_schemas": {
+        "llm": {
+            "type": "object",
+            "properties": {
+                "model": {"type": "string"},
+                "temperature": {"type": "number"}
+            }
+        }
+    }
+}
+
+config = Config(
+    transport_type="http",
+    api_url="https://api.prefactor.ai",
+    api_token="token",
+    agent_schema=custom_schema
+)
+middleware = prefactor_sdk.init(config)
+
+# Or via environment variable (JSON string):
+# export PREFACTOR_AGENT_SCHEMA='{"external_identifier": "v2", "span_schemas": {...}}'
+```
+
+### Schema Version Mode
+
+Reference a pre-registered schema by version identifier:
+
+```python
+config = Config(
+    transport_type="http",
+    api_url="https://api.prefactor.ai",
+    api_token="token",
+    agent_schema_version="2.0.0"
+)
+middleware = prefactor_sdk.init(config)
+
+# Or via environment variable:
+# export PREFACTOR_AGENT_SCHEMA_VERSION="2.0.0"
+```
+
+**Important**: Only one schema option can be specified at a time (`skip_schema`, `agent_schema`, or `agent_schema_version`). Setting multiple options will raise a `ValueError` with a clear error message.
+
 ## Common Patterns
 
 ### Adding New Span Types
