@@ -2,8 +2,10 @@
 
 import time
 import traceback
-import uuid
 from typing import Any, Optional
+
+import pfid
+from pfid import Partition
 
 from prefactor_sdk.tracing.span import ErrorInfo, Span, SpanStatus, SpanType, TokenUsage
 from prefactor_sdk.transport.base import Transport
@@ -15,14 +17,21 @@ logger = get_logger("tracing.tracer")
 class Tracer:
     """Manages span lifecycle and delegates to transport."""
 
-    def __init__(self, transport: Transport):
+    _partition: Partition
+
+    def __init__(self, transport: Transport, partition: Optional[Partition] = None):
         """
         Initialize the tracer.
 
         Args:
             transport: The transport to use for emitting spans.
+            partition: The partition for ID generation.
+                If not provided, a random partition will be generated.
         """
         self._transport = transport
+        self._partition = (
+            partition if partition is not None else pfid.generate_partition()
+        )
 
     def start_span(
         self,
@@ -49,11 +58,11 @@ class Tracer:
         Returns:
             The created span.
         """
-        span_id = str(uuid.uuid4())
+        span_id = pfid.generate(self._partition)
 
         # Use provided trace_id or generate a new one
         if trace_id is None:
-            trace_id = str(uuid.uuid4())
+            trace_id = pfid.generate(self._partition)
 
         span = Span(
             span_id=span_id,

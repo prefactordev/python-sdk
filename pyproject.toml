@@ -8,6 +8,7 @@ dependencies = [
     "langchain-core>=1.0.0",  # Stable callback system
     "orjson>=3.9.0",          # Fast JSON serialization
     "aiohttp>=3.9.0",         # HTTP client for async transport
+    "pfid>=0.1.0",            # Prefactor ID generation
 ]
 
 [project.optional-dependencies]

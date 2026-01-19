@@ -3,6 +3,9 @@
 import time
 from unittest.mock import Mock
 
+import pfid
+from pfid import Partition
+
 from prefactor_sdk.tracing.context import SpanContext
 from prefactor_sdk.tracing.span import SpanStatus, SpanType
 from prefactor_sdk.tracing.tracer import Tracer
@@ -290,3 +293,72 @@ class TestTracer:
 
         # They should have different trace IDs
         assert trace1_root.trace_id != trace2_root.trace_id
+
+    def test_span_ids_are_valid_pfids(self):
+        """Test that span IDs are valid PFIDs."""
+        transport = MockTransport()
+        tracer = Tracer(transport=transport)
+
+        span = tracer.start_span(
+            name="test_span",
+            span_type=SpanType.LLM,
+            inputs={},
+        )
+
+        # Both span_id and trace_id should be valid PFIDs
+        assert pfid.is_pfid(span.span_id)
+        assert pfid.is_pfid(span.trace_id)
+
+    def test_tracer_uses_provided_partition(self):
+        """Test that tracer uses the provided partition for ID generation."""
+        transport = MockTransport()
+        partition = Partition(12345)
+        tracer = Tracer(transport=transport, partition=partition)
+
+        span = tracer.start_span(
+            name="test_span",
+            span_type=SpanType.LLM,
+            inputs={},
+        )
+
+        # Verify IDs use the correct partition
+        assert pfid.extract_partition(span.span_id) == partition
+        assert pfid.extract_partition(span.trace_id) == partition
+
+    def test_tracer_generates_partition_when_none_provided(self):
+        """Test that tracer generates a partition when none is provided."""
+        transport = MockTransport()
+        tracer = Tracer(transport=transport)
+
+        span = tracer.start_span(
+            name="test_span",
+            span_type=SpanType.LLM,
+            inputs={},
+        )
+
+        # IDs should still be valid PFIDs
+        assert pfid.is_pfid(span.span_id)
+        assert pfid.is_pfid(span.trace_id)
+
+        # Extract partition should work (returns an int)
+        partition = pfid.extract_partition(span.span_id)
+        assert isinstance(partition, int)
+
+    def test_multiple_spans_use_same_partition(self):
+        """Test that all spans from same tracer use the same partition."""
+        transport = MockTransport()
+        partition = Partition(99999)
+        tracer = Tracer(transport=transport, partition=partition)
+
+        spans = []
+        for i in range(5):
+            span = tracer.start_span(
+                name=f"span_{i}",
+                span_type=SpanType.LLM,
+                inputs={},
+            )
+            spans.append(span)
+
+        # All spans should use the same partition
+        for span in spans:
+            assert pfid.extract_partition(span.span_id) == partition

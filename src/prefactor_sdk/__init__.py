@@ -3,6 +3,8 @@
 import atexit
 from typing import Optional
 
+import pfid
+
 from prefactor_sdk.config import Config
 from prefactor_sdk.instrumentation.langchain.callback_handler import (
     PrefactorCallbackHandler,
@@ -81,7 +83,11 @@ def init(config: Optional[Config] = None) -> PrefactorMiddleware:
 
     # Create tracer if not already created
     if _global_tracer is None:
-        _global_tracer = Tracer(transport=transport)
+        # Extract partition from agent_id if provided (for HTTP transport)
+        partition = None
+        if config.http_config is not None and config.http_config.agent_id is not None:
+            partition = pfid.extract_partition(config.http_config.agent_id)
+        _global_tracer = Tracer(transport=transport, partition=partition)
         logger.debug("Created global tracer")
 
     # Create middleware
@@ -148,7 +154,11 @@ def init_callback(config: Optional[Config] = None) -> PrefactorCallbackHandler:
 
     # Create tracer if not already created (share with middleware if both are used)
     if _global_tracer is None:
-        _global_tracer = Tracer(transport=transport)
+        # Extract partition from agent_id if provided (for HTTP transport)
+        partition = None
+        if config.http_config is not None and config.http_config.agent_id is not None:
+            partition = pfid.extract_partition(config.http_config.agent_id)
+        _global_tracer = Tracer(transport=transport, partition=partition)
         logger.debug("Created global tracer")
 
     # Create callback handler
