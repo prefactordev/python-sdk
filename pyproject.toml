@@ -48,13 +48,13 @@ skip-magic-trailing-comma = false
 # These warnings occur when accessing attributes on potentially-None values,
 # but in tests we're often asserting that values are not None by accessing them
 [[tool.ty.overrides]]
-include = ["tests/**", "packages/*/tests/**"]
+include = ["packages/*/tests/**"]
 
 [tool.ty.overrides.rules]
 possibly-missing-attribute = "ignore"
 
 [tool.pytest.ini_options]
-testpaths = ["tests", "packages/core/tests", "packages/langchain/tests"]
+testpaths = ["packages/core/tests", "packages/langchain/tests", "packages/sdk/tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]

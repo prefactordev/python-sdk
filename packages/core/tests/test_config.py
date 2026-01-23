@@ -1,7 +1,7 @@
 """Tests for configuration."""
 
 import pytest
-from prefactor_sdk import Config
+from prefactor_core import Config
 
 
 class TestConfig:
