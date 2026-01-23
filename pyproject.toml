@@ -1,34 +1,30 @@
 [project]
-name = "prefactor-sdk"
-version = "0.1.0"
-description = "Prefactor SDK for LangChain Observability"
-readme = "README.md"
+name = "prefactor-workspace"
+version = "0.0.0"
 requires-python = ">=3.12"
-dependencies = [
-    "langchain-core>=1.0.0",  # Stable callback system
-    "orjson>=3.9.0",          # Fast JSON serialization
-    "aiohttp>=3.9.0",         # HTTP client for async transport
-    "pfid>=0.1.0",            # Prefactor ID generation
-]
 
-[project.optional-dependencies]
+[tool.uv.workspace]
+members = ["packages/*"]
+
+[tool.uv.sources]
+prefactor-core = { workspace = true }
+prefactor-langchain = { workspace = true }
+prefactor-sdk = { workspace = true }
+
+[dependency-groups]
 dev = [
-    "langchain>=1.0.0",            # For integration testing (includes create_agent)
-    "langchain-openai>=0.3.0",     # For LLM testing (returns AIMessage in v1.0)
-    "langchain-anthropic>=0.4.0",  # For Anthropic/Claude integration
+    "langchain>=1.0.0",
+    "langchain-openai>=0.3.0",
+    "langchain-anthropic>=0.4.0",
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
-    "aioresponses>=0.7.6",         # For mocking aiohttp in tests
-    "ty>=0.0.11",                  # Fast type checker
-    "ruff>=0.8.0",                 # Linter and formatter
+    "aioresponses>=0.7.6",
+    "ty>=0.0.11",
+    "ruff>=0.8.0",
+    "prefactor-core",
+    "prefactor-langchain",
+    "prefactor-sdk",
 ]
-
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
-[tool.hatch.build.targets.wheel]
-packages = ["src/prefactor_sdk"]
 
 [tool.ruff]
 line-length = 88
@@ -48,16 +44,25 @@ skip-magic-trailing-comma = false
 [tool.ty]
 # ty is designed to work out of the box with minimal configuration
 
+# Ignore possibly-missing-attribute warnings in test files
+# These warnings occur when accessing attributes on potentially-None values,
+# but in tests we're often asserting that values are not None by accessing them
+[[tool.ty.overrides]]
+include = ["packages/*/tests/**"]
+
+[tool.ty.overrides.rules]
+possibly-missing-attribute = "ignore"
+
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["packages/core/tests", "packages/langchain/tests", "packages/sdk/tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 addopts = [
-    "-ra",                    # Show summary of all test outcomes
-    "--strict-markers",       # Raise error on unknown markers
-    "--strict-config",        # Raise error on config issues
-    "-v",                     # Verbose output
+    "-ra",
+    "--strict-markers",
+    "--strict-config",
+    "-v",
 ]

@@ -1,0 +1,17 @@
+[project]
+name = "prefactor-langchain"
+version = "0.2.0"
+description = "LangChain integration for Prefactor observability"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "prefactor-core>=0.2.0",
+    "langchain-core>=1.0.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/prefactor_langchain"]
