@@ -9,10 +9,9 @@ captures LLM calls, tool executions, and chain operations.
 import os
 from datetime import datetime
 
+import prefactor_sdk
 from langchain.agents import create_agent
 from langchain_core.tools import tool
-
-import prefactor_sdk
 
 
 # Define simple tools for the agent

@@ -4,11 +4,10 @@ import json
 from io import StringIO
 from unittest.mock import patch
 
+import prefactor_sdk
 import pytest
 from langchain_core.messages import HumanMessage
 from langchain_openai import ChatOpenAI
-
-import prefactor_sdk
 from prefactor_sdk import init_callback
 
 
