@@ -1,27 +1,12 @@
 """Tests for Tracer class."""
 
 import time
-from unittest.mock import Mock
 
 import pfid
 from pfid import Partition
 from prefactor_core.tracing.context import SpanContext
 from prefactor_core.tracing.span import SpanStatus, SpanType
 from prefactor_core.tracing.tracer import Tracer
-from prefactor_core.transport.base import Transport
-
-
-class MockTransport(Transport):
-    """Mock transport for testing."""
-
-    def __init__(self):
-        self.emitted_spans = []
-
-    def emit(self, span):
-        self.emitted_spans.append(span)
-
-    def close(self):
-        pass
 
 
 class TestTracer:
@@ -29,8 +14,7 @@ class TestTracer:
 
     def test_start_span_minimal(self):
         """Test starting a minimal span."""
-        transport = MockTransport()
-        tracer = Tracer(transport=transport)
+        tracer = Tracer()
 
         span = tracer.start_span(
             name="test_span",
@@ -50,8 +34,7 @@ class TestTracer:
 
     def test_start_span_with_parent(self):
         """Test starting a span with a parent."""
-        transport = MockTransport()
-        tracer = Tracer(transport=transport)
+        tracer = Tracer()
 
         parent = tracer.start_span(
             name="parent_span",
@@ -72,8 +55,7 @@ class TestTracer:
 
     def test_end_span_success(self):
         """Test ending a span successfully."""
-        transport = MockTransport()
-        tracer = Tracer(transport=transport)
+        tracer = Tracer()
 
         span = tracer.start_span(
             name="test_span",
@@ -96,14 +78,9 @@ class TestTracer:
         assert span.end_time is not None
         assert span.end_time > start_time
 
-        # Should have emitted the span
-        assert len(transport.emitted_spans) == 1
-        assert transport.emitted_spans[0] is span
-
     def test_end_span_with_error(self):
         """Test ending a span with an error."""
-        transport = MockTransport()
-        tracer = Tracer(transport=transport)
+        tracer = Tracer()
 
         span = tracer.start_span(
             name="test_span",
@@ -124,14 +101,10 @@ class TestTracer:
         assert span.error.message == "Test error"
         assert span.error.stacktrace is not None
 
-        # Should have emitted the span
-        assert len(transport.emitted_spans) == 1
-
     def test_context_integration(self):
         """Test integration with SpanContext."""
         SpanContext.clear()
-        transport = MockTransport()
-        tracer = Tracer(transport=transport)
+        tracer = Tracer()
 
         # Start a parent span and set it in context
         parent = tracer.start_span(
@@ -166,8 +139,7 @@ class TestTracer:
 
     def test_multiple_spans_same_trace(self):
         """Test multiple spans in the same trace."""
-        transport = MockTransport()
-        tracer = Tracer(transport=transport)
+        tracer = Tracer()
 
         parent = tracer.start_span(
             name="parent",
@@ -202,8 +174,7 @@ class TestTracer:
 
     def test_span_with_metadata_and_tags(self):
         """Test creating a span with metadata and tags."""
-        transport = MockTransport()
-        tracer = Tracer(transport=transport)
+        tracer = Tracer()
 
         span = tracer.start_span(
             name="test_span",
@@ -220,8 +191,7 @@ class TestTracer:
         """Test ending a span with token usage."""
         from prefactor_core.tracing.span import TokenUsage
 
-        transport = MockTransport()
-        tracer = Tracer(transport=transport)
+        tracer = Tracer()
 
         span = tracer.start_span(
             name="test_span",
@@ -246,18 +216,12 @@ class TestTracer:
 
     def test_tracer_close(self):
         """Test closing the tracer."""
-        transport = Mock(spec=Transport)
-        tracer = Tracer(transport=transport)
-
-        tracer.close()
-
-        # Should call transport.close()
-        transport.close.assert_called_once()
+        tracer = Tracer()
+        tracer.close()  # Should not raise
 
     def test_span_ids_are_unique(self):
         """Test that span IDs are unique."""
-        transport = MockTransport()
-        tracer = Tracer(transport=transport)
+        tracer = Tracer()
 
         spans = []
         for i in range(100):
@@ -274,8 +238,7 @@ class TestTracer:
 
     def test_nested_spans_different_traces(self):
         """Test that spans can have different traces."""
-        transport = MockTransport()
-        tracer = Tracer(transport=transport)
+        tracer = Tracer()
 
         # Create two independent traces
         trace1_root = tracer.start_span(
@@ -295,8 +258,7 @@ class TestTracer:
 
     def test_span_ids_are_valid_pfids(self):
         """Test that span IDs are valid PFIDs."""
-        transport = MockTransport()
-        tracer = Tracer(transport=transport)
+        tracer = Tracer()
 
         span = tracer.start_span(
             name="test_span",
@@ -310,9 +272,8 @@ class TestTracer:
 
     def test_tracer_uses_provided_partition(self):
         """Test that tracer uses the provided partition for ID generation."""
-        transport = MockTransport()
         partition = Partition(12345)
-        tracer = Tracer(transport=transport, partition=partition)
+        tracer = Tracer(partition=partition)
 
         span = tracer.start_span(
             name="test_span",
@@ -326,8 +287,7 @@ class TestTracer:
 
     def test_tracer_generates_partition_when_none_provided(self):
         """Test that tracer generates a partition when none is provided."""
-        transport = MockTransport()
-        tracer = Tracer(transport=transport)
+        tracer = Tracer()
 
         span = tracer.start_span(
             name="test_span",
@@ -345,9 +305,8 @@ class TestTracer:
 
     def test_multiple_spans_use_same_partition(self):
         """Test that all spans from same tracer use the same partition."""
-        transport = MockTransport()
         partition = Partition(99999)
-        tracer = Tracer(transport=transport, partition=partition)
+        tracer = Tracer(partition=partition)
 
         spans = []
         for i in range(5):

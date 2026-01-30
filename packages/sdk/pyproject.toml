@@ -5,7 +5,8 @@ description = "Prefactor SDK - Automatic observability for LangChain agents"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "prefactor-core>=0.2.0",
+    "prefactor-core>=0.3.0",
+    "prefactor-http>=0.1.0",
     "prefactor-langchain>=0.2.0",
 ]
 

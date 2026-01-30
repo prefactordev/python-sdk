@@ -16,6 +16,8 @@ from prefactor_http.exceptions import (
 from prefactor_http.retry import RetryHandler
 
 if TYPE_CHECKING:
+    from prefactor_http.endpoints.agent_instance import AgentInstanceClient
+    from prefactor_http.endpoints.agent_span import AgentSpanClient
     from prefactor_http.endpoints.bulk import BulkClient
 
 
@@ -27,7 +29,8 @@ class PrefactorHttpClient:
 
     Usage:
         async with PrefactorHttpClient(config) as client:
-            instance = await client.agent_instances.get("instance_id")
+            instance = await client.agent_instances.register(...)
+            span = await client.agent_spans.create(...)
     """
 
     def __init__(self, config: HttpClientConfig):
@@ -41,6 +44,8 @@ class PrefactorHttpClient:
         self._retry_handler = RetryHandler(config)
         # Import here to avoid circular import during __init__.py loading
         self._bulk: BulkClient | None = None
+        self._agent_instances: AgentInstanceClient | None = None
+        self._agent_spans: AgentSpanClient | None = None
 
     async def __aenter__(self) -> "PrefactorHttpClient":
         """Async context manager entry."""
@@ -59,6 +64,45 @@ class PrefactorHttpClient:
                 connect=self.config.connect_timeout,
             )
             self._session = aiohttp.ClientSession(timeout=timeout)
+
+    @property
+    def agent_instances(self) -> "AgentInstanceClient":
+        """Access the agent instance endpoint client.
+
+        Provides methods to interact with agent instances:
+        - register: Create a new agent instance
+        - start: Mark an instance as started
+        - finish: Mark an instance as finished
+
+        Example:
+            instance = await client.agent_instances.register(agent_id, agent_version)
+        """
+        if self._agent_instances is None:
+            # Import here to avoid circular import
+            from prefactor_http.endpoints.agent_instance import AgentInstanceClient
+
+            self._agent_instances = AgentInstanceClient(self)
+        return self._agent_instances
+
+    @property
+    def agent_spans(self) -> "AgentSpanClient":
+        """Access the agent span endpoint client.
+
+        Provides methods to interact with agent spans:
+        - create: Create a new agent span
+        - finish: Mark a span as finished
+
+        Example:
+            span = await client.agent_spans.create(
+                agent_instance_id, schema_name, payload
+            )
+        """
+        if self._agent_spans is None:
+            # Import here to avoid circular import
+            from prefactor_http.endpoints.agent_span import AgentSpanClient
+
+            self._agent_spans = AgentSpanClient(self)
+        return self._agent_spans
 
     @property
     def bulk(self) -> "BulkClient":

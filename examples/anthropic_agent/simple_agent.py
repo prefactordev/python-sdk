@@ -45,15 +45,10 @@ def main():
     print("=" * 80)
     print()
 
-    print("Configure Prefactor SDK...")
-    config = prefactor_sdk.Config(
-        transport_type="http",
-    )
-
     # Initialize Prefactor SDK (Middleware API)
+    # Uses environment variables PREFACTOR_API_URL and PREFACTOR_API_TOKEN
     print("Initializing Prefactor SDK...")
-    # middleware = prefactor_sdk.init()
-    middleware = prefactor_sdk.init(config)
+    middleware = prefactor_sdk.init()
     print("✓ Prefactor middleware initialized")
     print()
 

@@ -26,12 +26,12 @@ class SpanContext:
         return _current_span.get()
 
     @staticmethod
-    def set_current(span: Span) -> None:
+    def set_current(span: Span | None) -> None:
         """
         Set the current span in the context.
 
         Args:
-            span: The span to set as current.
+            span: The span to set as current, or None to clear.
         """
         _current_span.set(span)
 

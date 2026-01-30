@@ -14,27 +14,28 @@ from prefactor_core.tracing.span import (
     SpanType,
     TokenUsage,
 )
-from prefactor_core.transport.base import Transport
 from prefactor_core.utils.logging import get_logger
 
 logger = get_logger("tracing.tracer")
 
 
 class Tracer:
-    """Manages span lifecycle and delegates to transport."""
+    """Manages span lifecycle and span context.
+
+    Note: This is a thin wrapper around span creation. HTTP transport
+    and dispatch to the backend is handled by prefactor-sdk.
+    """
 
     _partition: Partition
 
-    def __init__(self, transport: Transport, partition: Optional[Partition] = None):
+    def __init__(self, partition: Optional[Partition] = None):
         """
         Initialize the tracer.
 
         Args:
-            transport: The transport to use for emitting spans.
             partition: The partition for ID generation.
                 If not provided, a random partition will be generated.
         """
-        self._transport = transport
         self._partition = (
             partition if partition is not None else pfid.generate_partition()
         )
@@ -89,14 +90,6 @@ class Tracer:
 
         logger.debug(f"Started span: {span_id} ({name})")
 
-        # For agent spans, emit immediately so they show as "active" in real-time
-        if span_type == SpanType.AGENT:
-            try:
-                self._transport.emit(span)
-                logger.debug(f"Emitted active agent span: {span_id}")
-            except Exception as e:
-                logger.error(f"Failed to emit active span: {e}", exc_info=True)
-
         return span
 
     def end_span(
@@ -107,7 +100,10 @@ class Tracer:
         token_usage: Optional[TokenUsage] = None,
     ) -> None:
         """
-        End a span and emit it to the transport.
+        End a span.
+
+        Note: The span is not automatically sent to the backend.
+        Dispatch must be handled by the caller (prefactor-sdk).
 
         Args:
             span: The span to end.
@@ -131,36 +127,6 @@ class Tracer:
 
         logger.debug(f"Ended span: {span.span_id} ({span.name}) - {span.status}")
 
-        # For agent spans, call finish API (they were already emitted when started)
-        # For other spans, emit the complete span
-        try:
-            if span.span_type == SpanType.AGENT:
-                self._transport.finish_span(span.span_id, span.end_time)
-            else:
-                self._transport.emit(span)
-        except Exception as e:
-            logger.error(f"Failed to emit/finish span: {e}", exc_info=True)
-
-    def start_agent_instance(self) -> None:
-        """Mark the agent instance as started."""
-        logger.debug("Starting agent instance")
-        try:
-            self._transport.start_agent_instance()
-        except Exception as e:
-            logger.error(f"Failed to start agent instance: {e}", exc_info=True)
-
-    def finish_agent_instance(self) -> None:
-        """Mark the agent instance as finished."""
-        logger.debug("Finishing agent instance")
-        try:
-            self._transport.finish_agent_instance()
-        except Exception as e:
-            logger.error(f"Failed to finish agent instance: {e}", exc_info=True)
-
     def close(self) -> None:
         """Close the tracer and cleanup resources."""
         logger.debug("Closing tracer")
-        try:
-            self._transport.close()
-        except Exception as e:
-            logger.error(f"Failed to close transport: {e}", exc_info=True)

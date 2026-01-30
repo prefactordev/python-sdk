@@ -1,0 +1,7 @@
+/home/josh/Work/prefactor/python-sdk/.devenv/flake.json
+/home/josh/Work/prefactor/python-sdk/.devenv.flake.nix
+/home/josh/Work/prefactor/python-sdk/.env
+/home/josh/Work/prefactor/python-sdk/devenv.local.nix
+/home/josh/Work/prefactor/python-sdk/devenv.lock
+/home/josh/Work/prefactor/python-sdk/devenv.nix
+/home/josh/Work/prefactor/python-sdk/devenv.yaml
