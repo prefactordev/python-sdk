@@ -1,0 +1,43 @@
+min_version = "2024.9.5"
+
+[env]
+_.python.venv = { path = ".venv", create = true }
+_.file = [".env"]
+
+[tools]
+python = "3.13"
+uv = "latest"
+ruff = "latest"
+jq = "latest"
+lefthook = "latest"
+
+[tasks.install]
+description = "Install all dependencies"
+run = "uv sync --all-extras"
+
+[tasks.test]
+description = "Run pytest"
+run = "uv run pytest"
+
+[tasks.lint]
+run = "ruff check --fix ."
+
+[tasks.format]
+run = "ruff format ."
+
+[tasks.typecheck]
+run = "uvx ty check ."
+
+[tasks.check]
+description = "Run all quality checks"
+depends = ["format", "lint", "typecheck"]
+
+[tasks.setup]
+description = "Initial project setup"
+run = """
+uv sync --all-extras
+lefthook install
+"""
+
+[hooks]
+enter = "uv sync --all-extras --quiet"
