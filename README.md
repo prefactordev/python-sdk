@@ -30,81 +30,150 @@ result = agent.invoke({"messages": [{"role": "user", "content": "Hello!"}]})
 
 ## Features
 
-- ✅ Automatic tracing of LLM calls with token usage
-- ✅ Tool execution tracking
-- ✅ Agent workflow visualization
-- ✅ Parent-child span relationships
-- ✅ Error tracking and debugging
-- ✅ Zero-overhead instrumentation
+- Automatic tracing of LLM calls with token usage
+- Tool execution tracking
+- Agent workflow visualization
+- Parent-child span relationships
+- Error tracking and debugging
+- Zero-overhead instrumentation
 
-## Python Development Setup
+## Development Setup
 
-This project uses modern Python tooling for maximum developer productivity:
+This project uses [mise](https://mise.jdx.dev) for reproducible development environments with the following tools:
 
-- **Python 3.12** with **uv** as the package manager
+- **Python 3.13** with **uv** as the package manager
 - **ty** for blazing-fast type checking (10-100x faster than mypy/pyright)
 - **ruff** for linting and formatting (replaces Black, isort, Flake8, etc.)
-- **devenv** for reproducible development environments
-- **Claude Code hooks** (managed via devenv.nix)
+- **lefthook** for git pre-commit hooks
+
+### Prerequisites
+
+Install mise using one of these methods:
+
+```bash
+# macOS (Homebrew)
+brew install mise
+
+# Linux/macOS (curl)
+curl https://mise.run | sh
+
+# Other methods: https://mise.jdx.dev/getting-started.html
+```
+
+After installation, activate mise in your shell:
+
+```bash
+# For bash (add to ~/.bashrc)
+eval "$(mise activate bash)"
+
+# For zsh (add to ~/.zshrc)
+eval "$(mise activate zsh)"
+
+# For fish (add to ~/.config/fish/config.fish)
+mise activate fish | source
+```
+
+Alternatively, if you use [direnv](https://direnv.net/), mise will activate automatically when you enter the project directory.
 
 ### Getting Started
 
-1. Enter the development shell:
+1. Clone the repository:
    ```bash
-   devenv shell
+   git clone https://github.com/prefactordev/python-sdk.git
+   cd python-sdk
    ```
 
-2. The environment will automatically:
-   - Set up Python (using system default, currently 3.13)
-   - Create a virtual environment (venv)
-   - Install dependencies via `uv sync`
-   - Configure git pre-commit hooks (when git is initialized)
-   - Generate `.mcp.json` for Claude Code integration
+2. Install project tools (Python, uv, ruff, etc.):
+   ```bash
+   mise install
+   ```
 
-3. Dependencies are automatically installed on shell entry via `uv sync`. The dev dependencies include ty and ruff for type checking and linting.
+3. Set up the project (install dependencies and git hooks):
+   ```bash
+   mise run setup
+   ```
 
-### Quality Checks
+   This will:
+   - Create a virtual environment at `.venv`
+   - Install all dependencies via `uv sync --all-extras`
+   - Install git pre-commit hooks via lefthook
 
-#### Automatic (via Claude Code hooks)
-- Python files are automatically formatted with `ruff format` after editing
-- Files are automatically linted with `ruff check --fix` after editing
-- Type checking runs automatically before git commits
+4. You're ready to develop! The virtual environment activates automatically when you enter the directory.
 
-**How it works**: Hooks are configured in `devenv.nix` under `claude.code.hooks`. Devenv automatically generates the `.mcp.json` configuration file that Claude Code reads.
+### Common Tasks
 
-#### Manual
 ```bash
-# Format code
-ruff format .
+# Run tests
+mise run test
 
-# Lint and fix issues
-ruff check --fix .
+# Run all quality checks (format, lint, typecheck)
+mise run check
 
-# Type check
-uvx ty check .
+# Individual checks
+mise run format     # Format code with ruff
+mise run lint       # Lint code with ruff
+mise run typecheck  # Type check with ty
 
-# Run all checks
-ruff format . && ruff check --fix . && uvx ty check .
+# Install/update dependencies
+mise run install
+```
+
+### Running Tests
+
+```bash
+# Run all tests
+pytest
+
+# Run specific test file
+pytest packages/core/tests/test_config.py
+
+# Run with verbose output
+pytest -v
+
+# Run specific test
+pytest packages/core/tests/test_config.py::TestConfig::test_config_defaults -v
 ```
 
 ### Pre-commit Hooks
 
-Git pre-commit hooks are automatically configured via devenv. They run:
-1. `ruff format` - Format Python code
-2. `ruff check --fix` - Lint and auto-fix issues
-3. `uvx ty check` - Type check the codebase
+Git pre-commit hooks run automatically on each commit via lefthook:
 
-### Tools Overview
+1. `ruff format` - Format staged Python files
+2. `ruff check --fix` - Lint and auto-fix staged Python files
+3. `uvx ty check` - Type check the entire codebase
 
-- **uv**: Fast Python package manager (https://github.com/astral-sh/uv)
-- **ty**: Fast Python type checker (https://github.com/astral-sh/ty)
-- **ruff**: Fast Python linter and formatter (https://github.com/astral-sh/ruff)
-- **devenv**: Declarative dev environments with Claude Code integration (https://devenv.sh)
+To run hooks manually:
+```bash
+lefthook run pre-commit
+```
 
-### Hook Configuration
+### Project Structure
 
-All hooks are defined in `devenv.nix` under `claude.code.hooks`:
-- **PostToolUse**: Runs after Edit/Write operations on .py files
-- **PreToolUse**: Runs before Bash commands containing "git commit"
+```
+python-sdk/
+├── packages/
+│   ├── core/           # Core tracing and transport
+│   ├── langchain/      # LangChain instrumentation
+│   └── sdk/            # Public SDK interface
+├── examples/           # Usage examples
+├── mise.toml           # mise configuration
+├── lefthook.yml        # Git hooks configuration
+└── pyproject.toml      # Python project configuration
+```
 
-This configuration is automatically synced to `.mcp.json` by devenv, eliminating the need for manual `.claude/settings.local.json` management.
+### Tools Reference
+
+| Tool | Purpose | Documentation |
+|------|---------|---------------|
+| [mise](https://mise.jdx.dev) | Tool version manager | Manages Python, uv, ruff, etc. |
+| [uv](https://github.com/astral-sh/uv) | Python package manager | Fast dependency resolution |
+| [ruff](https://github.com/astral-sh/ruff) | Linter and formatter | Replaces Black, isort, Flake8 |
+| [ty](https://github.com/astral-sh/ty) | Type checker | 10-100x faster than mypy |
+| [lefthook](https://github.com/evilmartians/lefthook) | Git hooks manager | Runs pre-commit checks |
+
+### Claude Code Integration
+
+If you use [Claude Code](https://claude.ai/code), hooks are configured in `.claude/settings.json`:
+
+- **PostToolUse**: Automatically formats and lints Python files after editing
+- **PreToolUse**: Runs type checking before git commits
