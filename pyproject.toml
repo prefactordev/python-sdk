@@ -54,7 +54,7 @@ include = ["packages/*/tests/**"]
 possibly-missing-attribute = "ignore"
 
 [tool.pytest.ini_options]
-testpaths = ["packages/core/tests", "packages/langchain/tests", "packages/sdk/tests"]
+testpaths = ["packages/core/tests", "packages/http/tests", "packages/langchain/tests", "packages/sdk/tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
