@@ -1,1 +1,26 @@
-/nix/store/klvfsd6r03szi1g6pbs4n44vndpl3ilc-claude-settings.json
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "^(Edit|Write)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "FILE_PATH=$(echo \"$HOOK_INPUT\" | jq -r '.tool_input.file_path // empty')\nif [[ \"$FILE_PATH\" == *.py ]]; then\n  cd \"$CLAUDE_PROJECT_DIR\"\n  ruff format \"$FILE_PATH\"\n  ruff check --fix \"$FILE_PATH\"\n  echo \"Formatted and linted: $FILE_PATH\"\nfi"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "^Bash$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "BASH_CMD=$(echo \"$HOOK_INPUT\" | jq -r '.tool_input.command // empty')\nif [[ \"$BASH_CMD\" == *\"git commit\"* ]]; then\n  cd \"$CLAUDE_PROJECT_DIR\"\n  echo \"Running type check before commit...\"\n  uvx ty check .\n  echo \"Type check passed\"\nfi"
+          }
+        ]
+      }
+    ]
+  }
+}

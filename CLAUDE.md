@@ -11,25 +11,23 @@ Prefactor SDK provides automatic observability for LangChain agents. It captures
 
 ## Development Environment
 
-This project uses **devenv** for reproducible development environments. All commands should be run inside the devenv shell:
+This project uses **mise** for reproducible development environments. On first setup:
 
-    $ devenv shell
+    $ mise install
+    $ mise run setup
 
-The shell automatically:
-- Sets up Python 3.13 with a virtual environment
-- Installs dependencies via `uv sync` (automatically on shell entry)
-- Configures git pre-commit hooks
-- Generates `.mcp.json` for Claude Code integration
+The environment automatically:
+- Sets up Python 3.13 with a virtual environment (`.venv`)
+- Installs dependencies via `uv sync` (automatically on directory entry via hooks)
+- Configures git pre-commit hooks via lefthook
 
-When a command/tool is missing, create ad-hoc environment:
+Available mise tasks:
 
-    $ devenv -O languages.rust.enable:bool true -O packages:pkgs "mypackage mypackage2" shell -- cli args
-
-When the setup is becomes complex update `devenv.nix` and run commands within:
-
-    $ devenv shell -- cli args
-
-See https://devenv.sh/ad-hoc-developer-environments/
+    $ mise run test       # Run pytest
+    $ mise run lint       # Run ruff check --fix
+    $ mise run format     # Run ruff format
+    $ mise run typecheck  # Run ty type checker
+    $ mise run check      # Run all quality checks
 
 ## Essential Commands
 
@@ -52,7 +50,7 @@ See https://devenv.sh/ad-hoc-developer-environments/
 
 ### Code Quality
 
-**Important**: Most quality checks run automatically via Claude Code hooks (configured in `devenv.nix`). You typically don't need to run these manually.
+**Important**: Most quality checks run automatically via Claude Code hooks (configured in `.claude/settings.json`). You typically don't need to run these manually.
 
     # Format code (auto-runs after Edit/Write on .py files)
     ruff format .
