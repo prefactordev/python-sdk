@@ -8,7 +8,7 @@ for durability requirements.
 from asyncio import Queue as AsyncQueue
 from typing import TypeVar
 
-from prefactor_next.queue.base import Queue, QueueClosedError
+from .base import Queue, QueueClosedError
 
 T = TypeVar("T")
 

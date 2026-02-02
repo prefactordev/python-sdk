@@ -9,7 +9,7 @@ import logging
 from asyncio import Task, create_task, sleep
 from typing import Any, Awaitable, Callable
 
-from prefactor_next.queue.base import Queue, QueueClosedError
+from .base import Queue, QueueClosedError
 
 logger = logging.getLogger(__name__)
 
