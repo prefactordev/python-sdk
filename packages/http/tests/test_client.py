@@ -90,14 +90,37 @@ class TestIdempotencyKey:
             assert "Idempotency-Key" not in headers
 
     @pytest.mark.asyncio
-    async def test_idempotency_key_preserves_original_request(self, client, config):
+    async def test_idempotency_key_preserves_original_request(self, config):
         """Test that idempotency key is preserved across retries."""
         import aiohttp
+
+        # Create a config with enough retries for this test
+        test_config = HttpClientConfig(
+            api_url=config.api_url,
+            api_token=config.api_token,
+            max_retries=2,  # Need 2 retries for 3 total attempts
+            initial_retry_delay=0.01,
+            max_retry_delay=0.1,
+        )
 
         test_key = "unique-idempotency-key-abc123"
         call_count = 0
 
-        async def mock_request_side_effect(*args, **kwargs):
+        # Create a mock async context manager class
+        class MockResponseContext:
+            def __init__(self, response_data):
+                self._response = AsyncMock()
+                self._response.status = 200
+                self._response.json = AsyncMock(return_value=response_data)
+
+            async def __aenter__(self):
+                return self._response
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return None
+
+        # Create a mock request function that returns the context manager
+        def mock_request(*args, **kwargs):
             nonlocal call_count
             call_count += 1
             headers = kwargs.get("headers", {})
@@ -108,24 +131,19 @@ class TestIdempotencyKey:
             if call_count < 3:
                 raise aiohttp.ClientError("Network error")
 
-            # Return a mock response
-            mock_response = AsyncMock()
-            mock_response.status = 200
-            mock_response.json = AsyncMock(return_value={"success": True})
-            return mock_response
+            return MockResponseContext({"success": True})
 
-        with patch.object(
-            client._session, "request", side_effect=mock_request_side_effect
-        ):
-            await client.request(
-                method="POST",
-                path="/api/v1/agent_spans",
-                json_data={"agent_instance_id": "test"},
-                idempotency_key=test_key,
-            )
+        async with PrefactorHttpClient(test_config) as client:
+            with patch.object(client._session, "request", mock_request):
+                await client.request(
+                    method="POST",
+                    path="/api/v1/agent_spans",
+                    json_data={"agent_instance_id": "test"},
+                    idempotency_key=test_key,
+                )
 
-            # Should have been called 3 times (initial + 2 retries)
-            assert call_count == 3
+                # Should have been called 3 times (initial + 2 retries)
+                assert call_count == 3
 
     @pytest.mark.asyncio
     async def test_idempotency_key_guid_generation_example(self, client):

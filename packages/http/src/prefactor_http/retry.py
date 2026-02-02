@@ -34,9 +34,10 @@ class RetryHandler:
         base_delay = self.config.initial_retry_delay * (
             self.config.retry_multiplier**attempt
         )
-        delay = min(base_delay, self.config.max_retry_delay)
-        jitter = delay * (0.75 + random.random() * 0.5)
-        return jitter
+        # Apply jitter first, then cap at max to ensure we don't exceed max_retry_delay
+        jitter_factor = 0.75 + random.random() * 0.5
+        delay = min(base_delay * jitter_factor, self.config.max_retry_delay)
+        return delay
 
     async def execute(
         self,
@@ -68,6 +69,10 @@ class RetryHandler:
                 last_error = e
 
                 if attempt == self.config.max_retries:
+                    # If max_retries is 0, we never actually retried, so re-raise
+                    # the original exception instead of wrapping it
+                    if self.config.max_retries == 0:
+                        raise
                     break
 
                 if not is_retryable(e):

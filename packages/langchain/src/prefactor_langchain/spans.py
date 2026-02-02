@@ -57,14 +57,12 @@ class LangChainSpan:
     All LangChain spans share common fields for timing, status,
     inputs/outputs, and error information. Trace correlation
     (span_id, parent_span_id, trace_id) is handled by the backend.
+
+    Note: The 'type' field is defined in subclasses to avoid dataclass
+    field shadowing issues.
     """
 
     name: str = "unnamed"
-    type: Literal[
-        "langchain:agent",
-        "langchain:llm",
-        "langchain:tool",
-    ] = "langchain:agent"
     start_time: float = field(default_factory=lambda: datetime.now().timestamp())
     end_time: Optional[float] = None
     status: Literal["pending", "running", "completed", "error"] = "pending"
@@ -91,6 +89,9 @@ class LangChainSpan:
             stacktrace=traceback.format_exc(),
         )
 
+    # Class attribute for span type - must be defined in subclasses
+    type: str = "langchain:agent"
+
     def to_dict(self) -> dict[str, Any]:
         """Convert span to dictionary for serialization.
 
@@ -98,7 +99,7 @@ class LangChainSpan:
         """
         result: dict[str, Any] = {
             "name": self.name,
-            "type": self.type,
+            "type": type(self).type,
             "start_time": self.start_time,
             "end_time": self.end_time,
             "status": self.status,

@@ -99,4 +99,4 @@ class TestRetryDelay:
 
         # Third attempt (delay = 1.0 * 2^2, capped at max)
         delay2 = handler._calculate_delay(5)
-        assert delay2 <= 30.1  # Capped at max_retry_delay with jitter
+        assert delay2 <= 30.0  # Capped at max_retry_delay (no jitter applied after cap)
