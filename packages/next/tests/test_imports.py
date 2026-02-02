@@ -1,7 +1,5 @@
 """Test basic imports for prefactor-next package."""
 
-import pytest
-
 
 class TestBasicImports:
     """Test that all modules can be imported correctly."""
@@ -28,9 +26,9 @@ class TestBasicImports:
     def test_import_queue(self):
         """Test importing queue package."""
         from prefactor_next.queue import (
+            InMemoryQueue,
             Queue,
             QueueClosedError,
-            InMemoryQueue,
             TaskExecutor,
         )
 
@@ -53,9 +51,9 @@ class TestBasicImports:
     def test_import_exceptions(self):
         """Test importing exceptions."""
         from prefactor_next.exceptions import (
-            PrefactorNextError,
-            ClientNotInitializedError,
             ClientAlreadyInitializedError,
+            ClientNotInitializedError,
+            PrefactorNextError,
         )
 
         assert PrefactorNextError is not None

@@ -61,15 +61,17 @@ class TestBulkClient:
                         BulkItem(
                             _type="agents/list",
                             idempotency_key="list-agents-001",
-                            environment_id="env_123",
+                            **{"environment_id": "env_123"},
                         ),
                         BulkItem(
                             _type="agents/create",
                             idempotency_key="create-agent-001",
-                            environment_id="env_123",
-                            details={
-                                "name": "New Agent",
-                                "description": "Test",
+                            **{
+                                "environment_id": "env_123",
+                                "details": {
+                                    "name": "New Agent",
+                                    "description": "Test",
+                                },
                             },
                         ),
                     ]
@@ -118,12 +120,12 @@ class TestBulkClient:
                         BulkItem(
                             _type="agents/show",
                             idempotency_key="success-item",
-                            agent_id="agent_1",
+                            **{"agent_id": "agent_1"},
                         ),
                         BulkItem(
                             _type="agents/show",
                             idempotency_key="error-item",
-                            agent_id="non_existent",
+                            **{"agent_id": "non_existent"},
                         ),
                     ]
                 )
@@ -180,12 +182,12 @@ class TestBulkClient:
                     BulkItem(
                         _type="agents/list",
                         idempotency_key="duplicate-key",
-                        environment_id="env_1",
+                        **{"environment_id": "env_1"},
                     ),
                     BulkItem(
                         _type="agents/list",
                         idempotency_key="duplicate-key",
-                        environment_id="env_2",
+                        **{"environment_id": "env_2"},
                     ),
                 ]
             )
@@ -200,7 +202,7 @@ class TestBulkItemValidation:
             BulkItem(
                 _type="agents/list",
                 idempotency_key="short",  # Less than 8 chars
-                environment_id="env_123",
+                **{"environment_id": "env_123"},
             )
 
     def test_bulk_item_max_idempotency_key_length(self):
@@ -209,7 +211,7 @@ class TestBulkItemValidation:
             BulkItem(
                 _type="agents/list",
                 idempotency_key="a" * 65,  # More than 64 chars
-                environment_id="env_123",
+                **{"environment_id": "env_123"},
             )
 
     def test_bulk_item_extra_fields_allowed(self):
@@ -217,9 +219,11 @@ class TestBulkItemValidation:
         item = BulkItem(
             _type="agents/create",
             idempotency_key="create-agent-123",
-            environment_id="env_123",
-            details={"name": "Test Agent"},
-            foo="bar",
+            **{
+                "environment_id": "env_123",
+                "details": {"name": "Test Agent"},
+                "foo": "bar",
+            },
         )
 
         assert item.type == "agents/create"
@@ -246,7 +250,7 @@ class TestBulkRequestValidation:
                 BulkItem(
                     _type="agents/list",
                     idempotency_key="list-key-001",
-                    environment_id="env_123",
+                    **{"environment_id": "env_123"},
                 ),
             ]
         )

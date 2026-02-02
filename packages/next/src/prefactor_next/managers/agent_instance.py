@@ -14,8 +14,8 @@ from ..operations import Operation, OperationType
 
 if TYPE_CHECKING:
     from prefactor_http.client import PrefactorHttpClient
+
     from ..client import PrefactorNextClient
-    from ..span_context import SpanContext
 
 
 class AgentInstanceManager:
@@ -182,7 +182,9 @@ class AgentInstanceHandle:
         if self._started:
             return
 
-        await self._client._instance_manager.start(self._instance_id)
+        manager = self._client._instance_manager
+        assert manager is not None
+        await manager.start(self._instance_id)
         self._started = True
 
     async def finish(self) -> None:
@@ -193,7 +195,9 @@ class AgentInstanceHandle:
         if self._finished:
             return
 
-        await self._client._instance_manager.finish(self._instance_id)
+        manager = self._client._instance_manager
+        assert manager is not None
+        await manager.finish(self._instance_id)
         self._finished = True
 
     @asynccontextmanager

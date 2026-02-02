@@ -117,9 +117,6 @@ def main():
     print()
     print("Check parent_span_id fields to see the span hierarchy.")
     print()
-    print("Note: This example now uses the middleware API (LangChain 1.0+).")
-    print("For legacy callback usage, use prefactor_sdk.init_callback() instead.")
-    print()
 
     # Explicitly flush pending spans (also happens automatically via atexit)
     print("Flushing pending spans...")

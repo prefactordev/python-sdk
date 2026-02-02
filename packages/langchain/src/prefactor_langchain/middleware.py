@@ -1,16 +1,22 @@
-"""LangChain middleware for automatic tracing."""
+"""LangChain middleware for automatic tracing via prefactor-next."""
 
+import asyncio
+import logging
 from typing import Any, Callable, Optional
 
 from langchain.agents.middleware import AgentMiddleware
-from prefactor_core.tracing.context import SpanContext
-from prefactor_core.tracing.span import SpanType, TokenUsage
-from prefactor_core.tracing.tracer import Tracer
-from prefactor_core.utils.logging import get_logger
+from prefactor_http.config import HttpClientConfig
+from prefactor_next import (
+    AgentInstanceHandle,
+    PrefactorNextClient,
+    PrefactorNextConfig,
+    SpanContext,
+)
 
-from prefactor_langchain.metadata_extractor import extract_token_usage
+from .metadata_extractor import extract_token_usage
+from .spans import AgentSpan, LLMSpan, ToolSpan
 
-logger = get_logger("instrumentation.langchain.middleware")
+logger = logging.getLogger("prefactor_langchain.middleware")
 
 
 class PrefactorMiddleware(AgentMiddleware):
@@ -19,17 +25,100 @@ class PrefactorMiddleware(AgentMiddleware):
 
     This middleware integrates with LangChain's middleware system to automatically
     create and emit spans for agent execution, LLM calls, and tool executions.
+
+    The middleware uses prefactor-next for all span and instance management,
+    which handles:
+    - Async queue-based span emission
+    - Automatic parent-child span relationships via SpanContextStack
+    - Agent instance lifecycle management
+
+    The LangChain-specific span types (AgentSpan, LLMSpan, ToolSpan) are sent
+    as the payload for each span.
     """
 
-    def __init__(self, tracer: Tracer):
+    def __init__(
+        self,
+        api_url: str,
+        api_token: str,
+        agent_id: Optional[str] = None,
+        agent_name: Optional[str] = None,
+    ):
         """
         Initialize the middleware.
 
         Args:
-            tracer: The tracer to use for span management.
+            api_url: The Prefactor API URL.
+            api_token: The API token for authentication.
+            agent_id: Optional agent identifier for categorization.
+            agent_name: Optional human-readable agent name.
         """
-        self._tracer = tracer
-        self._root_span = None
+        self._api_url = api_url
+        self._api_token = api_token
+        self._agent_id = agent_id or "langchain-agent"
+        self._agent_name = agent_name
+
+        # prefactor-next client and instance
+        self._client: Optional[PrefactorNextClient] = None
+        self._instance: Optional[AgentInstanceHandle] = None
+        self._initialized = False
+
+        # Agent span context storage
+        self._agent_span_context: Optional["SpanContext"] = None
+
+    async def _ensure_initialized(self) -> AgentInstanceHandle:
+        """Ensure the client and instance are initialized.
+
+        Returns:
+            The agent instance handle.
+        """
+        if self._initialized and self._instance:
+            return self._instance
+
+        # Create config
+        http_config = HttpClientConfig(
+            api_url=self._api_url,
+            api_token=self._api_token,
+        )
+        config = PrefactorNextConfig(http_config=http_config)
+
+        # Create and initialize client
+        self._client = PrefactorNextClient(config)
+        await self._client.initialize()
+
+        # Create agent instance
+        self._instance = await self._client.create_agent_instance(
+            agent_id=self._agent_id,
+            agent_version={
+                "name": self._agent_name or "1.0.0",
+                "external_identifier": "1.0.0",
+            },
+            agent_schema_version={
+                "external_identifier": "langchain-1.0.0",
+                "span_schemas": {
+                    "langchain:agent": {"type": "object"},
+                    "langchain:llm": {"type": "object"},
+                    "langchain:tool": {"type": "object"},
+                },
+            },
+        )
+
+        self._initialized = True
+        logger.debug(
+            f"Initialized prefactor-next client with instance {self._instance.id}"
+        )
+        return self._instance
+
+    async def close(self) -> None:
+        """Close the middleware and cleanup resources."""
+        if self._instance:
+            await self._instance.finish()
+            self._instance = None
+
+        if self._client:
+            await self._client.close()
+            self._client = None
+
+        self._initialized = False
 
     def _get_name_from_request(self, request: Any) -> str:
         """
@@ -39,15 +128,13 @@ class PrefactorMiddleware(AgentMiddleware):
             request: The model request.
 
         Returns:
-            Extracted name or 'unknown' as fallback.
+            Extracted name or 'model_call' as fallback.
         """
         try:
-            # Try to get name from request attributes
             if hasattr(request, "metadata") and isinstance(request.metadata, dict):
                 if "name" in request.metadata:
                     return request.metadata["name"]
 
-            # Fallback to model name if available
             if hasattr(request, "model"):
                 model = request.model
                 if hasattr(model, "model_name"):
@@ -61,19 +148,9 @@ class PrefactorMiddleware(AgentMiddleware):
             return "model_call"
 
     def _extract_model_inputs(self, request: Any) -> dict[str, Any]:
-        """
-        Extract inputs from ModelRequest.
-
-        Args:
-            request: The model request.
-
-        Returns:
-            Dictionary of inputs.
-        """
+        """Extract inputs from ModelRequest."""
         try:
-            # ModelRequest should have messages or similar
             if hasattr(request, "messages") and request.messages:
-                # Only store last few messages to avoid huge inputs
                 return {"messages": [str(m) for m in request.messages[-3:]]}
             if hasattr(request, "prompt"):
                 return {"prompt": request.prompt}
@@ -83,55 +160,23 @@ class PrefactorMiddleware(AgentMiddleware):
             return {}
 
     def _extract_model_outputs(self, response: Any) -> dict[str, Any]:
-        """
-        Extract outputs from ModelResponse.
-
-        Args:
-            response: The model response.
-
-        Returns:
-            Dictionary of outputs.
-        """
+        """Extract outputs from ModelResponse."""
         try:
-            # Check if response has content attribute (common pattern)
             if hasattr(response, "content"):
                 return {"response": response.content}
 
-            # Check if response has messages
             if hasattr(response, "messages") and response.messages:
                 last_message = response.messages[-1]
                 if hasattr(last_message, "content"):
                     return {"response": last_message.content}
 
-            # Fallback to string representation
             return {"response": str(response)}
         except Exception as e:
             logger.error(f"Error extracting model outputs: {e}", exc_info=True)
             return {}
 
-    def _extract_token_usage(self, response: Any) -> Optional[TokenUsage]:
-        """
-        Extract token usage from model response.
-
-        Args:
-            response: The model response.
-
-        Returns:
-            Token usage if available, None otherwise.
-        """
-        # Reuse existing metadata extractor
-        return extract_token_usage(response)
-
     def _extract_tool_inputs(self, request: Any) -> dict[str, Any]:
-        """
-        Extract inputs from tool request.
-
-        Args:
-            request: The tool request.
-
-        Returns:
-            Dictionary of inputs.
-        """
+        """Extract inputs from tool request."""
         try:
             if hasattr(request, "tool_call"):
                 tool_call = request.tool_call
@@ -145,15 +190,7 @@ class PrefactorMiddleware(AgentMiddleware):
             return {}
 
     def _extract_tool_output(self, response: Any) -> dict[str, Any]:
-        """
-        Extract output from tool response.
-
-        Args:
-            response: The tool response.
-
-        Returns:
-            Dictionary of outputs.
-        """
+        """Extract output from tool response."""
         try:
             if hasattr(response, "content"):
                 return {"output": response.content}
@@ -178,8 +215,12 @@ class PrefactorMiddleware(AgentMiddleware):
             Optional state updates.
         """
         try:
-            # Get parent span if exists (for nested agents)
-            parent_span = SpanContext.get_current()
+            # Run async initialization
+            loop = asyncio.get_event_loop()
+            instance = loop.run_until_complete(self._ensure_initialized())
+
+            # Start the instance
+            loop.run_until_complete(instance.start())
 
             # Extract messages from state
             messages = []
@@ -188,26 +229,25 @@ class PrefactorMiddleware(AgentMiddleware):
             elif hasattr(state, "messages"):
                 messages = state.messages
 
-            # Create root agent span
-            span = self._tracer.start_span(
+            # Create agent span payload
+            span_data = AgentSpan(
                 name="agent",
-                span_type=SpanType.AGENT,
+                type="langchain:agent",
                 inputs={
                     "messages": [str(m) for m in messages[-3:]] if messages else []
                 },
-                parent_span_id=parent_span.span_id if parent_span else None,
-                trace_id=parent_span.trace_id if parent_span else None,
-                metadata={},
-                tags=[],
             )
 
-            # Set as current span for children
-            SpanContext.set_current(span)
+            # Create span via prefactor-next (async)
+            async def create_span():
+                async with instance.span("langchain:agent") as ctx:
+                    ctx.set_payload(span_data.to_dict())
+                    # Store context for after_agent
+                    self._agent_span_context = ctx
 
-            # Store root span for later cleanup
-            self._root_span = span
+            loop.run_until_complete(create_span())
 
-            logger.debug(f"Started agent span: {span.span_id}")
+            logger.debug("Started agent span")
             return None
 
         except Exception as e:
@@ -218,8 +258,6 @@ class PrefactorMiddleware(AgentMiddleware):
         """
         Hook called after agent completes execution.
 
-        Ends the root span created in before_agent.
-
         Args:
             state: The agent state.
             runtime: The runtime context.
@@ -228,12 +266,6 @@ class PrefactorMiddleware(AgentMiddleware):
             Optional state updates.
         """
         try:
-            if self._root_span is None:
-                logger.warning("No root span found in after_agent")
-                return None
-
-            span = self._root_span
-
             # Extract final messages from state
             messages = []
             if hasattr(state, "get"):
@@ -241,17 +273,18 @@ class PrefactorMiddleware(AgentMiddleware):
             elif hasattr(state, "messages"):
                 messages = state.messages
 
-            # Extract final outputs
+            # Update span with final outputs
             outputs = {"messages": [str(m) for m in messages[-3:]] if messages else []}
 
-            # End the span
-            self._tracer.end_span(span=span, outputs=outputs)
+            if self._agent_span_context is not None:
+                self._agent_span_context.set_payload(
+                    {
+                        "outputs": outputs,
+                        "status": "completed",
+                    }
+                )
 
-            # Clear context
-            SpanContext.clear()
-            self._root_span = None
-
-            logger.debug(f"Ended agent span: {span.span_id}")
+            logger.debug("Ended agent span")
 
         except Exception as e:
             logger.error(f"Error in after_agent: {e}", exc_info=True)
@@ -275,22 +308,12 @@ class PrefactorMiddleware(AgentMiddleware):
         Returns:
             The model response.
         """
-        # Get parent span from context
-        parent_span = SpanContext.get_current()
-
-        # Start LLM span
-        span = self._tracer.start_span(
+        # Create span data
+        span_data = LLMSpan(
             name=self._get_name_from_request(request),
-            span_type=SpanType.LLM,
+            type="langchain:llm",
             inputs=self._extract_model_inputs(request),
-            parent_span_id=parent_span.span_id if parent_span else None,
-            trace_id=parent_span.trace_id if parent_span else None,
-            metadata={},
-            tags=[],
         )
-
-        # Set as current span for nested operations
-        SpanContext.set_current(span)
 
         try:
             # Call the model
@@ -298,27 +321,50 @@ class PrefactorMiddleware(AgentMiddleware):
 
             # Extract outputs and token usage
             outputs = self._extract_model_outputs(response)
-            token_usage = self._extract_token_usage(response)
+            token_usage = extract_token_usage(response)
 
-            # End span successfully
-            self._tracer.end_span(
-                span=span,
-                outputs=outputs,
-                token_usage=token_usage,
-            )
+            # Complete span data
+            span_data.complete(outputs=outputs)
+            if token_usage:
+                span_data.token_usage = token_usage
 
-            logger.debug(f"Model call completed: {span.span_id}")
+            # Emit span via prefactor-next
+            if self._instance is not None:
+                _instance: AgentInstanceHandle = self._instance
+                _span_data = span_data
+
+                async def emit():
+                    async with _instance.span("langchain:llm") as ctx:
+                        ctx.set_payload(_span_data.to_dict())
+
+                try:
+                    asyncio.get_event_loop().run_until_complete(emit())
+                except RuntimeError:
+                    asyncio.create_task(emit())
+
+            logger.debug("Model call completed")
             return response
 
         except Exception as e:
-            # End span with error
-            self._tracer.end_span(span=span, error=e)
+            # Fail span with error
+            span_data.fail(e)
+
+            # Emit span via prefactor-next
+            if self._instance is not None:
+                _instance: AgentInstanceHandle = self._instance
+                _span_data = span_data
+
+                async def emit_error():
+                    async with _instance.span("langchain:llm") as ctx:
+                        ctx.set_payload(_span_data.to_dict())
+
+                try:
+                    asyncio.get_event_loop().run_until_complete(emit_error())
+                except RuntimeError:
+                    asyncio.create_task(emit_error())
+
             logger.error(f"Model call failed: {e}", exc_info=True)
             raise
-
-        finally:
-            # Restore parent span context
-            SpanContext.set_current(parent_span)
 
     async def awrap_model_call(
         self,
@@ -326,7 +372,7 @@ class PrefactorMiddleware(AgentMiddleware):
         handler: Callable[[Any], Any],
     ) -> Any:
         """
-        Wrap model calls to trace LLM execution.
+        Wrap async model calls to trace LLM execution.
 
         Args:
             request: The model request.
@@ -335,50 +381,39 @@ class PrefactorMiddleware(AgentMiddleware):
         Returns:
             The model response.
         """
-        # Get parent span from context
-        parent_span = SpanContext.get_current()
+        instance = await self._ensure_initialized()
 
-        # Start LLM span
-        span = self._tracer.start_span(
+        # Create span data
+        span_data = LLMSpan(
             name=self._get_name_from_request(request),
-            span_type=SpanType.LLM,
+            type="langchain:llm",
             inputs=self._extract_model_inputs(request),
-            parent_span_id=parent_span.span_id if parent_span else None,
-            trace_id=parent_span.trace_id if parent_span else None,
-            metadata={},
-            tags=[],
         )
 
-        # Set as current span for nested operations
-        SpanContext.set_current(span)
+        async with instance.span("langchain:llm") as ctx:
+            try:
+                # Call the model
+                response = await handler(request)
 
-        try:
-            # Call the model
-            response = await handler(request)
+                # Extract outputs and token usage
+                outputs = self._extract_model_outputs(response)
+                token_usage = extract_token_usage(response)
 
-            # Extract outputs and token usage
-            outputs = self._extract_model_outputs(response)
-            token_usage = self._extract_token_usage(response)
+                # Complete span data
+                span_data.complete(outputs=outputs)
+                if token_usage:
+                    span_data.token_usage = token_usage
 
-            # End span successfully
-            self._tracer.end_span(
-                span=span,
-                outputs=outputs,
-                token_usage=token_usage,
-            )
+                ctx.set_payload(span_data.to_dict())
+                logger.debug("Model call completed")
+                return response
 
-            logger.debug(f"Model call completed: {span.span_id}")
-            return response
-
-        except Exception as e:
-            # End span with error
-            self._tracer.end_span(span=span, error=e)
-            logger.error(f"Model call failed: {e}", exc_info=True)
-            raise
-
-        finally:
-            # Restore parent span context
-            SpanContext.set_current(parent_span)
+            except Exception as e:
+                # Fail span with error
+                span_data.fail(e)
+                ctx.set_payload(span_data.to_dict())
+                logger.error(f"Model call failed: {e}", exc_info=True)
+                raise
 
     # Tool call wrapping
 
@@ -397,26 +432,17 @@ class PrefactorMiddleware(AgentMiddleware):
         Returns:
             The tool response.
         """
-        # Get parent span from context
-        parent_span = SpanContext.get_current()
-
         # Extract tool information
         inputs = self._extract_tool_inputs(request)
         tool_name = inputs.get("tool_name", "unknown_tool")
 
-        # Start tool span
-        span = self._tracer.start_span(
+        # Create span data
+        span_data = ToolSpan(
             name=tool_name,
-            span_type=SpanType.TOOL,
+            type="langchain:tool",
             inputs=inputs,
-            parent_span_id=parent_span.span_id if parent_span else None,
-            trace_id=parent_span.trace_id if parent_span else None,
-            metadata={},
-            tags=[],
+            tool_name=tool_name,
         )
-
-        # Set as current span for nested operations
-        SpanContext.set_current(span)
 
         try:
             # Call the tool
@@ -424,22 +450,45 @@ class PrefactorMiddleware(AgentMiddleware):
 
             # Extract output
             outputs = self._extract_tool_output(response)
+            span_data.complete(outputs=outputs)
 
-            # End span successfully
-            self._tracer.end_span(span=span, outputs=outputs)
+            # Emit span via prefactor-next
+            if self._instance is not None:
+                _instance: AgentInstanceHandle = self._instance
+                _span_data = span_data
 
-            logger.debug(f"Tool call completed: {span.span_id} ({tool_name})")
+                async def emit():
+                    async with _instance.span("langchain:tool") as ctx:
+                        ctx.set_payload(_span_data.to_dict())
+
+                try:
+                    asyncio.get_event_loop().run_until_complete(emit())
+                except RuntimeError:
+                    asyncio.create_task(emit())
+
+            logger.debug(f"Tool call completed ({tool_name})")
             return response
 
         except Exception as e:
-            # End span with error
-            self._tracer.end_span(span=span, error=e)
+            # Fail span with error
+            span_data.fail(e)
+
+            # Emit span via prefactor-next
+            if self._instance is not None:
+                _instance: AgentInstanceHandle = self._instance
+                _span_data = span_data
+
+                async def emit_error():
+                    async with _instance.span("langchain:tool") as ctx:
+                        ctx.set_payload(_span_data.to_dict())
+
+                try:
+                    asyncio.get_event_loop().run_until_complete(emit_error())
+                except RuntimeError:
+                    asyncio.create_task(emit_error())
+
             logger.error(f"Tool call failed: {e}", exc_info=True)
             raise
-
-        finally:
-            # Restore parent span context
-            SpanContext.set_current(parent_span)
 
     async def awrap_tool_call(
         self,
@@ -447,7 +496,7 @@ class PrefactorMiddleware(AgentMiddleware):
         handler: Callable[[Any], Any],
     ) -> Any:
         """
-        Wrap tool calls to trace tool execution.
+        Wrap async tool calls to trace tool execution.
 
         Args:
             request: The tool request.
@@ -456,46 +505,36 @@ class PrefactorMiddleware(AgentMiddleware):
         Returns:
             The tool response.
         """
-        # Get parent span from context
-        parent_span = SpanContext.get_current()
+        instance = await self._ensure_initialized()
 
         # Extract tool information
         inputs = self._extract_tool_inputs(request)
         tool_name = inputs.get("tool_name", "unknown_tool")
 
-        # Start tool span
-        span = self._tracer.start_span(
+        # Create span data
+        span_data = ToolSpan(
             name=tool_name,
-            span_type=SpanType.TOOL,
+            type="langchain:tool",
             inputs=inputs,
-            parent_span_id=parent_span.span_id if parent_span else None,
-            trace_id=parent_span.trace_id if parent_span else None,
-            metadata={},
-            tags=[],
+            tool_name=tool_name,
         )
 
-        # Set as current span for nested operations
-        SpanContext.set_current(span)
+        async with instance.span("langchain:tool") as ctx:
+            try:
+                # Call the tool
+                response = await handler(request)
 
-        try:
-            # Call the tool
-            response = await handler(request)
+                # Extract output
+                outputs = self._extract_tool_output(response)
+                span_data.complete(outputs=outputs)
 
-            # Extract output
-            outputs = self._extract_tool_output(response)
+                ctx.set_payload(span_data.to_dict())
+                logger.debug(f"Tool call completed ({tool_name})")
+                return response
 
-            # End span successfully
-            self._tracer.end_span(span=span, outputs=outputs)
-
-            logger.debug(f"Tool call completed: {span.span_id} ({tool_name})")
-            return response
-
-        except Exception as e:
-            # End span with error
-            self._tracer.end_span(span=span, error=e)
-            logger.error(f"Tool call failed: {e}", exc_info=True)
-            raise
-
-        finally:
-            # Restore parent span context
-            SpanContext.set_current(parent_span)
+            except Exception as e:
+                # Fail span with error
+                span_data.fail(e)
+                ctx.set_payload(span_data.to_dict())
+                logger.error(f"Tool call failed: {e}", exc_info=True)
+                raise

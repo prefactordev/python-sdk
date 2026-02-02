@@ -1,17 +1,16 @@
 """Utilities for extracting metadata from LangChain objects."""
 
+import logging
 import traceback
 from typing import Any, Optional
 
-from prefactor_core.tracing.span import ErrorInfo, TokenUsage
-from prefactor_core.utils.logging import get_logger
+from .spans import ErrorInfo, TokenUsage
 
-logger = get_logger("instrumentation.langchain.metadata_extractor")
+logger = logging.getLogger("prefactor_langchain.metadata_extractor")
 
 
 def extract_token_usage(llm_result: Any) -> Optional[TokenUsage]:
-    """
-    Extract token usage from LangChain LLMResult.
+    """Extract token usage from LangChain LLMResult.
 
     Args:
         llm_result: The LLMResult object from LangChain.
@@ -63,8 +62,7 @@ def extract_token_usage(llm_result: Any) -> Optional[TokenUsage]:
 
 
 def extract_error_info(error: Exception) -> ErrorInfo:
-    """
-    Extract error information from an exception.
+    """Extract error information from an exception.
 
     Args:
         error: The exception to extract information from.

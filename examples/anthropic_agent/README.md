@@ -175,7 +175,7 @@ ModuleNotFoundError: No module named 'langchain_anthropic'
 
 If you don't see JSON trace spans in stdout, check:
 - The Prefactor SDK is properly initialized
-- The callback handler is passed to both the model and agent
+- The middleware is passed to `create_agent()`
 - Stdout is not being redirected or buffered
 
 ## Next Steps

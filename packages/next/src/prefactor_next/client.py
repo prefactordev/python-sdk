@@ -5,9 +5,8 @@ for the SDK. It manages the complete lifecycle of agent instances and spans
 through an async queue-based architecture.
 """
 
-import asyncio
 from contextlib import asynccontextmanager
-from typing import TYPE_CHECKING, Any, Awaitable
+from typing import TYPE_CHECKING, Any
 
 from prefactor_http.client import PrefactorHttpClient
 
@@ -147,7 +146,8 @@ class PrefactorNextClient:
         """
         if not self._initialized:
             raise ClientNotInitializedError(
-                "Client is not initialized. Call initialize() or use as context manager."
+                "Client is not initialized. Call initialize() or "
+                "use as context manager."
             )
 
     async def _enqueue(self, operation: Operation) -> None:
@@ -237,6 +237,7 @@ class PrefactorNextClient:
             ClientNotInitializedError: If the client is not initialized.
         """
         self._ensure_initialized()
+        assert self._instance_manager is not None
 
         # Import here to avoid circular import
         from .managers.agent_instance import AgentInstanceHandle
@@ -276,6 +277,7 @@ class PrefactorNextClient:
             SpanContext for the created span.
         """
         self._ensure_initialized()
+        assert self._span_manager is not None
 
         # Import here to avoid circular import
         from .span_context import SpanContext

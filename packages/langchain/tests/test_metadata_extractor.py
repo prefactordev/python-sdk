@@ -118,6 +118,7 @@ class TestExtractErrorInfo:
         assert error_info is not None
         assert error_info.error_type == "RuntimeError"
         assert error_info.message == "Test error"
+        assert error_info.stacktrace is not None
         assert "RuntimeError" in error_info.stacktrace
         assert "Test error" in error_info.stacktrace
 

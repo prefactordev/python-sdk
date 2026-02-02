@@ -30,24 +30,10 @@ agent = create_agent(
 result = agent.invoke({"messages": [("user", "Hello!")]})
 ```
 
-### Legacy Callback API
-
-```python
-import prefactor_sdk
-from langchain_openai import ChatOpenAI
-
-# Initialize callback handler
-handler = prefactor_sdk.init_callback()
-
-# Use with LangChain models
-llm = ChatOpenAI(model="gpt-4", callbacks=[handler])
-response = llm.invoke("Hello!")
-```
-
 ## Features
 
 - Zero-config tracing
 - Automatic span lifecycle management
 - Token usage tracking
 - Error capture with stack traces
-- Support for both modern middleware and legacy callback APIs
+- LangChain-specific span types (`langchain:agent`, `langchain:llm`, `langchain:tool`)

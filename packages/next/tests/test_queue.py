@@ -3,7 +3,6 @@
 import asyncio
 
 import pytest
-
 from prefactor_next.queue import InMemoryQueue, QueueClosedError, TaskExecutor
 
 

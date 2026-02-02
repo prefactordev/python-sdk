@@ -40,7 +40,6 @@ from prefactor_http.exceptions import (
     PrefactorValidationError,
 )
 from prefactor_langchain import (
-    PrefactorCallbackHandler,
     PrefactorMiddleware,
     extract_error_info,
     extract_token_usage,
@@ -53,7 +52,6 @@ logger = get_logger("init")
 # Global instances
 _global_http_client: Optional[PrefactorHttpClient] = None
 _global_tracer: Optional["HttpTracer"] = None
-_global_handler: Optional[PrefactorCallbackHandler] = None
 _global_middleware: Optional[PrefactorMiddleware] = None
 _global_sdk_config: Optional["SdkConfig"] = None
 
@@ -734,7 +732,12 @@ def init(sdk_config: Optional[SdkConfig] = None) -> PrefactorMiddleware:
 
     # Create middleware
     if _global_middleware is None:
-        _global_middleware = PrefactorMiddleware(tracer=_global_tracer)
+        _global_middleware = PrefactorMiddleware(
+            api_url=sdk_config.api_url,
+            api_token=sdk_config.api_token,
+            agent_id=sdk_config.agent_id,
+            agent_name=sdk_config.agent_name,
+        )
         logger.debug("Created middleware")
 
     return _global_middleware
@@ -798,7 +801,6 @@ __all__ = [
     "PrefactorValidationError",
     # LangChain
     "PrefactorMiddleware",
-    "PrefactorCallbackHandler",
     "extract_token_usage",
     "extract_error_info",
 ]

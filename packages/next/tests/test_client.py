@@ -2,8 +2,6 @@
 
 import asyncio
 
-import pytest
-
 from prefactor_next import SpanContextStack
 
 

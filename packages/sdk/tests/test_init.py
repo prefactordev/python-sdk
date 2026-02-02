@@ -12,7 +12,6 @@ class TestInit:
         """Reset global state before each test."""
         prefactor_sdk._global_http_client = None
         prefactor_sdk._global_tracer = None
-        prefactor_sdk._global_handler = None
         prefactor_sdk._global_middleware = None
         prefactor_sdk._global_sdk_config = None
 

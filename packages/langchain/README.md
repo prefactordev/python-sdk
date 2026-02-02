@@ -1,6 +1,6 @@
 # prefactor-langchain
 
-LangChain integration for Prefactor observability. This package provides automatic tracing for LangChain agents.
+LangChain integration for Prefactor observability. This package provides automatic tracing for LangChain agents using LangChain-specific span types.
 
 ## Installation
 
@@ -10,41 +10,69 @@ pip install prefactor-langchain
 
 ## Usage
 
-### Middleware API (Recommended for LangChain 1.0+)
-
 ```python
 from prefactor_langchain import PrefactorMiddleware
-from prefactor_core import Tracer, StdioTransport
 
-# Create tracer
-transport = StdioTransport()
-tracer = Tracer(transport=transport)
+# Create middleware with your Prefactor API credentials
+middleware = PrefactorMiddleware(
+    api_url="https://api.prefactor.ai",
+    api_token="your-api-token"
+)
 
-# Create middleware
-middleware = PrefactorMiddleware(tracer=tracer)
-
-# Use with create_agent()
+# Use with LangChain's create_agent()
+# Your agent will automatically create spans for:
+# - Agent execution (langchain:agent)
+# - LLM calls (langchain:llm)
+# - Tool executions (langchain:tool)
 ```
 
-### Callback Handler API (Legacy)
+## Span Types
 
-```python
-from prefactor_langchain import PrefactorCallbackHandler
-from prefactor_core import Tracer, StdioTransport
-from langchain_openai import ChatOpenAI
+This package creates LangChain-specific spans with the `langchain:*` namespace:
 
-# Create tracer and handler
-transport = StdioTransport()
-tracer = Tracer(transport=transport)
-handler = PrefactorCallbackHandler(tracer=tracer)
+- **`langchain:agent`** - Agent executions and chain runs
+- **`langchain:llm`** - LLM calls with model metadata (name, provider, token usage)
+- **`langchain:tool`** - Tool executions including retrievers
 
-# Use with LangChain models
-llm = ChatOpenAI(model="gpt-4", callbacks=[handler])
-```
+Each span payload includes:
+- Timing information (start_time, end_time)
+- Inputs and outputs
+- Error information with stack traces
+- LangChain-specific metadata
+
+Trace correlation (span_id, parent_span_id, trace_id) is handled automatically by the prefactor-next client.
 
 ## Features
 
-- Automatic LLM call tracing
-- Tool execution tracing
-- Token usage capture
-- Error tracking with stack traces
+- **Automatic LLM call tracing** - Captures model name, provider, token usage, temperature
+- **Tool execution tracing** - Records tool name, arguments, execution time
+- **Agent/chain tracing** - Tracks agent lifecycle and message history
+- **Token usage capture** - Automatically extracts prompt/completion/total tokens
+- **Error tracking** - Captures error type, message, and stack traces
+- **Automatic parent-child relationships** - Uses SpanContextStack for hierarchy
+
+## Architecture
+
+This package follows the LangChain Adapter Redesign principles:
+
+1. **Package Isolation**: LangChain-specific span types and schemas live in this package
+2. **Opaque Payloads**: Span data is sent as payload to prefactor-next
+3. **Type Namespacing**: Uses `langchain:agent`, `langchain:llm`, `langchain:tool` prefixes
+4. **Uses prefactor-next**: All span/instance management via the prefactor-next client
+
+The middleware:
+1. Creates a `PrefactorNextClient` for async queue-based operations
+2. Registers an agent instance on first use
+3. Creates spans with LangChain-specific payloads
+4. Leverages `SpanContextStack` for automatic parent detection
+
+## Development
+
+Run tests:
+```bash
+pytest tests/
+```
+
+## License
+
+MIT

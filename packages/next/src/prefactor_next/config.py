@@ -3,9 +3,8 @@
 This module contains configuration classes for the prefactor-next SDK.
 """
 
-from pydantic import BaseModel, Field
-
 from prefactor_http.config import HttpClientConfig
+from pydantic import BaseModel, Field
 
 
 class QueueConfig(BaseModel):
