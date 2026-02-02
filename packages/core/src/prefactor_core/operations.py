@@ -1,4 +1,4 @@
-"""Operation types for prefactor-next.
+"""Operation types for prefactor-core.
 
 Operations represent discrete units of work that can be queued and processed
 asynchronously. Each operation type maps to a specific API action.

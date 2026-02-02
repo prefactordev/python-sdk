@@ -1,17 +1,17 @@
-"""LangChain middleware for automatic tracing via prefactor-next."""
+"""LangChain middleware for automatic tracing via prefactor-core."""
 
 import asyncio
 import logging
 from typing import Any, Callable, Optional
 
 from langchain.agents.middleware import AgentMiddleware
-from prefactor_http.config import HttpClientConfig
-from prefactor_next import (
+from prefactor_core import (
     AgentInstanceHandle,
-    PrefactorNextClient,
-    PrefactorNextConfig,
+    PrefactorCoreClient,
+    PrefactorCoreConfig,
     SpanContext,
 )
+from prefactor_http.config import HttpClientConfig
 
 from .metadata_extractor import extract_token_usage
 from .spans import AgentSpan, LLMSpan, ToolSpan
@@ -57,8 +57,8 @@ class PrefactorMiddleware(AgentMiddleware):
         self._agent_id = agent_id or "langchain-agent"
         self._agent_name = agent_name
 
-        # prefactor-next client and instance
-        self._client: Optional[PrefactorNextClient] = None
+        # prefactor-core client and instance
+        self._client: Optional[PrefactorCoreClient] = None
         self._instance: Optional[AgentInstanceHandle] = None
         self._initialized = False
 
@@ -79,10 +79,10 @@ class PrefactorMiddleware(AgentMiddleware):
             api_url=self._api_url,
             api_token=self._api_token,
         )
-        config = PrefactorNextConfig(http_config=http_config)
+        config = PrefactorCoreConfig(http_config=http_config)
 
         # Create and initialize client
-        self._client = PrefactorNextClient(config)
+        self._client = PrefactorCoreClient(config)
         await self._client.initialize()
 
         # Create agent instance

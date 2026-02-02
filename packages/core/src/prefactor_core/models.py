@@ -1,4 +1,4 @@
-"""Data models for prefactor-next.
+"""Data models for prefactor-core.
 
 This module contains dataclasses and models used throughout the SDK.
 """

@@ -13,76 +13,107 @@ This example demonstrates end-to-end tracing of a LangChain agent using Anthropi
 
 - Python 3.12 or higher
 - Anthropic API key
+- Prefactor API URL and token
 - Dependencies installed
 
 ## Setup
 
 ### 1. Install Dependencies
 
+From the `packages/langchain` directory:
+
 ```bash
 pip install -e ".[dev]"
 ```
 
-This will install the Prefactor SDK along with:
-- `langchain` - For agent creation
-- `langchain-anthropic` - For Claude model integration
-- `langchain-core` - For core LangChain functionality
+Or install the required packages directly:
+
+```bash
+pip install prefactor-langchain langchain
+```
 
 ### 2. Set Environment Variables
 
-Set your Anthropic API key:
-
 ```bash
 export ANTHROPIC_API_KEY=your_api_key_here
+export PREFACTOR_API_URL=https://api.prefactor.ai
+export PREFACTOR_API_TOKEN=your_token_here
 ```
 
 Or create a `.env` file in the `examples/` directory (see `.env.example`).
 
 ## Running the Example
 
+From the `packages/langchain/examples/` directory:
+
 ```bash
-python examples/anthropic_agent/simple_agent.py
+python simple_agent.py
+```
+
+Or from the repository root:
+
+```bash
+python packages/langchain/examples/simple_agent.py
 ```
 
 ## Expected Output
 
 When you run the example, you'll see:
 
-1. **Initialization Messages**: Confirming the SDK and model are set up
+1. **Initialization Messages**: Confirming the middleware and agent are set up
 2. **Agent Interactions**: Two example interactions showing the agent using tools
-3. **Trace Spans**: Newline-delimited JSON output to stdout
+3. **Confirmation**: Messages indicating traces are being sent to Prefactor
 
 ### Example Interaction Output
 
 ```
 ================================================================================
+Prefactor SDK - Anthropic Agent Example
+================================================================================
+
+Initializing Prefactor middleware...
+✓ Prefactor middleware initialized
+
+Creating agent with Prefactor tracing enabled...
+✓ Agent created with tracing enabled
+
+================================================================================
 Example 1: Getting Current Time
 ================================================================================
 
-> Entering new agent chain...
-[Agent reasoning and tool calls will appear here]
-
 Agent Response:
 The current date and time is 2026-01-13 15:30:45
-```
 
-### Trace Spans Output
+================================================================================
+Example 2: Simple Calculation
+================================================================================
 
-The SDK emits trace spans as newline-delimited JSON to stdout. Each span represents an operation in your agent:
+Agent Response:
+The result of 42 multiplied by 17 is 714.
 
-```json
-{"span_id": "abc123", "trace_id": "xyz789", "span_type": "chain", ...}
-{"span_id": "def456", "trace_id": "xyz789", "span_type": "llm", "parent_span_id": "abc123", ...}
-{"span_id": "ghi789", "trace_id": "xyz789", "span_type": "tool", "parent_span_id": "abc123", ...}
+================================================================================
+Example Complete!
+================================================================================
+
+Traces have been sent to Prefactor.
+Check your Prefactor dashboard to view:
+  - Agent execution spans
+  - LLM call spans with token usage
+  - Tool execution spans
+
+Shutting down...
+✓ Complete
 ```
 
 ## Understanding the Traces
 
+Traces are automatically sent to the Prefactor API. You can view them in the Prefactor dashboard.
+
 ### Span Types
 
-You should see three types of spans in the output:
+You should see three types of spans:
 
-1. **CHAIN**: Represents the agent graph operations from `create_agent`
+1. **AGENT**: Represents the agent execution
    - Top-level span for each agent invocation
    - Contains other spans as children
 
@@ -102,7 +133,7 @@ Spans are organized in a parent-child hierarchy:
 - The `parent_span_id` field links child spans to their parent
 - Example hierarchy:
   ```
-  CHAIN (agent execution)
+  AGENT (agent execution)
   ├── LLM (initial reasoning)
   ├── TOOL (get_current_time)
   └── LLM (final response)
@@ -114,7 +145,7 @@ LLM spans include token usage information:
 
 ```json
 {
-  "span_type": "llm",
+  "type": "langchain:llm",
   "token_usage": {
     "prompt_tokens": 150,
     "completion_tokens": 25,
@@ -137,21 +168,21 @@ This helps you track API costs and model usage.
 
 ## Model Details
 
-This example uses `claude-haiku-4-5-20251001`, which is:
-- The latest Claude Haiku model
-- Fast and cost-effective
+This example uses `claude-sonnet-4-5-20250929`, which is:
+- The Claude Sonnet model (balanced performance and cost)
 - Supports native tool calling
 - Good for smoke testing
 
 ## Validation Checklist
 
 The example validates that:
+- ✅ PrefactorMiddleware initializes correctly with api_url and api_token
 - ✅ LLM spans are created for Claude API calls
 - ✅ Tool spans are created for tool executions
-- ✅ Chain spans are created for agent operations
+- ✅ Agent spans are created for agent operations
 - ✅ Parent-child relationships are correct (nested spans)
 - ✅ Token usage is captured for Claude calls
-- ✅ All spans have proper trace_id grouping
+- ✅ All spans are sent to the Prefactor API
 
 ## Troubleshooting
 
@@ -163,24 +194,33 @@ ValueError: ANTHROPIC_API_KEY environment variable is required.
 
 **Solution**: Set the `ANTHROPIC_API_KEY` environment variable.
 
+### Missing Prefactor Token
+
+```
+ValueError: PREFACTOR_API_TOKEN environment variable is required.
+```
+
+**Solution**: Set the `PREFACTOR_API_TOKEN` environment variable.
+
 ### Import Errors
 
 ```
 ModuleNotFoundError: No module named 'langchain_anthropic'
 ```
 
-**Solution**: Install dev dependencies with `pip install -e ".[dev]"`
+**Solution**: Install dependencies with `pip install langchain-anthropic`
 
-### No Trace Output
+### No Traces in Dashboard
 
-If you don't see JSON trace spans in stdout, check:
-- The Prefactor SDK is properly initialized
-- The middleware is passed to `create_agent()`
-- Stdout is not being redirected or buffered
+If you don't see traces in the Prefactor dashboard:
+- Check that `PREFACTOR_API_URL` and `PREFACTOR_API_TOKEN` are correct
+- Verify network connectivity to the Prefactor API
+- Run with debug logging to see what's being sent
 
 ## Next Steps
 
 - Try adding your own custom tools
-- Experiment with different Claude models (Sonnet, Opus)
+- Experiment with different Claude models (Haiku, Sonnet, Opus)
 - Modify the system prompt to change agent behavior
 - Use the traces to analyze agent performance and costs
+- Explore the Prefactor dashboard to visualize traces

@@ -69,7 +69,7 @@ class TaskExecutor:
         self._running = True
         for i in range(self._num_workers):
             task = create_task(
-                self._worker_loop(f"worker-{i}"), name=f"prefactor-next-worker-{i}"
+                self._worker_loop(f"worker-{i}"), name=f"prefactor-core-worker-{i}"
             )
             self._workers.append(task)
 

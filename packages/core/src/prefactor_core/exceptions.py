@@ -1,25 +1,25 @@
-"""Custom exceptions for prefactor-next."""
+"""Custom exceptions for prefactor-core."""
 
 
-class PrefactorNextError(Exception):
-    """Base exception for all prefactor-next errors."""
+class PrefactorCoreError(Exception):
+    """Base exception for all prefactor-core errors."""
 
     pass
 
 
-class ClientNotInitializedError(PrefactorNextError):
+class ClientNotInitializedError(PrefactorCoreError):
     """Raised when attempting to use a client that hasn't been initialized."""
 
     pass
 
 
-class ClientAlreadyInitializedError(PrefactorNextError):
+class ClientAlreadyInitializedError(PrefactorCoreError):
     """Raised when attempting to initialize a client that's already initialized."""
 
     pass
 
 
-class OperationError(PrefactorNextError):
+class OperationError(PrefactorCoreError):
     """Raised when an operation fails to process."""
 
     def __init__(self, message: str, operation_type: str | None = None) -> None:
@@ -27,20 +27,20 @@ class OperationError(PrefactorNextError):
         self.operation_type = operation_type
 
 
-class InstanceNotFoundError(PrefactorNextError):
+class InstanceNotFoundError(PrefactorCoreError):
     """Raised when an agent instance is not found."""
 
     pass
 
 
-class SpanNotFoundError(PrefactorNextError):
+class SpanNotFoundError(PrefactorCoreError):
     """Raised when a span is not found."""
 
     pass
 
 
 __all__ = [
-    "PrefactorNextError",
+    "PrefactorCoreError",
     "ClientNotInitializedError",
     "ClientAlreadyInitializedError",
     "OperationError",

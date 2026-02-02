@@ -14,7 +14,7 @@ class SpanContext:
     """Context for an active span.
 
     This class provides methods to update span payload data during execution.
-    When used as a context manager (via PrefactorNextClient.span()), the span
+    When used as a context manager (via PrefactorCoreClient.span()), the span
     is automatically finished when exiting the context.
 
     Example:

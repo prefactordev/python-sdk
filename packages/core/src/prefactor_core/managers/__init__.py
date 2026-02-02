@@ -1,4 +1,4 @@
-"""Manager exports for prefactor-next."""
+"""Manager exports for prefactor-core."""
 
 from .agent_instance import AgentInstanceHandle, AgentInstanceManager
 from .span import SpanManager

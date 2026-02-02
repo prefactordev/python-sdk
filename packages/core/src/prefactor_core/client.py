@@ -1,6 +1,6 @@
-"""Main client for prefactor-next.
+"""Main client for prefactor-core.
 
-This module provides the PrefactorNextClient, which is the main entry point
+This module provides the PrefactorCoreClient, which is the main entry point
 for the SDK. It manages the complete lifecycle of agent instances and spans
 through an async queue-based architecture.
 """
@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any
 
 from prefactor_http.client import PrefactorHttpClient
 
-from .config import PrefactorNextConfig
+from .config import PrefactorCoreConfig
 from .context_stack import SpanContextStack
 from .exceptions import (
     ClientAlreadyInitializedError,
@@ -27,8 +27,8 @@ if TYPE_CHECKING:
     from .managers.agent_instance import AgentInstanceHandle
 
 
-class PrefactorNextClient:
-    """Main entry point for the prefactor-next SDK.
+class PrefactorCoreClient:
+    """Main entry point for the prefactor-core SDK.
 
     This client provides a high-level interface for managing agent instances
     and spans. All operations are queued and processed asynchronously, ensuring
@@ -38,9 +38,9 @@ class PrefactorNextClient:
     or using it as an async context manager.
 
     Example:
-        config = PrefactorNextConfig(http_config=...)
+        config = PrefactorCoreConfig(http_config=...)
 
-        async with PrefactorNextClient(config) as client:
+        async with PrefactorCoreClient(config) as client:
             instance = await client.create_agent_instance(...)
             await instance.start()
 
@@ -53,7 +53,7 @@ class PrefactorNextClient:
 
     def __init__(
         self,
-        config: PrefactorNextConfig,
+        config: PrefactorCoreConfig,
         queue: Queue[Operation] | None = None,
     ) -> None:
         """Initialize the client.
@@ -71,7 +71,7 @@ class PrefactorNextClient:
         self._span_manager: SpanManager | None = None
         self._initialized = False
 
-    async def __aenter__(self) -> "PrefactorNextClient":
+    async def __aenter__(self) -> "PrefactorCoreClient":
         """Enter async context manager."""
         await self.initialize()
         return self
@@ -304,4 +304,4 @@ class PrefactorNextClient:
             await self._span_manager.finish(span_id)
 
 
-__all__ = ["PrefactorNextClient"]
+__all__ = ["PrefactorCoreClient"]

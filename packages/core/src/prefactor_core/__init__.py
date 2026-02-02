@@ -1,32 +1,54 @@
-"""Prefactor Core - Framework-agnostic tracing primitives."""
+"""Public API for prefactor-core.
 
-from prefactor_core.config import Config
-from prefactor_core.tracing.context import SpanContext
-from prefactor_core.tracing.span import (
-    ErrorInfo,
-    Span,
-    SpanStatus,
-    SpanType,
-    TokenUsage,
+This module exports the main classes and functions for the prefactor-core SDK.
+"""
+
+from .client import PrefactorCoreClient
+from .config import PrefactorCoreConfig, QueueConfig
+from .context_stack import SpanContextStack
+from .exceptions import (
+    ClientAlreadyInitializedError,
+    ClientNotInitializedError,
+    InstanceNotFoundError,
+    OperationError,
+    PrefactorCoreError,
+    SpanNotFoundError,
 )
-from prefactor_core.utils.logging import configure_logging, get_logger
-from prefactor_core.utils.serialization import serialize_value, truncate_string
+from .managers.agent_instance import AgentInstanceHandle
+from .models import AgentInstance, Span
+from .operations import Operation, OperationType
+from .queue import InMemoryQueue, Queue, QueueClosedError, TaskExecutor
+from .span_context import SpanContext
 
-__version__ = "0.3.0"
+__version__ = "0.1.0"
 
 __all__ = [
+    # Client
+    "PrefactorCoreClient",
     # Config
-    "Config",
-    # Tracing
-    "Span",
-    "SpanType",
-    "SpanStatus",
-    "TokenUsage",
-    "ErrorInfo",
+    "PrefactorCoreConfig",
+    "QueueConfig",
+    # Context
     "SpanContext",
-    # Utils
-    "configure_logging",
-    "get_logger",
-    "serialize_value",
-    "truncate_string",
+    "SpanContextStack",
+    # Exceptions
+    "PrefactorCoreError",
+    "ClientNotInitializedError",
+    "ClientAlreadyInitializedError",
+    "OperationError",
+    "InstanceNotFoundError",
+    "SpanNotFoundError",
+    # Models
+    "AgentInstance",
+    "Span",
+    # Operations
+    "Operation",
+    "OperationType",
+    # Queue
+    "Queue",
+    "QueueClosedError",
+    "InMemoryQueue",
+    "TaskExecutor",
+    # Handle
+    "AgentInstanceHandle",
 ]

@@ -3,7 +3,7 @@
 import asyncio
 
 import pytest
-from prefactor_next.queue import InMemoryQueue, QueueClosedError, TaskExecutor
+from prefactor_core.queue import InMemoryQueue, QueueClosedError, TaskExecutor
 
 
 class TestInMemoryQueue:

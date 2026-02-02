@@ -15,7 +15,7 @@ from ..operations import Operation, OperationType
 if TYPE_CHECKING:
     from prefactor_http.client import PrefactorHttpClient
 
-    from ..client import PrefactorNextClient
+    from ..client import PrefactorCoreClient
 
 
 class AgentInstanceManager:
@@ -152,13 +152,13 @@ class AgentInstanceHandle:
     def __init__(
         self,
         instance_id: str,
-        client: "PrefactorNextClient",
+        client: "PrefactorCoreClient",
     ) -> None:
         """Initialize the handle.
 
         Args:
             instance_id: The ID of the agent instance.
-            client: The PrefactorNextClient that created this handle.
+            client: The PrefactorCoreClient that created this handle.
         """
         self._instance_id = instance_id
         self._client = client

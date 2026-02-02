@@ -2,7 +2,7 @@
 
 import asyncio
 
-from prefactor_next import SpanContextStack
+from prefactor_core import SpanContextStack
 
 
 class TestSpanContextStack:

@@ -1,6 +1,14 @@
-# prefactor-core
+# Prefactor Core
 
-Core tracing primitives for Prefactor observability. This package provides framework-agnostic tracing capabilities.
+Core Prefactor SDK with async queue-based operations.
+
+## Features
+
+- **Asynchronous Queue-Based Processing**: All operations are queued and processed asynchronously
+- **Non-Blocking API**: Returns immediately, zero impact on agent execution
+- **Stack-Based Span Management**: Automatic parent detection for nested spans
+- **Extensible Queue Interface**: Easy to add persistent queue backends
+- **First-Class AgentInstance API**: Clean interface for managing agent lifecycles
 
 ## Installation
 
@@ -8,29 +16,48 @@ Core tracing primitives for Prefactor observability. This package provides frame
 pip install prefactor-core
 ```
 
-## Usage
+## Quick Start
 
 ```python
-from prefactor_core import Tracer, StdioTransport, SpanType
+import asyncio
+from prefactor_core import PrefactorCoreClient
+from prefactor_http import HttpClientConfig
 
-# Create transport and tracer
-transport = StdioTransport()
-tracer = Tracer(transport=transport)
+async def main():
+    config = HttpClientConfig(
+        api_url="https://api.prefactor.ai",
+        api_token="your-token",
+    )
+    
+    async with PrefactorCoreClient(config) as client:
+        # Create agent instance
+        instance = await client.create_agent_instance(
+            agent_id="my-agent",
+            agent_version={"name": "My Agent", "external_identifier": "v1.0.0"},
+            agent_schema_version={"external_identifier": "v1.0.0", "span_schemas": {}},
+        )
+        
+        await instance.start()
+        
+        # Create spans
+        async with instance.span("llm") as span:
+            span.set_payload({"model": "gpt-4"})
+            result = await call_llm()
+            span.set_payload({"response": result})
+        
+        await instance.finish()
 
-# Start a span
-span = tracer.start_span(
-    name="my_operation",
-    span_type=SpanType.LLM,
-    inputs={"prompt": "Hello"}
-)
-
-# End the span
-tracer.end_span(span=span, outputs={"response": "Hi!"})
+asyncio.run(main())
 ```
 
-## Features
+## Architecture
 
-- Thread-safe tracing
-- Multiple transport options (STDIO, HTTP)
-- Async-safe context propagation
-- JSON serialization with truncation support
+The SDK follows stratified design principles with three layers:
+
+1. **Foundation (Layer 1)**: Queue infrastructure and span context stack
+2. **Operations (Layer 2)**: Business logic for instances and spans
+3. **API (Layer 3)**: User-facing client interface
+
+## License
+
+MIT

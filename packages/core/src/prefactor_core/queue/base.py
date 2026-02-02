@@ -1,4 +1,4 @@
-"""Queue infrastructure for prefactor-next.
+"""Queue infrastructure for prefactor-core.
 
 This module provides the foundation layer for async queue-based processing.
 All queue implementations must satisfy the Queue interface to be used with
