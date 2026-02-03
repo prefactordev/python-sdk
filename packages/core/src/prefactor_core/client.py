@@ -5,6 +5,9 @@ for the SDK. It manages the complete lifecycle of agent instances and spans
 through an async queue-based architecture.
 """
 
+from __future__ import annotations
+
+import time
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any
 
@@ -216,28 +219,53 @@ class PrefactorCoreClient:
         self,
         agent_id: str,
         agent_version: dict[str, Any],
-        agent_schema_version: dict[str, Any],
+        agent_schema_version: dict[str, Any] | None = None,
         instance_id: str | None = None,
+        external_schema_version_id: str | None = None,
     ) -> "AgentInstanceHandle":
         """Create a new agent instance.
 
         Returns immediately with a handle. The actual registration happens
         asynchronously via the queue.
 
+        If agent_schema_version is not provided but the client has a schema_registry,
+        the registry's schemas will be used automatically.
+
         Args:
             agent_id: ID of the agent to create an instance for.
-            agent_version: Version information (name, external_identifier, etc.).
-            agent_schema_version: Schema version information.
+            agent_version: Version information (name, etc.).
+            agent_schema_version: Schema version. Uses registry if not provided
+                and registry is configured.
             instance_id: Optional custom ID for the instance.
+            external_schema_version_id: Optional external identifier for the
+                schema version. Defaults to "auto-generated" when using registry.
 
         Returns:
             AgentInstanceHandle for the created instance.
 
         Raises:
             ClientNotInitializedError: If the client is not initialized.
+            ValueError: If no schema version provided and registry not configured.
         """
         self._ensure_initialized()
         assert self._instance_manager is not None
+
+        # Determine the agent_schema_version to use
+        final_schema_version: dict[str, Any]
+        if agent_schema_version is not None:
+            final_schema_version = agent_schema_version
+        elif self._config.schema_registry is not None:
+            # Use registry to generate schema version
+            ext_id = external_schema_version_id
+            if ext_id is None:
+                ext_id = f"auto-{agent_id}-{time.time()}"
+            final_schema_version = self._config.schema_registry.to_agent_schema_version(
+                ext_id
+            )
+        else:
+            msg1 = "agent_schema_version required when no schema_registry configured"
+            msg2 = "Either provide agent_schema_version or configure a SchemaRegistry"
+            raise ValueError(f"{msg1}. {msg2}.")
 
         # Import here to avoid circular import
         from .managers.agent_instance import AgentInstanceHandle
@@ -245,7 +273,7 @@ class PrefactorCoreClient:
         instance_id = await self._instance_manager.register(
             agent_id=agent_id,
             agent_version=agent_version,
-            agent_schema_version=agent_schema_version,
+            agent_schema_version=final_schema_version,
             instance_id=instance_id,
         )
 

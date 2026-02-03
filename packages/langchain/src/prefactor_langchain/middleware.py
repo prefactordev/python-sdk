@@ -2,88 +2,175 @@
 
 import asyncio
 import logging
-from typing import Any, Callable, Optional
+from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from langchain.agents.middleware import AgentMiddleware
 from prefactor_core import (
     AgentInstanceHandle,
     PrefactorCoreClient,
     PrefactorCoreConfig,
+    SchemaRegistry,
     SpanContext,
 )
 from prefactor_http.config import HttpClientConfig
 
+if TYPE_CHECKING:
+    pass
+
 from .metadata_extractor import extract_token_usage
+from .schemas import register_langchain_schemas
 from .spans import AgentSpan, LLMSpan, ToolSpan
 
 logger = logging.getLogger("prefactor_langchain.middleware")
 
 
 class PrefactorMiddleware(AgentMiddleware):
-    """
-    LangChain middleware for automatic tracing.
+    """LangChain middleware for automatic tracing.
 
     This middleware integrates with LangChain's middleware system to automatically
     create and emit spans for agent execution, LLM calls, and tool executions.
 
-    The middleware uses prefactor-next for all span and instance management,
-    which handles:
-    - Async queue-based span emission
-    - Automatic parent-child span relationships via SpanContextStack
-    - Agent instance lifecycle management
+    Two usage patterns are supported:
 
-    The LangChain-specific span types (AgentSpan, LLMSpan, ToolSpan) are sent
-    as the payload for each span.
+    1. **Configuration Mode** (new): Pass a pre-configured client and optional
+       schema registry for full control over settings.
+
+    2. **Factory Pattern**: Use `from_config()` for quick setup.
+
+    Example - Configuration Mode:
+        from prefactor_core import PrefactorCoreClient, PrefactorCoreConfig
+        from prefactor_http.config import HttpClientConfig
+
+        # Configure client yourself
+        http_config = HttpClientConfig(api_url="...", api_token="...")
+        config = PrefactorCoreConfig(http_config=http_config)
+        client = PrefactorCoreClient(config)
+        await client.initialize()
+
+        # Create middleware with pre-configured client
+        middleware = PrefactorMiddleware(
+            client=client,
+            agent_id="my-agent",
+            agent_name="My Agent",
+        )
+
+    Example - Factory Pattern:
+        middleware = PrefactorMiddleware.from_config(
+            api_url="https://api.prefactor.ai",
+            api_token="my-token",
+            agent_id="my-agent",
+            agent_name="My Agent",
+        )
     """
 
     def __init__(
         self,
+        client: PrefactorCoreClient,
+        agent_id: str = "langchain-agent",
+        agent_name: Optional[str] = None,
+        agent_instance: Optional[AgentInstanceHandle] = None,
+        auto_initialize: bool = True,
+    ):
+        """Initialize the middleware with a pre-configured client.
+
+        Args:
+            client: Pre-initialized PrefactorCoreClient instance.
+            agent_id: Agent identifier for categorization.
+            agent_name: Optional human-readable agent name.
+            agent_instance: Optional pre-created agent instance. If not provided,
+                the middleware will create one automatically.
+            auto_initialize: If True and no agent_instance is provided, the
+                middleware will create and initialize an agent instance automatically.
+        """
+        self._client = client
+        self._agent_id = agent_id
+        self._agent_name = agent_name
+
+        # Client and instance tracking
+        self._instance: Optional[AgentInstanceHandle] = agent_instance
+        self._owns_instance = agent_instance is None  # Track if we created it
+        self._owns_client = auto_initialize  # We didn't create the client
+
+        # Agent span context storage
+        self._agent_span_context: Optional["SpanContext"] = None
+
+    @classmethod
+    def from_config(
+        cls,
         api_url: str,
         api_token: str,
-        agent_id: Optional[str] = None,
-        agent_name: Optional[str] = None,
-    ):
-        """
-        Initialize the middleware.
+        agent_id: str = "langchain-agent",
+        agent_name: str | None = None,
+        schema_registry: SchemaRegistry | None = None,
+        include_langchain_schemas: bool = True,
+    ) -> "PrefactorMiddleware":
+        """Factory method to create middleware from configuration.
+
+        This creates a client and middleware with the specified settings.
 
         Args:
             api_url: The Prefactor API URL.
             api_token: The API token for authentication.
             agent_id: Optional agent identifier for categorization.
             agent_name: Optional human-readable agent name.
+            schema_registry: Optional SchemaRegistry for registering span schemas.
+            include_langchain_schemas: If True and schema_registry is provided,
+                automatically register LangChain-specific schemas.
+
+        Returns:
+            A configured PrefactorMiddleware instance.
+
+        Example:
+            middleware = PrefactorMiddleware.from_config(
+                api_url="https://api.prefactor.ai",
+                api_token="my-token",
+                agent_id="my-agent",
+                agent_name="My Agent",
+            )
         """
-        self._api_url = api_url
-        self._api_token = api_token
-        self._agent_id = agent_id or "langchain-agent"
-        self._agent_name = agent_name
+        http_config = HttpClientConfig(api_url=api_url, api_token=api_token)
 
-        # prefactor-core client and instance
-        self._client: Optional[PrefactorCoreClient] = None
-        self._instance: Optional[AgentInstanceHandle] = None
-        self._initialized = False
+        # Create or augment schema registry
+        registry = schema_registry or SchemaRegistry()
+        if include_langchain_schemas and not registry.has_schema("langchain:llm"):
+            register_langchain_schemas(registry)
 
-        # Agent span context storage
-        self._agent_span_context: Optional["SpanContext"] = None
+        config = PrefactorCoreConfig(
+            http_config=http_config,
+            schema_registry=registry,
+        )
+        client = PrefactorCoreClient(config)
+
+        # Return middleware, but don't create instance yet (will be done lazily)
+        middleware = cls(
+            client=client,
+            agent_id=agent_id,
+            agent_name=agent_name,
+            agent_instance=None,
+            auto_initialize=False,
+        )
+        middleware._owns_client = True  # We created the client
+        logger.debug("PrefactorMiddleware created via from_config()")
+        return middleware
 
     async def _ensure_initialized(self) -> AgentInstanceHandle:
-        """Ensure the client and instance are initialized.
+        """Ensure the agent instance is initialized (lazily created if needed).
 
         Returns:
             The agent instance handle.
+
+        Raises:
+            ValueError: If client is not available.
         """
-        if self._initialized and self._instance:
+        if self._instance is not None:
             return self._instance
 
-        # Create config
-        http_config = HttpClientConfig(
-            api_url=self._api_url,
-            api_token=self._api_token,
-        )
-        config = PrefactorCoreConfig(http_config=http_config)
+        if self._client is None:
+            raise ValueError("Client is not available - middleware has been closed")
 
-        # Create and initialize client
-        self._client = PrefactorCoreClient(config)
-        await self._client.initialize()
+        # Initialize client if we own it (factory pattern)
+        if self._owns_client and not self._client._initialized:
+            await self._client.initialize()
 
         # Create agent instance
         self._instance = await self._client.create_agent_instance(
@@ -92,37 +179,31 @@ class PrefactorMiddleware(AgentMiddleware):
                 "name": self._agent_name or "1.0.0",
                 "external_identifier": "1.0.0",
             },
-            agent_schema_version={
-                "external_identifier": "langchain-1.0.0",
-                "span_schemas": {
-                    "langchain:agent": {"type": "object"},
-                    "langchain:llm": {"type": "object"},
-                    "langchain:tool": {"type": "object"},
-                },
-            },
+            agent_schema_version=None,  # Will use registry if available
+            external_schema_version_id="langchain-1.0.0",
         )
 
-        self._initialized = True
-        logger.debug(
-            f"Initialized prefactor-next client with instance {self._instance.id}"
-        )
+        self._owns_instance = True
+        logger.debug("Initialized agent instance %s", self._instance.id)
         return self._instance
 
     async def close(self) -> None:
-        """Close the middleware and cleanup resources."""
-        if self._instance:
+        """Close the middleware and cleanup resources.
+
+        This closes the agent instance (if we created it) and client (if we own it).
+        """
+        if self._instance is not None and self._owns_instance:
             await self._instance.finish()
             self._instance = None
+            self._owns_instance = False
 
-        if self._client:
+        if self._client is not None and self._owns_client:
             await self._client.close()
             self._client = None
-
-        self._initialized = False
+            self._owns_client = False
 
     def _get_name_from_request(self, request: Any) -> str:
-        """
-        Extract span name from request metadata or default to unknown.
+        """Extract span name from request metadata or default to unknown.
 
         Args:
             request: The model request.
@@ -144,7 +225,7 @@ class PrefactorMiddleware(AgentMiddleware):
 
             return "model_call"
         except Exception as e:
-            logger.debug(f"Error extracting name from request: {e}")
+            logger.debug("Error extracting name from request: %s", e)
             return "model_call"
 
     def _extract_model_inputs(self, request: Any) -> dict[str, Any]:
@@ -156,7 +237,7 @@ class PrefactorMiddleware(AgentMiddleware):
                 return {"prompt": request.prompt}
             return {}
         except Exception as e:
-            logger.error(f"Error extracting model inputs: {e}", exc_info=True)
+            logger.error("Error extracting model inputs: %s", e, exc_info=True)
             return {}
 
     def _extract_model_outputs(self, response: Any) -> dict[str, Any]:
@@ -172,7 +253,7 @@ class PrefactorMiddleware(AgentMiddleware):
 
             return {"response": str(response)}
         except Exception as e:
-            logger.error(f"Error extracting model outputs: {e}", exc_info=True)
+            logger.error("Error extracting model outputs: %s", e, exc_info=True)
             return {}
 
     def _extract_tool_inputs(self, request: Any) -> dict[str, Any]:
@@ -186,7 +267,7 @@ class PrefactorMiddleware(AgentMiddleware):
                 }
             return {"tool_call": str(request)}
         except Exception as e:
-            logger.error(f"Error extracting tool inputs: {e}", exc_info=True)
+            logger.error("Error extracting tool inputs: %s", e, exc_info=True)
             return {}
 
     def _extract_tool_output(self, response: Any) -> dict[str, Any]:
@@ -196,14 +277,13 @@ class PrefactorMiddleware(AgentMiddleware):
                 return {"output": response.content}
             return {"output": str(response)}
         except Exception as e:
-            logger.error(f"Error extracting tool output: {e}", exc_info=True)
+            logger.error("Error extracting tool output: %s", e, exc_info=True)
             return {"output": str(response)}
 
     # Agent lifecycle hooks
 
     def before_agent(self, state: Any, runtime: Any) -> dict[str, Any] | None:
-        """
-        Hook called before agent starts execution.
+        """Hook called before agent starts execution.
 
         Creates a root span for the entire agent execution.
 
@@ -251,12 +331,11 @@ class PrefactorMiddleware(AgentMiddleware):
             return None
 
         except Exception as e:
-            logger.error(f"Error in before_agent: {e}", exc_info=True)
+            logger.error("Error in before_agent: %s", e, exc_info=True)
             return None
 
     def after_agent(self, state: Any, runtime: Any) -> dict[str, Any] | None:
-        """
-        Hook called after agent completes execution.
+        """Hook called after agent completes execution.
 
         Args:
             state: The agent state.
@@ -287,7 +366,7 @@ class PrefactorMiddleware(AgentMiddleware):
             logger.debug("Ended agent span")
 
         except Exception as e:
-            logger.error(f"Error in after_agent: {e}", exc_info=True)
+            logger.error("Error in after_agent: %s", e, exc_info=True)
 
         return None
 
@@ -298,8 +377,7 @@ class PrefactorMiddleware(AgentMiddleware):
         request: Any,
         handler: Callable[[Any], Any],
     ) -> Any:
-        """
-        Wrap synchronous model calls to trace LLM execution.
+        """Wrap synchronous model calls to trace LLM execution.
 
         Args:
             request: The model request.
@@ -363,7 +441,7 @@ class PrefactorMiddleware(AgentMiddleware):
                 except RuntimeError:
                     asyncio.create_task(emit_error())
 
-            logger.error(f"Model call failed: {e}", exc_info=True)
+            logger.error("Model call failed: %s", e, exc_info=True)
             raise
 
     async def awrap_model_call(
@@ -371,8 +449,7 @@ class PrefactorMiddleware(AgentMiddleware):
         request: Any,
         handler: Callable[[Any], Any],
     ) -> Any:
-        """
-        Wrap async model calls to trace LLM execution.
+        """Wrap async model calls to trace LLM execution.
 
         Args:
             request: The model request.
@@ -412,7 +489,7 @@ class PrefactorMiddleware(AgentMiddleware):
                 # Fail span with error
                 span_data.fail(e)
                 ctx.set_payload(span_data.to_dict())
-                logger.error(f"Model call failed: {e}", exc_info=True)
+                logger.error("Model call failed: %s", e, exc_info=True)
                 raise
 
     # Tool call wrapping
@@ -422,8 +499,7 @@ class PrefactorMiddleware(AgentMiddleware):
         request: Any,
         handler: Callable[[Any], Any],
     ) -> Any:
-        """
-        Wrap synchronous tool calls to trace tool execution.
+        """Wrap synchronous tool calls to trace tool execution.
 
         Args:
             request: The tool request.
@@ -466,7 +542,7 @@ class PrefactorMiddleware(AgentMiddleware):
                 except RuntimeError:
                     asyncio.create_task(emit())
 
-            logger.debug(f"Tool call completed ({tool_name})")
+            logger.debug("Tool call completed (%s)", tool_name)
             return response
 
         except Exception as e:
@@ -487,7 +563,7 @@ class PrefactorMiddleware(AgentMiddleware):
                 except RuntimeError:
                     asyncio.create_task(emit_error())
 
-            logger.error(f"Tool call failed: {e}", exc_info=True)
+            logger.error("Tool call failed: %s", e, exc_info=True)
             raise
 
     async def awrap_tool_call(
@@ -495,8 +571,7 @@ class PrefactorMiddleware(AgentMiddleware):
         request: Any,
         handler: Callable[[Any], Any],
     ) -> Any:
-        """
-        Wrap async tool calls to trace tool execution.
+        """Wrap async tool calls to trace tool execution.
 
         Args:
             request: The tool request.
@@ -529,12 +604,12 @@ class PrefactorMiddleware(AgentMiddleware):
                 span_data.complete(outputs=outputs)
 
                 ctx.set_payload(span_data.to_dict())
-                logger.debug(f"Tool call completed ({tool_name})")
+                logger.debug("Tool call completed (%s)", tool_name)
                 return response
 
             except Exception as e:
                 # Fail span with error
                 span_data.fail(e)
                 ctx.set_payload(span_data.to_dict())
-                logger.error(f"Tool call failed: {e}", exc_info=True)
+                logger.error("Tool call failed: %s", e, exc_info=True)
                 raise

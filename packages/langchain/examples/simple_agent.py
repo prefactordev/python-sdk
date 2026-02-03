@@ -67,9 +67,9 @@ def main():
     print("=" * 80)
     print()
 
-    # Initialize Prefactor middleware for tracing
+    # Initialize Prefactor middleware for tracing using factory pattern
     print("Initializing Prefactor middleware...")
-    middleware = PrefactorMiddleware(
+    middleware = PrefactorMiddleware.from_config(
         api_url=api_url,
         api_token=api_token,
         agent_id="anthropic-example-agent",

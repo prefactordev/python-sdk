@@ -18,6 +18,7 @@ from .managers.agent_instance import AgentInstanceHandle
 from .models import AgentInstance, Span
 from .operations import Operation, OperationType
 from .queue import InMemoryQueue, Queue, QueueClosedError, TaskExecutor
+from .schema_registry import SchemaRegistry
 from .span_context import SpanContext
 
 __version__ = "0.1.0"
@@ -51,4 +52,6 @@ __all__ = [
     "TaskExecutor",
     # Handle
     "AgentInstanceHandle",
+    # Schema Registry
+    "SchemaRegistry",
 ]

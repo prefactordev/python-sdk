@@ -5,6 +5,12 @@ from prefactor_langchain.metadata_extractor import (
     extract_token_usage,
 )
 from prefactor_langchain.middleware import PrefactorMiddleware
+from prefactor_langchain.schemas import (
+    LANGCHAIN_AGENT_SCHEMA,
+    LANGCHAIN_LLM_SCHEMA,
+    LANGCHAIN_TOOL_SCHEMA,
+    register_langchain_schemas,
+)
 from prefactor_langchain.spans import (
     AgentSpan,
     ErrorInfo,
@@ -22,6 +28,11 @@ __all__ = [
     # Extractors
     "extract_token_usage",
     "extract_error_info",
+    # Schemas
+    "register_langchain_schemas",
+    "LANGCHAIN_AGENT_SCHEMA",
+    "LANGCHAIN_LLM_SCHEMA",
+    "LANGCHAIN_TOOL_SCHEMA",
     # Spans
     "LangChainSpan",
     "AgentSpan",

@@ -2,44 +2,81 @@
 
 from unittest.mock import Mock
 
+from prefactor_core import PrefactorCoreClient, PrefactorCoreConfig
+from prefactor_http.config import HttpClientConfig
 from prefactor_langchain.middleware import PrefactorMiddleware
+from prefactor_langchain.schemas import (
+    LANGCHAIN_AGENT_SCHEMA,
+    LANGCHAIN_LLM_SCHEMA,
+    LANGCHAIN_TOOL_SCHEMA,
+)
 from prefactor_langchain.spans import AgentSpan, LLMSpan, ToolSpan
 
 
 class TestPrefactorMiddleware:
     """Test PrefactorMiddleware."""
 
-    def test_init(self):
-        """Test initializing the middleware."""
-        middleware = PrefactorMiddleware(
+    def test_factory_pattern_basic(self):
+        """Test factory pattern with from_config."""
+        middleware = PrefactorMiddleware.from_config(
             api_url="http://test",
             api_token="test-token",
             agent_id="test-agent",
         )
 
         assert middleware is not None
-        assert middleware._api_url == "http://test"
-        assert middleware._api_token == "test-token"
+        assert middleware._client is not None
         assert middleware._agent_id == "test-agent"
-        assert middleware._client is None
+        assert middleware._agent_name is None
         assert middleware._instance is None
-        assert middleware._initialized is False
+        assert middleware._owns_client is True
+        assert middleware._owns_instance is True  # Will lazily create
 
-    def test_init_with_defaults(self):
-        """Test initializing with default agent_id."""
-        middleware = PrefactorMiddleware(
+    def test_factory_pattern_with_agent_name(self):
+        """Test factory pattern with agent name."""
+        middleware = PrefactorMiddleware.from_config(
             api_url="http://test",
             api_token="test-token",
+            agent_id="my-agent",
+            agent_name="My Test Agent",
         )
 
-        assert middleware._agent_id == "langchain-agent"
+        assert middleware._agent_id == "my-agent"
+        assert middleware._agent_name == "My Test Agent"
+
+    def test_configuration_mode(self):
+        """Test configuration mode with pre-created client."""
+        http_config = HttpClientConfig(api_url="http://test", api_token="test-token")
+        config = PrefactorCoreConfig(http_config=http_config)
+        client = PrefactorCoreClient(config)
+
+        middleware = PrefactorMiddleware(
+            client=client,
+            agent_id="cfg-agent",
+            agent_name="Config Agent",
+        )
+
+        assert middleware._client is client
+        assert middleware._agent_id == "cfg-agent"
+        assert middleware._agent_name == "Config Agent"
+        assert middleware._owns_client is True
+        assert middleware._owns_instance is True  # Will lazily create
+
+
+class TestMiddlewareMethods:
+    """Test middleware internal methods."""
+
+    @property
+    def _middleware(self) -> PrefactorMiddleware:
+        """Create a middleware for testing methods."""
+        http_config = HttpClientConfig(api_url="http://test", api_token="test-token")
+        config = PrefactorCoreConfig(http_config=http_config)
+        client = PrefactorCoreClient(config)
+        return PrefactorMiddleware(client=client)
 
     def test_get_name_from_request_with_metadata(self):
         """Test extracting name from request metadata."""
-        middleware = PrefactorMiddleware(
-            api_url="http://test",
-            api_token="test-token",
-        )
+        middleware = self._middleware
 
         request = Mock()
         request.metadata = {"name": "custom-name"}
@@ -49,10 +86,7 @@ class TestPrefactorMiddleware:
 
     def test_get_name_from_request_with_model(self):
         """Test extracting name from model."""
-        middleware = PrefactorMiddleware(
-            api_url="http://test",
-            api_token="test-token",
-        )
+        middleware = self._middleware
 
         request = Mock()
         request.metadata = {}
@@ -64,10 +98,7 @@ class TestPrefactorMiddleware:
 
     def test_get_name_from_request_fallback(self):
         """Test fallback name extraction."""
-        middleware = PrefactorMiddleware(
-            api_url="http://test",
-            api_token="test-token",
-        )
+        middleware = self._middleware
 
         request = Mock(spec=[])  # No attributes
 
@@ -76,10 +107,7 @@ class TestPrefactorMiddleware:
 
     def test_extract_model_inputs_with_messages(self):
         """Test extracting inputs from messages."""
-        middleware = PrefactorMiddleware(
-            api_url="http://test",
-            api_token="test-token",
-        )
+        middleware = self._middleware
 
         request = Mock()
         request.messages = ["msg1", "msg2", "msg3", "msg4"]
@@ -90,10 +118,7 @@ class TestPrefactorMiddleware:
 
     def test_extract_model_inputs_with_prompt(self):
         """Test extracting inputs from prompt."""
-        middleware = PrefactorMiddleware(
-            api_url="http://test",
-            api_token="test-token",
-        )
+        middleware = self._middleware
 
         request = Mock()
         request.messages = None
@@ -104,10 +129,7 @@ class TestPrefactorMiddleware:
 
     def test_extract_tool_inputs(self):
         """Test extracting tool inputs."""
-        middleware = PrefactorMiddleware(
-            api_url="http://test",
-            api_token="test-token",
-        )
+        middleware = self._middleware
 
         request = Mock()
         request.tool_call = {"name": "calculator", "args": {"x": 1}}
@@ -196,3 +218,25 @@ class TestSpanSerialization:
         span_dict = span.to_dict()
         assert span_dict["error"]["error_type"] == "ValueError"
         assert span_dict["error"]["message"] == "Test error message"
+
+
+class TestSchemaConstants:
+    """Test exported schema constants."""
+
+    def test_langchain_agent_schema(self):
+        """Test LANGCHAIN_AGENT_SCHEMA is exported."""
+        assert LANGCHAIN_AGENT_SCHEMA is not None
+        assert LANGCHAIN_AGENT_SCHEMA.get("type") == "object"
+        assert "properties" in LANGCHAIN_AGENT_SCHEMA
+
+    def test_langchain_llm_schema(self):
+        """Test LANGCHAIN_LLM_SCHEMA is exported."""
+        assert LANGCHAIN_LLM_SCHEMA is not None
+        assert LANGCHAIN_LLM_SCHEMA.get("type") == "object"
+        assert "properties" in LANGCHAIN_LLM_SCHEMA
+
+    def test_langchain_tool_schema(self):
+        """Test LANGCHAIN_TOOL_SCHEMA is exported."""
+        assert LANGCHAIN_TOOL_SCHEMA is not None
+        assert LANGCHAIN_TOOL_SCHEMA.get("type") == "object"
+        assert "properties" in LANGCHAIN_TOOL_SCHEMA
