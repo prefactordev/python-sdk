@@ -210,9 +210,9 @@ def register_langchain_schemas(registry: Any) -> None:
         # Now the registry has langchain:agent, langchain:llm, langchain:tool
         assert registry.has_schema("langchain:llm")
     """
-    registry.register("langchain:agent", LANGCHAIN_AGENT_SCHEMA, source="langchain")
-    registry.register("langchain:llm", LANGCHAIN_LLM_SCHEMA, source="langchain")
-    registry.register("langchain:tool", LANGCHAIN_TOOL_SCHEMA, source="langchain")
+    registry.register("langchain:agent", LANGCHAIN_AGENT_SCHEMA)
+    registry.register("langchain:llm", LANGCHAIN_LLM_SCHEMA)
+    registry.register("langchain:tool", LANGCHAIN_TOOL_SCHEMA)
 
 
 __all__ = [

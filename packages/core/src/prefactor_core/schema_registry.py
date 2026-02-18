@@ -1,7 +1,7 @@
 """Schema registry for span type definitions.
 
 This module provides a SchemaRegistry that allows registration of span schemas
-from multiple sources before agent instances are created.
+from multiple packages before agent instances are created.
 """
 
 from typing import Any
@@ -18,13 +18,13 @@ class SchemaRegistry:
         registry = SchemaRegistry()
 
         # Register built-in schemas
-        registry.register("langchain:agent", {"type": "object"}, source="langchain")
+        registry.register("langchain:agent", {"type": "object"})
 
         # Register custom user schemas
         registry.register("http-api:get", {
             "type": "object",
             "properties": {"url": {"type": "string"}}
-        }, source="user")
+        })
 
         # Convert to API format
         version = registry.to_agent_schema_version("combined-1.0.0")
@@ -38,15 +38,12 @@ class SchemaRegistry:
         self,
         schema_name: str,
         schema: dict[str, Any],
-        source: str | None = None,
     ) -> None:
         """Register a schema for a span type.
 
         Args:
             schema_name: Unique identifier for this span type (e.g., "langchain:llm")
             schema: JSON Schema dict defining the span payload structure
-            source: Optional identifier for the source of this schema
-                   (e.g., "langchain", "user", "http-adapter")
 
         Raises:
             ValueError: If schema_name is already registered.
@@ -54,28 +51,20 @@ class SchemaRegistry:
         if schema_name in self._schemas:
             raise ValueError(f"Schema '{schema_name}' is already registered")
 
-        self._schemas[schema_name] = {
-            "schema": schema,
-            "source": source or "unknown",
-        }
+        self._schemas[schema_name] = schema
 
     def register_unsafe(
         self,
         schema_name: str,
         schema: dict[str, Any],
-        source: str | None = None,
     ) -> None:
         """Register a schema, overwriting if it already exists.
 
         Args:
             schema_name: Unique identifier for this span type
             schema: JSON Schema dict defining the span payload structure
-            source: Optional identifier for the source of this schema
         """
-        self._schemas[schema_name] = {
-            "schema": schema,
-            "source": source or "unknown",
-        }
+        self._schemas[schema_name] = schema
 
     def get(self, schema_name: str) -> dict[str, Any] | None:
         """Get a schema by name.
@@ -86,20 +75,7 @@ class SchemaRegistry:
         Returns:
             The schema dict if found, None otherwise
         """
-        info = self._schemas.get(schema_name)
-        return info["schema"] if info else None
-
-    def get_source(self, schema_name: str) -> str | None:
-        """Get the source of a registered schema.
-
-        Args:
-            schema_name: The schema identifier to look up
-
-        Returns:
-            The source string if found, None otherwise
-        """
-        info = self._schemas.get(schema_name)
-        return info["source"] if info else None
+        return self._schemas.get(schema_name)
 
     def list_schemas(self) -> list[str]:
         """List all registered schema names.
@@ -131,9 +107,7 @@ class SchemaRegistry:
         """
         return {
             "external_identifier": external_id,
-            "span_schemas": {
-                name: info["schema"] for name, info in self._schemas.items()
-            },
+            "span_schemas": dict(self._schemas),
         }
 
     def merge(self, other: "SchemaRegistry") -> None:
