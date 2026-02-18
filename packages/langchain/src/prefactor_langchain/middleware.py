@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING, Any, Callable, Optional
+from typing import TYPE_CHECKING, Any, Callable
 
 from langchain.agents.middleware import AgentMiddleware
 from prefactor_core import (
@@ -32,16 +32,17 @@ class PrefactorMiddleware(AgentMiddleware):
 
     Two usage patterns are supported:
 
-    1. **Configuration Mode** (new): Pass a pre-configured client and optional
-       schema registry for full control over settings.
+    1. **Pre-configured Client** (recommended): Pass a pre-configured client for
+       full control over settings. The user is responsible for client lifecycle.
 
-    2. **Factory Pattern**: Use `from_config()` for quick setup.
+    2. **Factory Pattern**: Use `from_config()` for quick setup. The middleware
+       owns both client and agent instance lifecycle.
 
-    Example - Configuration Mode:
+    Example - Pre-configured Client:
         from prefactor_core import PrefactorCoreClient, PrefactorCoreConfig
         from prefactor_http.config import HttpClientConfig
 
-        # Configure client yourself
+        # Configure and initialize client yourself
         http_config = HttpClientConfig(api_url="...", api_token="...")
         config = PrefactorCoreConfig(http_config=http_config)
         client = PrefactorCoreClient(config)
@@ -54,6 +55,10 @@ class PrefactorMiddleware(AgentMiddleware):
             agent_name="My Agent",
         )
 
+        # User must close both middleware and client
+        await middleware.close()  # Only closes agent instance
+        await client.close()  # User closes their own client
+
     Example - Factory Pattern:
         middleware = PrefactorMiddleware.from_config(
             api_url="https://api.prefactor.ai",
@@ -61,15 +66,16 @@ class PrefactorMiddleware(AgentMiddleware):
             agent_id="my-agent",
             agent_name="My Agent",
         )
+
+        # Middleware manages both client and agent instance
+        await middleware.close()  # Closes both
     """
 
     def __init__(
         self,
         client: PrefactorCoreClient,
         agent_id: str = "langchain-agent",
-        agent_name: Optional[str] = None,
-        agent_instance: Optional[AgentInstanceHandle] = None,
-        auto_initialize: bool = True,
+        agent_name: str | None = None,
     ):
         """Initialize the middleware with a pre-configured client.
 
@@ -77,22 +83,37 @@ class PrefactorMiddleware(AgentMiddleware):
             client: Pre-initialized PrefactorCoreClient instance.
             agent_id: Agent identifier for categorization.
             agent_name: Optional human-readable agent name.
-            agent_instance: Optional pre-created agent instance. If not provided,
-                the middleware will create one automatically.
-            auto_initialize: If True and no agent_instance is provided, the
-                middleware will create and initialize an agent instance automatically.
+
+        Raises:
+            ValueError: If client is None or not initialized.
         """
+        if client is None:
+            msg = (
+                "Client is required"
+                " - use PrefactorMiddleware.from_config()"
+                " for quick setup"
+            )
+            raise ValueError(msg)
+
+        if not hasattr(client, "_initialized") or not client._initialized:
+            msg = (
+                "Client must be initialized before being"
+                " passed to middleware"
+                " - call await client.initialize() first"
+            )
+            raise ValueError(msg)
+
         self._client = client
         self._agent_id = agent_id
         self._agent_name = agent_name
 
         # Client and instance tracking
-        self._instance: Optional[AgentInstanceHandle] = agent_instance
-        self._owns_instance = agent_instance is None  # Track if we created it
-        self._owns_client = auto_initialize  # We didn't create the client
+        self._instance: AgentInstanceHandle | None = None
+        self._owns_instance = True  # We create the agent instance
+        self._owns_client = False  # We didn't create the client
 
         # Agent span context storage
-        self._agent_span_context: Optional["SpanContext"] = None
+        self._agent_span_context: SpanContext | None = None
 
     @classmethod
     def from_config(
@@ -107,6 +128,7 @@ class PrefactorMiddleware(AgentMiddleware):
         """Factory method to create middleware from configuration.
 
         This creates a client and middleware with the specified settings.
+        The middleware owns the client and will auto-initialize it on first use.
 
         Args:
             api_url: The Prefactor API URL.
@@ -118,7 +140,7 @@ class PrefactorMiddleware(AgentMiddleware):
                 automatically register LangChain-specific schemas.
 
         Returns:
-            A configured PrefactorMiddleware instance.
+            A configured PrefactorMiddleware instance with lazy initialization.
 
         Example:
             middleware = PrefactorMiddleware.from_config(
@@ -127,6 +149,10 @@ class PrefactorMiddleware(AgentMiddleware):
                 agent_id="my-agent",
                 agent_name="My Agent",
             )
+
+            # Middleware auto-initializes on first use
+            # Cleanup when done:
+            await middleware.close()  # Closes both agent instance and client
         """
         http_config = HttpClientConfig(api_url=api_url, api_token=api_token)
 
@@ -141,15 +167,15 @@ class PrefactorMiddleware(AgentMiddleware):
         )
         client = PrefactorCoreClient(config)
 
-        # Return middleware, but don't create instance yet (will be done lazily)
-        middleware = cls(
-            client=client,
-            agent_id=agent_id,
-            agent_name=agent_name,
-            agent_instance=None,
-            auto_initialize=False,
-        )
-        middleware._owns_client = True  # We created the client
+        # Create middleware that owns the client (lazy init, no validation yet)
+        middleware = cls.__new__(cls)
+        middleware._client = client
+        middleware._agent_id = agent_id
+        middleware._agent_name = agent_name
+        middleware._instance = None
+        middleware._owns_instance = True
+        middleware._owns_client = True  # We created the client, we'll manage it
+        middleware._agent_span_context = None
         logger.debug("PrefactorMiddleware created via from_config()")
         return middleware
 
