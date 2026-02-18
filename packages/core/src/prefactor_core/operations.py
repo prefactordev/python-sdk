@@ -43,7 +43,7 @@ class Operation:
             type=OperationType.CREATE_SPAN,
             payload={
                 "instance_id": "inst-123",
-                "schema_name": "llm",
+                "schema_name": "agent:llm",
                 "span_id": "span-456"
             },
             timestamp=datetime.now(),

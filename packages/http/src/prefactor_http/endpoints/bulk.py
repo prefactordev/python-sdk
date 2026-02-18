@@ -22,9 +22,9 @@ def _ensure_idempotency_key(request: BulkRequest) -> bool:
 
 
 class BulkClient:
-    """Client for bulk query/action operations.
+    """Client for bulk action operations.
 
-    Execute multiple API queries and actions in a single HTTP request.
+    Execute multiple POST actions in a single HTTP request.
     This endpoint allows you to batch multiple operations together, reducing
     the number of round trips to the API.
 
@@ -36,30 +36,32 @@ class BulkClient:
         - Any unprocessed items (after the first error) are excluded from the result
         - All items must include a unique `idempotency_key` (minimum 8 characters)
         - Results are returned as a map keyed by `idempotency_key`
-        - Each item can be a different type of query or action
 
     Example:
         ```python
         request = BulkRequest(
             items=[
                 BulkItem(  # type: ignore[call-arg]
-                    _type="agents/list",
-                    idempotency_key="list-agents-001",
-                    environment_id="env_abc123"
+                    _type="agent_instances/register",
+                    idempotency_key="register-instance-001",
+                    agent_id="agent_123",
+                    agent_version={"name": "My Agent", "external_identifier": "v1.0.0"},
+                    agent_schema_version={
+                        "external_identifier": "v1.0.0",
+                        "span_schemas": {},
+                    },
                 ),
                 BulkItem(  # type: ignore[call-arg]
-                    _type="agents/create",
-                    idempotency_key="create-agent-001",
-                    details={
-                        "name": "Customer Support Bot",
-                        "description": "Handles customer inquiries"
-                    },
-                    environment_id="prod_env"
-                )
+                    _type="agent_spans/create",
+                    idempotency_key="create-span-001",
+                    agent_instance_id="instance_123",
+                    schema_name="agent:llm",
+                    status="active",
+                ),
             ]
         )
         response = await client.bulk.execute(request)
-        print(response.outputs["create-agent-001"].status)
+        print(response.outputs["create-span-001"].status)
         ```
     """
 

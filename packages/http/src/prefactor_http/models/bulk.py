@@ -7,8 +7,7 @@ class BulkItem(BaseModel):
     """A single item in a bulk request.
 
     Each item must include _type and idempotency_key, plus any additional
-    parameters required by the specific query/action type (e.g., environment_id for
-    agents/list, details for agents/create).
+    parameters required by the specific action type.
     """
 
     model_config = ConfigDict(extra="allow")

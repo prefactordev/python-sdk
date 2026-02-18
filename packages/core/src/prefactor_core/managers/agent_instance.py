@@ -142,7 +142,7 @@ class AgentInstanceHandle:
         async with client.create_agent_instance(...) as instance:
             await instance.start()
 
-            async with instance.span("llm") as span:
+            async with instance.span("agent:llm") as span:
                 span.set_payload({"model": "gpt-4"})
                 # ... do work ...
 

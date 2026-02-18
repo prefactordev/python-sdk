@@ -47,7 +47,7 @@ class PrefactorCoreClient:
             instance = await client.create_agent_instance(...)
             await instance.start()
 
-            async with instance.span("llm") as span:
+            async with instance.span("agent:llm") as span:
                 span.set_payload({"model": "gpt-4"})
                 # Your agent logic here
 

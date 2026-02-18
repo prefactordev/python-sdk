@@ -30,7 +30,7 @@ class SpanManager:
         # Create a span (parent auto-detected from stack)
         span_id = await manager.create(
             instance_id="inst-123",
-            schema_name="llm"
+            schema_name="agent:llm"
         )
 
         # Update span payload

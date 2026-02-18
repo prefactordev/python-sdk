@@ -18,7 +18,7 @@ class SpanContext:
     is automatically finished when exiting the context.
 
     Example:
-        async with client.span(instance_id, "llm") as span:
+        async with client.span(instance_id, "agent:llm") as span:
             span.set_payload({"model": "gpt-4"})
             result = await call_llm()
             span.set_payload({"response": result})
