@@ -35,7 +35,29 @@ async def main():
         instance = await client.create_agent_instance(
             agent_id="my-agent",
             agent_version={"name": "My Agent", "external_identifier": "v1.0.0"},
-            agent_schema_version={"external_identifier": "v1.0.0", "span_schemas": {}},
+            agent_schema_version={
+                "external_identifier": "v1.0.0",
+                "span_type_schemas": [
+                    {
+                        "name": "agent:llm",
+                        "title": "LLM Call",
+                        "description": "A call to a language model",
+                        "params_schema": {
+                            "type": "object",
+                            "properties": {
+                                "model": {"type": "string"},
+                                "prompt": {"type": "string"},
+                            },
+                            "required": ["model", "prompt"],
+                        },
+                        "result_schema": {
+                            "type": "object",
+                            "properties": {"response": {"type": "string"}},
+                        },
+                        "template": "{{model}}: {{prompt}} → {{response}}",
+                    },
+                ],
+            },
         )
 
         await instance.start()
@@ -143,8 +165,32 @@ Use `SchemaRegistry` to compose span schemas from multiple sources and auto-gene
 from prefactor_core import SchemaRegistry
 
 registry = SchemaRegistry()
-registry.register("agent:llm", {"type": "object", "properties": {...}})
-registry.register("agent:tool", {"type": "object", "properties": {...}})
+
+# Full structured form: params schema, result schema, title, description, template
+registry.register_type(
+    name="agent:llm",
+    params_schema={
+        "type": "object",
+        "properties": {
+            "model": {"type": "string"},
+            "prompt": {"type": "string"},
+        },
+        "required": ["model", "prompt"],
+    },
+    result_schema={
+        "type": "object",
+        "properties": {"response": {"type": "string"}},
+    },
+    title="LLM Call",
+    description="A call to a language model",
+    template="{{model}}: {{prompt}} → {{response}}",
+)
+registry.register_type(
+    name="agent:tool",
+    params_schema={"type": "object", "properties": {...}},
+    result_schema={"type": "object", "properties": {...}},
+    title="Tool Call",
+)
 
 config = PrefactorCoreConfig(
     http_config=...,

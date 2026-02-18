@@ -48,7 +48,26 @@ class BulkClient:
                     agent_version={"name": "My Agent", "external_identifier": "v1.0.0"},
                     agent_schema_version={
                         "external_identifier": "v1.0.0",
-                        "span_schemas": {},
+                        "span_type_schemas": [
+                            {
+                                "name": "agent:llm",
+                                "title": "LLM Call",
+                                "params_schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "model": {"type": "string"},
+                                        "prompt": {"type": "string"},
+                                    },
+                                    "required": ["model", "prompt"],
+                                },
+                                "result_schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "response": {"type": "string"},
+                                    },
+                                },
+                            },
+                        ],
                     },
                 ),
                 BulkItem(  # type: ignore[call-arg]

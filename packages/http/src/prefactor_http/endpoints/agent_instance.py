@@ -45,8 +45,9 @@ class AgentInstanceClient:
             agent_id: ID of the agent to create an instance for
             agent_version: Version info dict with name, external_identifier,
                 description
-            agent_schema_version: Schema version dict with external_identifier,
-                span_schemas
+            agent_schema_version: Schema version dict with external_identifier
+                and span type definitions (span_type_schemas, span_schemas,
+                and/or span_result_schemas)
             id: Optional custom ID for the instance
             idempotency_key: Optional idempotency key
             update_current_version: Whether to update the current version

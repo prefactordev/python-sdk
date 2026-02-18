@@ -32,7 +32,29 @@ async def main():
         instance = await client.agent_instances.register(
             agent_id="agent_123",
             agent_version={"name": "My Agent", "external_identifier": "v1.0.0"},
-            agent_schema_version={"external_identifier": "v1.0.0", "span_schemas": {}},
+            agent_schema_version={
+                "external_identifier": "v1.0.0",
+                "span_type_schemas": [
+                    {
+                        "name": "agent:llm",
+                        "title": "LLM Call",
+                        "description": "A call to a language model",
+                        "params_schema": {
+                            "type": "object",
+                            "properties": {
+                                "model": {"type": "string"},
+                                "prompt": {"type": "string"},
+                            },
+                            "required": ["model", "prompt"],
+                        },
+                        "result_schema": {
+                            "type": "object",
+                            "properties": {"response": {"type": "string"}},
+                        },
+                        "template": "{{model}}: {{prompt}} → {{response}}",
+                    },
+                ],
+            },
         )
         print(f"Registered instance: {instance.id}")
 
@@ -54,9 +76,19 @@ instance = await client.agent_instances.register(
     },
     agent_schema_version={
         "external_identifier": "schema-v1",
-        "span_schemas": {
-            "agent:llm": {"type": "object", "properties": {...}},
-        },
+        "span_type_schemas": [
+            {
+                "name": "agent:llm",
+                "title": "LLM Call",                        # Optional
+                "description": "A call to a language model", # Optional
+                "params_schema": {"type": "object", "properties": {...}},
+                "result_schema": {"type": "object", "properties": {...}}, # Optional
+                "template": "{{model}}: {{prompt}} → {{response}}",       # Optional
+            },
+        ],
+        # Alternatively, use flat maps for simpler cases:
+        # "span_schemas": {"agent:llm": {"type": "object", ...}},
+        # "span_result_schemas": {"agent:llm": {"type": "object", ...}},
     },
     id=None,                      # Optional: pre-assign an ID
     idempotency_key=None,         # Optional: idempotency key
@@ -124,7 +156,27 @@ request = BulkRequest(
             idempotency_key="register-instance-001",
             agent_id="agent_123",
             agent_version={"name": "My Agent", "external_identifier": "v1.0.0"},
-            agent_schema_version={"external_identifier": "v1.0.0", "span_schemas": {}},
+            agent_schema_version={
+                "external_identifier": "v1.0.0",
+                "span_type_schemas": [
+                    {
+                        "name": "agent:llm",
+                        "title": "LLM Call",
+                        "params_schema": {
+                            "type": "object",
+                            "properties": {
+                                "model": {"type": "string"},
+                                "prompt": {"type": "string"},
+                            },
+                            "required": ["model", "prompt"],
+                        },
+                        "result_schema": {
+                            "type": "object",
+                            "properties": {"response": {"type": "string"}},
+                        },
+                    },
+                ],
+            },
         ),
         BulkItem(
             _type="agent_spans/create",
