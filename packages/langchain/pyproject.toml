@@ -3,7 +3,7 @@ name = "prefactor-langchain"
 version = "0.2.0"
 description = "LangChain integration for Prefactor observability"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.10.0, <4.0.0"
 dependencies = [
     "prefactor-core>=0.1.0",
     "langchain-core>=1.0.0",

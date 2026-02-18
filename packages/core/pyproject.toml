@@ -3,7 +3,7 @@ name = "prefactor-core"
 version = "0.1.0"
 description = "Core Prefactor SDK with async queue-based operations"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.10.0, <4.0.0"
 dependencies = [
     "prefactor-http>=0.1.0",
     "pydantic>=2.0.0",
