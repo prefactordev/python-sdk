@@ -2,8 +2,6 @@
 
 from unittest.mock import Mock
 
-from prefactor_core import PrefactorCoreClient, PrefactorCoreConfig
-from prefactor_http.config import HttpClientConfig
 from prefactor_langchain.middleware import PrefactorMiddleware
 from prefactor_langchain.schemas import (
     LANGCHAIN_AGENT_SCHEMA,
@@ -45,10 +43,9 @@ class TestPrefactorMiddleware:
         assert middleware._agent_name == "My Test Agent"
 
     def test_configuration_mode(self):
-        """Test configuration mode with pre-created client."""
-        http_config = HttpClientConfig(api_url="http://test", api_token="test-token")
-        config = PrefactorCoreConfig(http_config=http_config)
-        client = PrefactorCoreClient(config)
+        """Test configuration mode with pre-created (mocked) client."""
+        client = Mock()
+        client._initialized = True
 
         middleware = PrefactorMiddleware(
             client=client,
@@ -59,8 +56,37 @@ class TestPrefactorMiddleware:
         assert middleware._client is client
         assert middleware._agent_id == "cfg-agent"
         assert middleware._agent_name == "Config Agent"
-        assert middleware._owns_client is True
+        assert middleware._owns_client is False  # Caller created the client
         assert middleware._owns_instance is True  # Will lazily create
+
+    def test_pre_configured_instance(self):
+        """Test using a pre-configured AgentInstanceHandle."""
+        mock_instance = Mock()
+
+        middleware = PrefactorMiddleware(instance=mock_instance)
+
+        assert middleware._instance is mock_instance
+        assert middleware._client is None
+        assert middleware._owns_instance is False  # Caller owns it
+        assert middleware._owns_client is False
+
+    def test_pre_configured_instance_with_client_raises(self):
+        """Providing both client and instance should raise ValueError."""
+        import pytest
+
+        mock_client = Mock()
+        mock_client._initialized = True
+        mock_instance = Mock()
+
+        with pytest.raises(ValueError, match="not both"):
+            PrefactorMiddleware(client=mock_client, instance=mock_instance)
+
+    def test_no_client_no_instance_raises(self):
+        """Providing neither client nor instance should raise ValueError."""
+        import pytest
+
+        with pytest.raises(ValueError, match="Either 'client' or 'instance'"):
+            PrefactorMiddleware()
 
 
 class TestMiddlewareMethods:
@@ -68,11 +94,8 @@ class TestMiddlewareMethods:
 
     @property
     def _middleware(self) -> PrefactorMiddleware:
-        """Create a middleware for testing methods."""
-        http_config = HttpClientConfig(api_url="http://test", api_token="test-token")
-        config = PrefactorCoreConfig(http_config=http_config)
-        client = PrefactorCoreClient(config)
-        return PrefactorMiddleware(client=client)
+        """Create a middleware backed by a mock instance (no real client needed)."""
+        return PrefactorMiddleware(instance=Mock())
 
     def test_get_name_from_request_with_metadata(self):
         """Test extracting name from request metadata."""

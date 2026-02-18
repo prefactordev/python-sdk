@@ -30,12 +30,18 @@ class PrefactorMiddleware(AgentMiddleware):
     This middleware integrates with LangChain's middleware system to automatically
     create and emit spans for agent execution, LLM calls, and tool executions.
 
-    Two usage patterns are supported:
+    Three usage patterns are supported:
 
     1. **Pre-configured Client** (recommended): Pass a pre-configured client for
        full control over settings. The user is responsible for client lifecycle.
 
-    2. **Factory Pattern**: Use `from_config()` for quick setup. The middleware
+    2. **Pre-configured Instance**: Pass an existing `AgentInstanceHandle` to share
+       a single instance between the LangChain middleware and other parts of your
+       program. Use this when you need to create spans outside of the LangChain
+       agent (e.g. for custom pre/post-processing steps). The caller owns the
+       instance lifecycle and must call ``instance.finish()`` themselves.
+
+    3. **Factory Pattern**: Use `from_config()` for quick setup. The middleware
        owns both client and agent instance lifecycle.
 
     Example - Pre-configured Client:
@@ -59,6 +65,32 @@ class PrefactorMiddleware(AgentMiddleware):
         await middleware.close()  # Only closes agent instance
         await client.close()  # User closes their own client
 
+    Example - Pre-configured Instance (spans outside the agent):
+        from prefactor_core import PrefactorCoreClient, PrefactorCoreConfig
+        from prefactor_http.config import HttpClientConfig
+
+        http_config = HttpClientConfig(api_url="...", api_token="...")
+        config = PrefactorCoreConfig(http_config=http_config)
+        client = PrefactorCoreClient(config)
+        await client.initialize()
+
+        instance = await client.create_agent_instance(agent_id="my-agent")
+        await instance.start()
+
+        # Share the same instance with the middleware AND your own code
+        middleware = PrefactorMiddleware(instance=instance)
+
+        # Instrument your own code with the same instance
+        async with instance.span("custom:preprocessing") as ctx:
+            ctx.set_payload({"step": "preprocess", "status": "ok"})
+
+        # Run your LangChain agent (middleware traces it automatically)
+        result = agent.invoke({"messages": [...]})
+
+        # Caller is responsible for cleanup
+        await instance.finish()
+        await client.close()
+
     Example - Factory Pattern:
         middleware = PrefactorMiddleware.from_config(
             api_url="https://api.prefactor.ai",
@@ -73,25 +105,49 @@ class PrefactorMiddleware(AgentMiddleware):
 
     def __init__(
         self,
-        client: PrefactorCoreClient,
+        client: PrefactorCoreClient | None = None,
         agent_id: str = "langchain-agent",
         agent_name: str | None = None,
+        instance: AgentInstanceHandle | None = None,
     ):
-        """Initialize the middleware with a pre-configured client.
+        """Initialize the middleware with a pre-configured client or instance.
+
+        Pass either ``client`` or ``instance``, but not both.
 
         Args:
-            client: Pre-initialized PrefactorCoreClient instance.
-            agent_id: Agent identifier for categorization.
-            agent_name: Optional human-readable agent name.
+            client: Pre-initialized PrefactorCoreClient instance. The middleware
+                will lazily create its own AgentInstance from this client.
+            agent_id: Agent identifier used when the middleware creates its own
+                instance from ``client``. Ignored when ``instance`` is provided.
+            agent_name: Optional human-readable agent name. Ignored when
+                ``instance`` is provided.
+            instance: An existing AgentInstanceHandle to use for all spans.
+                When provided, the caller is responsible for the instance
+                lifecycle (``start()`` / ``finish()``). ``client`` must be
+                ``None`` when this is set.
 
         Raises:
-            ValueError: If client is None or not initialized.
+            ValueError: If neither or both of ``client`` and ``instance`` are
+                provided, or if ``client`` is not yet initialized.
         """
+        if instance is not None and client is not None:
+            raise ValueError("Provide either 'client' or 'instance', not both.")
+
+        if instance is not None:
+            # Caller owns the instance; middleware just borrows it.
+            self._client = None
+            self._agent_id = agent_id
+            self._agent_name = agent_name
+            self._instance = instance
+            self._owns_instance = False
+            self._owns_client = False
+            self._agent_span_context: SpanContext | None = None
+            return
+
         if client is None:
             msg = (
-                "Client is required"
-                " - use PrefactorMiddleware.from_config()"
-                " for quick setup"
+                "Either 'client' or 'instance' is required"
+                " - use PrefactorMiddleware.from_config() for quick setup"
             )
             raise ValueError(msg)
 
