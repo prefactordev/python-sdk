@@ -9,6 +9,7 @@ from prefactor_http.models.agent_span import (
     FinishSpanRequest,
 )
 from prefactor_http.models.base import ApiResponse
+from prefactor_http.models.types import AgentStatus, FinishStatus
 
 if TYPE_CHECKING:
     from prefactor_http.client import PrefactorHttpClient
@@ -34,7 +35,9 @@ class AgentSpanClient:
         self,
         agent_instance_id: str,
         schema_name: str,
+        status: AgentStatus,
         payload: dict | None = None,
+        result_payload: dict | None = None,
         id: str | None = None,
         parent_span_id: str | None = None,
         started_at: datetime | None = None,
@@ -48,7 +51,9 @@ class AgentSpanClient:
         Args:
             agent_instance_id: ID of the agent instance this span belongs to
             schema_name: Name of the schema for this span
+            status: Status for the span
             payload: Optional span payload data
+            result_payload: Optional result payload data
             id: Optional custom ID for the span
             parent_span_id: Optional parent span ID
             started_at: Optional start time
@@ -65,7 +70,9 @@ class AgentSpanClient:
         create_request = CreateAgentSpanRequest(
             agent_instance_id=agent_instance_id,
             schema_name=schema_name,
+            status=status,
             payload=payload or {},
+            result_payload=result_payload,
             id=id,
             parent_span_id=parent_span_id,
             started_at=started_at.isoformat() if started_at else None,
@@ -85,6 +92,8 @@ class AgentSpanClient:
     async def finish(
         self,
         agent_span_id: str,
+        status: FinishStatus | None = None,
+        result_payload: dict | None = None,
         timestamp: datetime | None = None,
         idempotency_key: str | None = None,
     ) -> AgentSpan:
@@ -94,6 +103,8 @@ class AgentSpanClient:
 
         Args:
             agent_span_id: The span ID
+            status: Optional finish status (complete, failed, cancelled)
+            result_payload: Optional result payload data
             timestamp: Optional finish time (defaults to now)
             idempotency_key: Optional idempotency key
 
@@ -105,6 +116,8 @@ class AgentSpanClient:
             PrefactorApiError: On other errors
         """
         finish_request = FinishSpanRequest(
+            status=status,
+            result_payload=result_payload,
             timestamp=timestamp.isoformat() if timestamp else None,
             idempotency_key=idempotency_key,
         )

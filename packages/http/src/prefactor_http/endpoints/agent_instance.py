@@ -3,8 +3,9 @@
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from prefactor_http.models.agent_instance import AgentInstance
+from prefactor_http.models.agent_instance import AgentInstance, FinishInstanceRequest
 from prefactor_http.models.base import ApiResponse
+from prefactor_http.models.types import FinishStatus
 
 if TYPE_CHECKING:
     from prefactor_http.client import PrefactorHttpClient
@@ -34,6 +35,7 @@ class AgentInstanceClient:
         agent_schema_version: dict,
         id: str | None = None,
         idempotency_key: str | None = None,
+        update_current_version: bool = True,
     ) -> AgentInstance:
         """Register a new agent instance.
 
@@ -47,6 +49,8 @@ class AgentInstanceClient:
                 span_schemas
             id: Optional custom ID for the instance
             idempotency_key: Optional idempotency key
+            update_current_version: Whether to update the current version
+                (defaults to True)
 
         Returns:
             The created agent instance
@@ -59,6 +63,7 @@ class AgentInstanceClient:
             "agent_id": agent_id,
             "agent_version": agent_version,
             "agent_schema_version": agent_schema_version,
+            "update_current_version": update_current_version,
         }
         if id is not None:
             payload["id"] = id
@@ -112,6 +117,7 @@ class AgentInstanceClient:
     async def finish(
         self,
         agent_instance_id: str,
+        status: FinishStatus | None = None,
         timestamp: datetime | None = None,
         idempotency_key: str | None = None,
     ) -> AgentInstance:
@@ -121,6 +127,7 @@ class AgentInstanceClient:
 
         Args:
             agent_instance_id: The instance ID
+            status: Optional finish status (complete, failed, cancelled)
             timestamp: Optional finish time (defaults to now)
             idempotency_key: Optional idempotency key
 
@@ -131,14 +138,16 @@ class AgentInstanceClient:
             PrefactorNotFoundError: If instance not found
             PrefactorApiError: On other errors
         """
-        payload = {"timestamp": timestamp.isoformat() if timestamp else None}
-        if idempotency_key:
-            payload["idempotency_key"] = idempotency_key
+        finish_request = FinishInstanceRequest(
+            status=status,
+            timestamp=timestamp.isoformat() if timestamp else None,
+            idempotency_key=idempotency_key,
+        )
 
         response = await self._client.request(
             "POST",
             f"/api/v1/agent_instance/{agent_instance_id}/finish",
-            json_data=payload,
+            json_data=finish_request.model_dump(exclude_none=True),
         )
 
         api_response = ApiResponse[AgentInstance](**response)

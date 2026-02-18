@@ -195,6 +195,7 @@ class PrefactorCoreClient:
                 await self._http.agent_spans.create(
                     agent_instance_id=operation.payload["instance_id"],
                     schema_name=operation.payload["schema_name"],
+                    status=operation.payload.get("status", "pending"),
                     id=operation.payload.get("span_id"),
                     parent_span_id=operation.payload.get("parent_span_id"),
                     payload=operation.payload.get("payload"),
