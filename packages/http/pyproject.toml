@@ -3,7 +3,7 @@ name = "prefactor-http"
 version = "0.1.0"
 description = "HTTP client library for Prefactor API"
 readme = "README.md"
-requires-python = ">=3.10.0, <4.0.0"
+requires-python = ">=3.11.0, <4.0.0"
 dependencies = [
     "aiohttp>=3.9.0",
     "pydantic>=2.0.0",

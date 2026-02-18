@@ -68,3 +68,4 @@ htmlcov/
 
 # Env
 .env
+mise.local.toml

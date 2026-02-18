@@ -5,7 +5,6 @@ AgentInstanceHandle provides a high-level interface for managing
 an agent instance and creating spans within it.
 """
 
-import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Awaitable, Callable
@@ -22,23 +21,23 @@ class AgentInstanceManager:
     """Manages agent instance lifecycle operations.
 
     This class provides a high-level interface for agent instance operations.
-    All operations are converted to Operation objects and queued for
-    async processing.
+    Registration is done synchronously to get the API-generated ID, while
+    start/finish operations are queued for async processing.
 
     Example:
         manager = AgentInstanceManager(http_client, enqueue_func)
 
-        # Register a new instance
+        # Register a new instance (synchronous - returns API-generated ID)
         instance_id = await manager.register(
             agent_id="my-agent",
             agent_version={"name": "1.0.0"},
             agent_schema_version={"version": "1.0.0"}
         )
 
-        # Start the instance
+        # Start the instance (queued)
         await manager.start(instance_id)
 
-        # Finish the instance
+        # Finish the instance (queued)
         await manager.finish(instance_id)
     """
 
@@ -65,37 +64,24 @@ class AgentInstanceManager:
     ) -> str:
         """Register a new agent instance.
 
-        Creates an operation to register the instance and queues it for
-        processing. Returns immediately with the instance ID.
+        Makes a synchronous API call to register the instance and returns
+        the API-generated ID.
 
         Args:
             agent_id: ID of the agent to create an instance for.
             agent_version: Version information (name, external_identifier, etc.).
             agent_schema_version: Schema version information.
-            instance_id: Optional custom ID for the instance.
+            instance_id: Ignored (API generates IDs with correct partition).
 
         Returns:
-            The instance ID (generated or provided).
+            The instance ID (API-generated).
         """
-        # Generate ID if not provided
-        if instance_id is None:
-            instance_id = str(uuid.uuid4())
-
-        # Queue creation operation
-        operation = Operation(
-            type=OperationType.REGISTER_AGENT_INSTANCE,
-            payload={
-                "agent_id": agent_id,
-                "agent_version": agent_version,
-                "agent_schema_version": agent_schema_version,
-                "id": instance_id,
-            },
-            timestamp=datetime.now(),
-            idempotency_key=instance_id,
+        result = await self._http.agent_instances.register(
+            agent_id=agent_id,
+            agent_version=agent_version,
+            agent_schema_version=agent_schema_version,
         )
-
-        await self._enqueue(operation)
-        return instance_id
+        return result.id
 
     async def start(self, instance_id: str) -> None:
         """Mark an instance as started.

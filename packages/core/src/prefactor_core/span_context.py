@@ -58,12 +58,17 @@ class SpanContext:
         Args:
             data: Dictionary of data to add to the span payload.
         """
+        import asyncio
+
         self._payload.update(data)
         # Queue async update
         # Note: We don't await here - updates are best-effort
-        import asyncio
-
-        asyncio.create_task(self._span_manager.update_payload(self._span_id, data))
+        try:
+            asyncio.get_running_loop()
+            asyncio.create_task(self._span_manager.update_payload(self._span_id, data))
+        except RuntimeError:
+            # No running event loop - run synchronously
+            asyncio.run(self._span_manager.update_payload(self._span_id, data))
 
     def get_payload(self) -> dict[str, Any]:
         """Get the current payload data.

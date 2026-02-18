@@ -316,23 +316,22 @@ class TestAgentSpanNewFields:
         base.update(overrides)
         return AgentSpan(**base)
 
-    def test_schema_title_required(self):
-        with pytest.raises(ValidationError):
-            AgentSpan(
-                type="agent_span",
-                id="span-1",
-                account_id="acct-1",
-                agent_id="agent-1",
-                agent_instance_id="inst-1",
-                parent_span_id=None,
-                schema_name="test",
-                # schema_title omitted
-                status="active",
-                payload={},
-                started_at=NOW,
-                inserted_at=NOW,
-                updated_at=NOW,
-            )
+    def test_schema_title_optional(self):
+        span = AgentSpan(
+            type="agent_span",
+            id="span-1",
+            account_id="acct-1",
+            agent_id="agent-1",
+            agent_instance_id="inst-1",
+            parent_span_id=None,
+            schema_name="test",
+            status="active",
+            payload={},
+            started_at=NOW,
+            inserted_at=NOW,
+            updated_at=NOW,
+        )
+        assert span.schema_title is None
 
     def test_result_payload_optional(self):
         span = self._make_span()

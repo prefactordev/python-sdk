@@ -29,6 +29,9 @@ class InMemoryQueue(Queue[T]):
         await queue.close()
     """
 
+    # Unique sentinel used to wake blocked get() callers on close.
+    _SENTINEL: object = object()
+
     def __init__(self) -> None:
         """Initialize an empty in-memory queue."""
         self._queue: AsyncQueue[T] = AsyncQueue()
@@ -58,7 +61,12 @@ class InMemoryQueue(Queue[T]):
         """
         if self._closed and self._queue.empty():
             raise QueueClosedError("Queue is closed and empty")
-        return await self._queue.get()
+        item = await self._queue.get()
+        # A sentinel None is placed by close() to wake blocked workers.
+        # Re-raise as closed so the worker exits cleanly.
+        if item is self._SENTINEL:
+            raise QueueClosedError("Queue is closed and empty")
+        return item
 
     def size(self) -> int:
         """Return the current number of items in the queue.
@@ -68,13 +76,20 @@ class InMemoryQueue(Queue[T]):
         """
         return self._queue.qsize()
 
-    async def close(self) -> None:
+    async def close(self, num_waiters: int = 1) -> None:
         """Close the queue.
 
         After closing, no new items can be added. Workers will continue
-        to process existing items until the queue is empty.
+        to process existing items until the queue is empty, then exit.
+
+        Args:
+            num_waiters: Number of sentinel values to enqueue to wake up
+                that many workers currently blocked in get().
         """
         self._closed = True
+        # Wake any workers blocked in asyncio.Queue.get() so they can exit.
+        for _ in range(num_waiters):
+            await self._queue.put(self._SENTINEL)  # type: ignore[arg-type]
 
     @property
     def closed(self) -> bool:

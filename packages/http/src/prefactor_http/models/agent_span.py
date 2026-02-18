@@ -76,17 +76,17 @@ class AgentSpan(BaseModel):
 
     type: Literal["agent_span"]
     id: str
-    account_id: str
-    agent_id: str
+    account_id: str | None = None
+    agent_id: str | None = None
     agent_instance_id: str
-    parent_span_id: str | None
+    parent_span_id: str | None = None
     schema_name: str
-    schema_title: str
+    schema_title: str | None = None
     status: AgentStatus
-    payload: dict
+    payload: dict = Field(default_factory=dict)
     result_payload: dict | None = None
     summary: str | None = None
-    started_at: datetime
-    inserted_at: datetime
-    updated_at: datetime
+    started_at: datetime | None = None
+    inserted_at: datetime | None = None
+    updated_at: datetime | None = None
     finished_at: datetime | None = None

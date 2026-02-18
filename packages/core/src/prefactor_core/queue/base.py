@@ -65,11 +65,15 @@ class Queue(ABC, Generic[T]):
         pass
 
     @abstractmethod
-    async def close(self) -> None:
+    async def close(self, num_waiters: int = 1) -> None:
         """Close the queue and signal workers to stop.
 
         After closing, no new items can be added. Workers should
         finish processing remaining items and then exit.
+
+        Args:
+            num_waiters: Number of workers currently blocked in get() that
+                need to be woken up so they can observe the closed state.
         """
         pass
 

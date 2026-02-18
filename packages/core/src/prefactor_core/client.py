@@ -212,8 +212,10 @@ class PrefactorCoreClient:
             # Log error but don't re-raise - we don't want to crash the worker
             import logging
 
-            logging.getLogger(__name__).error(
-                f"Failed to process operation {operation.type}: {e}"
+            logger = logging.getLogger(__name__)
+            logger.error(
+                f"Failed to process operation {operation.type}: {e}",
+                exc_info=True,
             )
 
     async def create_agent_instance(

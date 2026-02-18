@@ -27,7 +27,6 @@ from langchain_core.tools import tool
 from prefactor_langchain import PrefactorMiddleware
 
 
-# Define simple tools for the agent
 @tool
 def calculator(expression: str) -> str:
     """Evaluate a mathematical expression."""
@@ -44,9 +43,19 @@ def get_current_time() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
-def main():
-    """Run the simple agent example."""
-    # Check for required environment variables
+async def run_agent(middleware: PrefactorMiddleware, agent, messages: list) -> dict:
+    """Run agent in a thread so the event loop stays free for tracing tasks."""
+    import functools
+
+    await middleware._ensure_initialized()
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(
+        None, functools.partial(agent.invoke, {"messages": messages})
+    )
+
+
+async def main_async():
+    """Async main function for proper shutdown handling."""
     anthropic_key = os.getenv("ANTHROPIC_API_KEY")
     if not anthropic_key:
         raise ValueError(
@@ -62,29 +71,28 @@ def main():
             "Get your token from the Prefactor dashboard."
         )
 
+    agent_id = os.getenv("PREFACTOR_AGENT_ID", "langchain-agent")
+
     print("=" * 80)
     print("Prefactor SDK - Anthropic Agent Example")
     print("=" * 80)
     print()
 
-    # Initialize Prefactor middleware for tracing using factory pattern
     print("Initializing Prefactor middleware...")
     middleware = PrefactorMiddleware.from_config(
         api_url=api_url,
         api_token=api_token,
-        agent_id="anthropic-example-agent",
+        agent_id=agent_id,
         agent_name="Anthropic Calculator Agent",
     )
-    print("✓ Prefactor middleware initialized")
+    print(f"✓ Prefactor middleware initialized (Agent ID: {agent_id})")
     print()
 
-    # Create tools list
     tools = [calculator, get_current_time]
 
-    # Create agent with Prefactor middleware
     print("Creating agent with Prefactor tracing enabled...")
     agent = create_agent(
-        model="claude-sonnet-4-5-20250929",
+        model="claude-haiku-4-5-20251001",
         tools=tools,
         system_prompt="You are a helpful assistant."
         "Use the available tools to answer questions accurately.",
@@ -93,19 +101,16 @@ def main():
     print("✓ Agent created with tracing enabled")
     print()
 
-    # Example 1: Getting Current Time
     print("=" * 80)
     print("Example 1: Getting Current Time")
     print("=" * 80)
     print()
 
     try:
-        result = agent.invoke(
-            {
-                "messages": [
-                    {"role": "user", "content": "What is the current date and time?"}
-                ]
-            }
+        result = await run_agent(
+            middleware,
+            agent,
+            [{"role": "user", "content": "What is the current date and time?"}],
         )
         print("\nAgent Response:")
         print(result["messages"][-1].content)
@@ -114,15 +119,16 @@ def main():
         print(f"Error in Example 1: {e}")
         print()
 
-    # Example 2: Simple Calculation
     print("=" * 80)
     print("Example 2: Simple Calculation")
     print("=" * 80)
     print()
 
     try:
-        result = agent.invoke(
-            {"messages": [{"role": "user", "content": "What is 42 multiplied by 17?"}]}
+        result = await run_agent(
+            middleware,
+            agent,
+            [{"role": "user", "content": "What is 42 multiplied by 17?"}],
         )
         print("\nAgent Response:")
         print(result["messages"][-1].content)
@@ -135,18 +141,19 @@ def main():
     print("Example Complete!")
     print("=" * 80)
     print()
-    print("Traces have been sent to Prefactor.")
-    print("Check your Prefactor dashboard to view:")
-    print("  - Agent execution spans")
-    print("  - LLM call spans with token usage")
-    print("  - Tool execution spans")
+    print("Traces have been queued for Prefactor.")
+    print("Flushing queue before shutdown...")
     print()
 
-    # Cleanup
     print("Shutting down...")
-    asyncio.run(middleware.close())
+    await middleware.close()
     print("✓ Complete")
     print()
+
+
+def main():
+    """Entry point that runs the async main."""
+    asyncio.run(main_async())
 
 
 if __name__ == "__main__":

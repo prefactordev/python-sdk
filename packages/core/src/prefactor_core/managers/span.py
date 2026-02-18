@@ -20,9 +20,10 @@ class SpanManager:
     """Manages span lifecycle operations.
 
     This class provides a high-level interface for span operations.
-    All operations are converted to Operation objects and queued for
-    async processing. The manager tracks span state and manages the
-    span stack for automatic parent detection.
+    Span creation is synchronous to get API-generated IDs, while finish
+    and update operations are queued for async processing. The manager
+    tracks span state and manages the span stack for automatic parent
+    detection.
 
     Example:
         manager = SpanManager(http_client, enqueue_func)
@@ -65,8 +66,8 @@ class SpanManager:
     ) -> str:
         """Create a new span.
 
-        Creates an operation to create the span and queues it for
-        processing. Returns immediately with the span ID.
+        Makes a synchronous API call to create the span and returns
+        the API-generated ID.
 
         If parent_span_id is not provided, uses the current span from
         the SpanContextStack.
@@ -76,51 +77,37 @@ class SpanManager:
             schema_name: Name of the schema for this span.
             parent_span_id: Optional parent span ID (auto-detected if None).
             payload: Optional initial payload data.
-            span_id: Optional custom ID for the span.
+            span_id: Ignored (API generates IDs with correct partition).
 
         Returns:
-            The span ID (generated or provided).
+            The span ID (API-generated).
         """
-        # Generate ID if not provided
-        if span_id is None:
-            import uuid
-
-            span_id = str(uuid.uuid4())
-
-        # Auto-detect parent from stack if not explicit
         if parent_span_id is None:
             parent_span_id = SpanContextStack.peek()
 
-        # Create local span record
+        result = await self._http.agent_spans.create(
+            agent_instance_id=instance_id,
+            schema_name=schema_name,
+            status="active",
+            payload=payload or {},
+            parent_span_id=parent_span_id,
+        )
+
+        returned_span_id = result.id
+
         span = Span(
-            id=span_id,
+            id=returned_span_id,
             instance_id=instance_id,
             schema_name=schema_name,
             parent_span_id=parent_span_id,
             status="pending",
             payload=payload or {},
         )
-        self._spans[span_id] = span
+        self._spans[returned_span_id] = span
 
-        # Push onto stack for automatic parent detection
-        SpanContextStack.push(span_id)
+        SpanContextStack.push(returned_span_id)
 
-        # Queue creation operation
-        operation = Operation(
-            type=OperationType.CREATE_SPAN,
-            payload={
-                "instance_id": instance_id,
-                "schema_name": schema_name,
-                "span_id": span_id,
-                "parent_span_id": parent_span_id,
-                "payload": payload or {},
-            },
-            timestamp=datetime.now(),
-            idempotency_key=span_id,
-        )
-
-        await self._enqueue(operation)
-        return span_id
+        return returned_span_id
 
     async def finish(self, span_id: str) -> None:
         """Mark a span as finished.
@@ -136,15 +123,12 @@ class SpanManager:
         if span_id not in self._spans:
             raise KeyError(f"Unknown span: {span_id}")
 
-        # Update local state
         self._spans[span_id].status = "complete"
         self._spans[span_id].finished_at = datetime.now()
 
-        # Pop from stack (if this span is on top)
         if SpanContextStack.peek() == span_id:
             SpanContextStack.pop()
 
-        # Queue finish operation
         operation = Operation(
             type=OperationType.FINISH_SPAN,
             payload={"span_id": span_id},
@@ -172,10 +156,8 @@ class SpanManager:
         if span_id not in self._spans:
             raise KeyError(f"Unknown span: {span_id}")
 
-        # Update local state
         self._spans[span_id].payload.update(payload)
 
-        # Queue update operation
         operation = Operation(
             type=OperationType.UPDATE_SPAN_PAYLOAD,
             payload={

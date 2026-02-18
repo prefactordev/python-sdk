@@ -80,10 +80,13 @@ class AgentSpanClient:
             idempotency_key=idempotency_key,
         )
 
+        details = create_request.model_dump(exclude_none=True)
+        body = {"details": details}
+
         response = await self._client.request(
             "POST",
             "/api/v1/agent_spans",
-            json_data=create_request.model_dump(exclude_none=True),
+            json_data=body,
         )
 
         api_response = ApiResponse[AgentSpan](**response)

@@ -78,8 +78,10 @@ class TaskExecutor:
     async def stop(self) -> None:
         """Stop all workers gracefully.
 
-        Signals the queue to close, cancels all worker tasks, and
-        waits for them to complete.
+        Closes the queue (so no new items can be added), wakes any workers
+        blocked in get(), and waits for them to drain the remaining items
+        and exit on their own.  Workers are never cancelled — that would
+        discard already-queued items.
         """
         if not self._running:
             return
@@ -87,20 +89,30 @@ class TaskExecutor:
         logger.info("Stopping workers...")
         self._running = False
 
-        # Signal queue to close - workers will stop after processing
-        await self._queue.close()
+        # Poll until the queue is empty, yielding on each iteration so that
+        # in-flight fire-and-forget tasks (e.g. _emit_span coroutines) get
+        # scheduled and complete, enqueuing their operations, before we seal
+        # the queue.  Each yield also lets workers process items they already
+        # have, shrinking the queue faster.
+        deadline = asyncio.get_event_loop().time() + 10.0
+        while self._queue.size() > 0:
+            if asyncio.get_event_loop().time() > deadline:
+                logger.warning("Timed out waiting for queue to drain")
+                break
+            await asyncio.sleep(0)
 
-        # Cancel all workers
-        for worker in self._workers:
-            worker.cancel()
+        # Close the queue and wake all workers that are blocked in get().
+        await self._queue.close(num_waiters=len(self._workers))
 
-        # Wait for workers to finish (with timeout to avoid hanging)
+        # Wait for workers to drain remaining items and exit naturally.
         try:
             await asyncio.wait_for(
                 asyncio.gather(*self._workers, return_exceptions=True), timeout=10.0
             )
         except asyncio.TimeoutError:
             logger.warning("Timeout waiting for workers to stop")
+            for worker in self._workers:
+                worker.cancel()
 
         self._workers = []
         logger.info("Workers stopped")
@@ -116,7 +128,7 @@ class TaskExecutor:
         """
         logger.debug(f"Worker {worker_id} started")
 
-        while self._running:
+        while True:
             try:
                 item = await self._queue.get()
             except QueueClosedError:

@@ -148,7 +148,7 @@ class TestAgentSpanEndpoints:
 
     @pytest.mark.asyncio
     async def test_create_with_status(self, config):
-        """create() sends status in payload."""
+        """create() sends status in payload wrapped in details."""
         with aioresponses() as m:
             m.post(
                 "https://api.test.com/api/v1/agent_spans",
@@ -167,11 +167,11 @@ class TestAgentSpanEndpoints:
             body = get_request_body(
                 m, "POST", "https://api.test.com/api/v1/agent_spans"
             )
-            assert body["status"] == "active"
+            assert body["details"]["status"] == "active"
 
     @pytest.mark.asyncio
     async def test_create_with_result_payload(self, config):
-        """create() sends result_payload in payload."""
+        """create() sends result_payload in payload wrapped in details."""
         span_with_result = {**MOCK_SPAN, "result_payload": {"output": "hello"}}
         with aioresponses() as m:
             m.post(
@@ -191,7 +191,7 @@ class TestAgentSpanEndpoints:
             body = get_request_body(
                 m, "POST", "https://api.test.com/api/v1/agent_spans"
             )
-            assert body["result_payload"] == {"output": "hello"}
+            assert body["details"]["result_payload"] == {"output": "hello"}
 
     @pytest.mark.asyncio
     async def test_finish_with_status(self, config):
