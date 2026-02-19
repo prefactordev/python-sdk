@@ -17,7 +17,7 @@ jobs:
       - run: uv sync --all-extras
       - run: ruff format --check .
       - run: ruff check .
-      - run: uvx ty check .
+      - run: uv run ty check .
 
   tests:
     name: Tests (Python ${{ matrix.python-version }})

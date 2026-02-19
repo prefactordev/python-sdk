@@ -40,6 +40,10 @@ class HttpClientConfig:
             raise ValueError("api_url is required")
         if not self.api_token:
             raise ValueError("api_token is required")
+        if self.request_timeout <= 0:
+            raise ValueError("request_timeout must be positive")
+        if self.connect_timeout <= 0:
+            raise ValueError("connect_timeout must be positive")
         if self.max_retries < 0:
             raise ValueError("max_retries must be non-negative")
         if self.initial_retry_delay <= 0:

@@ -184,13 +184,14 @@ class PrefactorCoreClient:
             elif operation.type == OperationType.START_AGENT_INSTANCE:
                 await self._http.agent_instances.start(
                     agent_instance_id=operation.payload["instance_id"],
+                    timestamp=operation.timestamp,
                 )
 
             elif operation.type == OperationType.FINISH_AGENT_INSTANCE:
                 await self._http.agent_instances.finish(
                     agent_instance_id=operation.payload["instance_id"],
+                    timestamp=operation.timestamp,
                 )
-
             elif operation.type == OperationType.CREATE_SPAN:
                 await self._http.agent_spans.create(
                     agent_instance_id=operation.payload["instance_id"],

@@ -5,7 +5,8 @@ _.python.venv = { path = ".venv", create = true }
 _.file = [".env"]
 
 [tools]
-python = "3.10.0"
+[tools]
+python = "3.11"
 uv = "latest"
 ruff = "latest"
 jq = "latest"
