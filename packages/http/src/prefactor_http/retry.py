@@ -68,15 +68,15 @@ class RetryHandler:
             except Exception as e:
                 last_error = e
 
+                if not is_retryable(e):
+                    raise
+
                 if attempt == self.config.max_retries:
                     # If max_retries is 0, we never actually retried, so re-raise
                     # the original exception instead of wrapping it
                     if self.config.max_retries == 0:
                         raise
                     break
-
-                if not is_retryable(e):
-                    raise
 
                 delay = self._calculate_delay(attempt)
                 await asyncio.sleep(delay)
