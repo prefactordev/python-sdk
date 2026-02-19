@@ -84,7 +84,7 @@ class PrefactorMiddleware(AgentMiddleware):
 
         # Instrument your own code with the same instance
         async with instance.span("custom:preprocessing") as ctx:
-            ctx.set_payload({"step": "preprocess", "status": "ok"})
+            ctx.set_result({"step": "preprocess", "status": "ok"})
 
         # Run your LangChain agent (middleware traces it automatically)
         result = agent.invoke({"messages": [...]})
@@ -321,39 +321,68 @@ class PrefactorMiddleware(AgentMiddleware):
             self._owns_client = False
 
     def _get_name_from_request(self, request: Any) -> str:
-        """Extract span name from request metadata or default to unknown.
+        """Extract model name from request for use as the span name.
 
         Args:
             request: The model request.
 
         Returns:
-            Extracted name or 'model_call' as fallback.
+            Model name string, or 'llm' as fallback.
         """
         try:
-            if hasattr(request, "metadata") and isinstance(request.metadata, dict):
-                if "name" in request.metadata:
-                    return request.metadata["name"]
-
             if hasattr(request, "model"):
                 model = request.model
-                if hasattr(model, "model_name"):
-                    return f"model:{model.model_name}"
-                elif hasattr(model, "name"):
-                    return model.name
-
-            return "model_call"
+                return getattr(model, "model_name", getattr(model, "model", "llm"))
+            return "llm"
         except Exception as e:
             logger.debug("Error extracting name from request: %s", e)
-            return "model_call"
+            return "llm"
+
+    def _message_to_dict(self, message: Any) -> dict[str, Any]:
+        """Convert a LangChain message to a compact dict."""
+        role = getattr(message, "type", "unknown")
+        content = getattr(message, "content", "")
+        result: dict[str, Any] = {"role": role}
+        # content may be a string or a list of content blocks
+        if isinstance(content, str):
+            result["content"] = content
+        elif isinstance(content, list):
+            # Extract text blocks; summarise tool-use blocks
+            texts = [
+                b.get("text", "") if isinstance(b, dict) else str(b)
+                for b in content
+                if not isinstance(b, dict) or b.get("type") != "tool_use"
+            ]
+            tool_uses = [
+                b
+                for b in content
+                if isinstance(b, dict) and b.get("type") == "tool_use"
+            ]
+            if texts:
+                result["content"] = " ".join(t for t in texts if t)
+            if tool_uses:
+                result["tool_calls"] = [
+                    {"name": t.get("name"), "args": t.get("input", {})}
+                    for t in tool_uses
+                ]
+        return result
 
     def _extract_model_inputs(self, request: Any) -> dict[str, Any]:
         """Extract inputs from ModelRequest."""
         try:
+            inputs: dict[str, Any] = {}
+            if hasattr(request, "model"):
+                model = request.model
+                inputs["model"] = getattr(
+                    model, "model_name", getattr(model, "model", None)
+                )
             if hasattr(request, "messages") and request.messages:
-                return {"messages": [str(m) for m in request.messages[-3:]]}
-            if hasattr(request, "prompt"):
-                return {"prompt": request.prompt}
-            return {}
+                inputs["messages"] = [
+                    self._message_to_dict(m) for m in request.messages
+                ]
+            if hasattr(request, "system_message") and request.system_message:
+                inputs["system"] = getattr(request.system_message, "content", None)
+            return inputs
         except Exception as e:
             logger.error("Error extracting model inputs: %s", e, exc_info=True)
             return {}
@@ -361,15 +390,13 @@ class PrefactorMiddleware(AgentMiddleware):
     def _extract_model_outputs(self, response: Any) -> dict[str, Any]:
         """Extract outputs from ModelResponse."""
         try:
+            # ModelResponse has a .result list of messages
+            if hasattr(response, "result") and response.result:
+                messages = [self._message_to_dict(m) for m in response.result]
+                return {"messages": messages}
             if hasattr(response, "content"):
-                return {"response": response.content}
-
-            if hasattr(response, "messages") and response.messages:
-                last_message = response.messages[-1]
-                if hasattr(last_message, "content"):
-                    return {"response": last_message.content}
-
-            return {"response": str(response)}
+                return {"content": response.content}
+            return {}
         except Exception as e:
             logger.error("Error extracting model outputs: %s", e, exc_info=True)
             return {}
@@ -383,7 +410,7 @@ class PrefactorMiddleware(AgentMiddleware):
                     "tool_name": tool_call.get("name", "unknown"),
                     "arguments": tool_call.get("args", {}),
                 }
-            return {"tool_call": str(request)}
+            return {}
         except Exception as e:
             logger.error("Error extracting tool inputs: %s", e, exc_info=True)
             return {}
@@ -399,6 +426,66 @@ class PrefactorMiddleware(AgentMiddleware):
             return {"output": str(response)}
 
     # Agent lifecycle hooks
+
+    def _build_llm_params(self, span_data: Any) -> dict[str, Any]:
+        """Build the payload (params) dict for an LLM span."""
+        params: dict[str, Any] = {}
+        if span_data.model_name:
+            params["model_name"] = span_data.model_name
+        if span_data.provider:
+            params["provider"] = span_data.provider
+        if span_data.inputs:
+            params["inputs"] = span_data.inputs
+        if span_data.temperature is not None:
+            params["temperature"] = span_data.temperature
+        return params
+
+    def _build_llm_result(self, span_data: Any) -> dict[str, Any]:
+        """Build the result_payload dict for an LLM span."""
+        result: dict[str, Any] = {"status": span_data.status}
+        if span_data.outputs:
+            result["outputs"] = span_data.outputs
+        if span_data.token_usage:
+            result["token_usage"] = span_data.token_usage.to_dict()
+        if span_data.error:
+            result["error"] = span_data.error.to_dict()
+        return result
+
+    def _build_tool_params(self, span_data: Any) -> dict[str, Any]:
+        """Build the payload (params) dict for a tool span."""
+        params: dict[str, Any] = {}
+        if span_data.tool_name:
+            params["tool_name"] = span_data.tool_name
+        if span_data.inputs:
+            params["inputs"] = span_data.inputs
+        return params
+
+    def _build_tool_result(self, span_data: Any) -> dict[str, Any]:
+        """Build the result_payload dict for a tool span."""
+        result: dict[str, Any] = {"status": span_data.status}
+        if span_data.outputs:
+            result["outputs"] = span_data.outputs
+        if span_data.error:
+            result["error"] = span_data.error.to_dict()
+        return result
+
+    def _build_agent_params(self, span_data: Any) -> dict[str, Any]:
+        """Build the payload (params) dict for an agent span."""
+        params: dict[str, Any] = {}
+        if span_data.inputs:
+            params["inputs"] = span_data.inputs
+        if span_data.agent_name:
+            params["agent_name"] = span_data.agent_name
+        return params
+
+    def _build_agent_result(self, span_data: Any) -> dict[str, Any]:
+        """Build the result_payload dict for an agent span."""
+        result: dict[str, Any] = {"status": span_data.status}
+        if span_data.outputs:
+            result["outputs"] = span_data.outputs
+        if span_data.error:
+            result["error"] = span_data.error.to_dict()
+        return result
 
     def _emit_span(self, span_data: Any) -> None:
         """Schedule span emission as a task on the event loop.
@@ -416,13 +503,22 @@ class PrefactorMiddleware(AgentMiddleware):
             return
 
         instance = self._instance
-        payload = span_data.to_dict()
         schema_name: str = span_data.type
         pending = self._pending_emit_futures
 
+        if schema_name == "langchain:llm":
+            params = self._build_llm_params(span_data)
+            result = self._build_llm_result(span_data)
+        elif schema_name == "langchain:tool":
+            params = self._build_tool_params(span_data)
+            result = self._build_tool_result(span_data)
+        else:
+            params = self._build_agent_params(span_data)
+            result = self._build_agent_result(span_data)
+
         async def _emit() -> None:
-            async with instance.span(schema_name) as ctx:
-                ctx.set_payload(payload)
+            async with instance.span(schema_name, payload=params) as ctx:
+                ctx.set_result(result)
 
         def _schedule() -> None:
             task = loop.create_task(_emit())
@@ -485,7 +581,7 @@ class PrefactorMiddleware(AgentMiddleware):
                 outputs = {
                     "messages": [str(m) for m in messages[-3:]] if messages else []
                 }
-                self._agent_span_context.set_payload(
+                self._agent_span_context.set_result(
                     {"outputs": outputs, "status": "completed"}
                 )
 
@@ -512,21 +608,19 @@ class PrefactorMiddleware(AgentMiddleware):
         Returns:
             The model response.
         """
+        inputs = self._extract_model_inputs(request)
         span_data = LLMSpan(
             name=self._get_name_from_request(request),
             type="langchain:llm",
-            inputs=self._extract_model_inputs(request),
+            inputs=inputs,
+            model_name=inputs.get("model"),
         )
 
         try:
             response = handler(request)
 
-            outputs = self._extract_model_outputs(response)
-            token_usage = extract_token_usage(response)
-
-            span_data.complete(outputs=outputs)
-            if token_usage:
-                span_data.token_usage = token_usage
+            span_data.complete(outputs=self._extract_model_outputs(response))
+            span_data.token_usage = extract_token_usage(response)
 
             self._emit_span(span_data)
             logger.debug("Model call completed")
@@ -554,35 +648,30 @@ class PrefactorMiddleware(AgentMiddleware):
         """
         instance = await self._ensure_initialized()
 
-        # Create span data
+        inputs = self._extract_model_inputs(request)
         span_data = LLMSpan(
             name=self._get_name_from_request(request),
             type="langchain:llm",
-            inputs=self._extract_model_inputs(request),
+            inputs=inputs,
+            model_name=inputs.get("model"),
         )
 
-        async with instance.span("langchain:llm") as ctx:
+        async with instance.span(
+            "langchain:llm", payload=self._build_llm_params(span_data)
+        ) as ctx:
             try:
-                # Call the model
                 response = await handler(request)
 
-                # Extract outputs and token usage
-                outputs = self._extract_model_outputs(response)
-                token_usage = extract_token_usage(response)
+                span_data.complete(outputs=self._extract_model_outputs(response))
+                span_data.token_usage = extract_token_usage(response)
 
-                # Complete span data
-                span_data.complete(outputs=outputs)
-                if token_usage:
-                    span_data.token_usage = token_usage
-
-                ctx.set_payload(span_data.to_dict())
+                ctx.set_result(self._build_llm_result(span_data))
                 logger.debug("Model call completed")
                 return response
 
             except Exception as e:
-                # Fail span with error
                 span_data.fail(e)
-                ctx.set_payload(span_data.to_dict())
+                ctx.set_result(self._build_llm_result(span_data))
                 logger.error("Model call failed: %s", e, exc_info=True)
                 raise
 
@@ -644,11 +733,9 @@ class PrefactorMiddleware(AgentMiddleware):
         """
         instance = await self._ensure_initialized()
 
-        # Extract tool information
         inputs = self._extract_tool_inputs(request)
         tool_name = inputs.get("tool_name", "unknown_tool")
 
-        # Create span data
         span_data = ToolSpan(
             name=tool_name,
             type="langchain:tool",
@@ -656,22 +743,20 @@ class PrefactorMiddleware(AgentMiddleware):
             tool_name=tool_name,
         )
 
-        async with instance.span("langchain:tool") as ctx:
+        async with instance.span(
+            "langchain:tool", payload=self._build_tool_params(span_data)
+        ) as ctx:
             try:
-                # Call the tool
                 response = await handler(request)
 
-                # Extract output
-                outputs = self._extract_tool_output(response)
-                span_data.complete(outputs=outputs)
+                span_data.complete(outputs=self._extract_tool_output(response))
 
-                ctx.set_payload(span_data.to_dict())
+                ctx.set_result(self._build_tool_result(span_data))
                 logger.debug("Tool call completed (%s)", tool_name)
                 return response
 
             except Exception as e:
-                # Fail span with error
                 span_data.fail(e)
-                ctx.set_payload(span_data.to_dict())
+                ctx.set_result(self._build_tool_result(span_data))
                 logger.error("Tool call failed: %s", e, exc_info=True)
                 raise

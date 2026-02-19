@@ -97,27 +97,16 @@ class TestMiddlewareMethods:
         """Create a middleware backed by a mock instance (no real client needed)."""
         return PrefactorMiddleware(instance=Mock())
 
-    def test_get_name_from_request_with_metadata(self):
-        """Test extracting name from request metadata."""
-        middleware = self._middleware
-
-        request = Mock()
-        request.metadata = {"name": "custom-name"}
-
-        name = middleware._get_name_from_request(request)
-        assert name == "custom-name"
-
     def test_get_name_from_request_with_model(self):
-        """Test extracting name from model."""
+        """Test extracting model name from request."""
         middleware = self._middleware
 
         request = Mock()
-        request.metadata = {}
         request.model = Mock()
         request.model.model_name = "gpt-4"
 
         name = middleware._get_name_from_request(request)
-        assert name == "model:gpt-4"
+        assert name == "gpt-4"
 
     def test_get_name_from_request_fallback(self):
         """Test fallback name extraction."""
@@ -126,29 +115,33 @@ class TestMiddlewareMethods:
         request = Mock(spec=[])  # No attributes
 
         name = middleware._get_name_from_request(request)
-        assert name == "model_call"
+        assert name == "llm"
 
     def test_extract_model_inputs_with_messages(self):
         """Test extracting inputs from messages."""
         middleware = self._middleware
 
+        msg = Mock()
+        msg.type = "human"
+        msg.content = "Hello"
         request = Mock()
-        request.messages = ["msg1", "msg2", "msg3", "msg4"]
+        request.messages = [msg]
+        request.system_message = None
 
         inputs = middleware._extract_model_inputs(request)
-        # Should only include last 3 messages
-        assert inputs == {"messages": ["msg2", "msg3", "msg4"]}
+        assert "messages" in inputs
+        assert inputs["messages"] == [{"role": "human", "content": "Hello"}]
 
     def test_extract_model_inputs_with_prompt(self):
-        """Test extracting inputs from prompt."""
+        """Test extracting inputs when messages is falsy."""
         middleware = self._middleware
 
         request = Mock()
-        request.messages = None
-        request.prompt = "Hello world"
+        request.messages = []
+        request.system_message = None
 
         inputs = middleware._extract_model_inputs(request)
-        assert inputs == {"prompt": "Hello world"}
+        assert "messages" not in inputs
 
     def test_extract_tool_inputs(self):
         """Test extracting tool inputs."""

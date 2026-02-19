@@ -109,13 +109,18 @@ class SpanManager:
 
         return returned_span_id
 
-    async def finish(self, span_id: str) -> None:
+    async def finish(
+        self,
+        span_id: str,
+        result_payload: dict[str, Any] | None = None,
+    ) -> None:
         """Mark a span as finished.
 
         Queues a finish operation and removes the span from the stack.
 
         Args:
             span_id: The ID of the span to finish.
+            result_payload: Optional result data to store on the span.
 
         Raises:
             KeyError: If the span ID is not known.
@@ -129,9 +134,13 @@ class SpanManager:
         if SpanContextStack.peek() == span_id:
             SpanContextStack.pop()
 
+        op_payload: dict[str, Any] = {"span_id": span_id}
+        if result_payload is not None:
+            op_payload["result_payload"] = result_payload
+
         operation = Operation(
             type=OperationType.FINISH_SPAN,
-            payload={"span_id": span_id},
+            payload=op_payload,
             timestamp=datetime.now(),
         )
 

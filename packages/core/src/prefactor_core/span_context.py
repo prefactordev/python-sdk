@@ -13,16 +13,16 @@ if TYPE_CHECKING:
 class SpanContext:
     """Context for an active span.
 
-    This class provides methods to update span payload data during execution.
+    This class provides methods to set span result data during execution.
     When used as a context manager (via PrefactorCoreClient.span()), the span
-    is automatically finished when exiting the context.
+    is automatically finished when exiting the context, sending any stored
+    result payload.
 
     Example:
-        async with client.span(instance_id, "agent:llm") as span:
-            span.set_payload({"model": "gpt-4"})
+        async with instance.span("langchain:llm") as span:
             result = await call_llm()
-            span.set_payload({"response": result})
-        # Span automatically finished here
+            span.set_result({"response": result, "status": "completed"})
+        # Span automatically finished with result_payload here
     """
 
     def __init__(
@@ -38,7 +38,7 @@ class SpanContext:
         """
         self._span_id = span_id
         self._span_manager = span_manager
-        self._payload: dict[str, Any] = {}
+        self._result_payload: dict[str, Any] = {}
 
     @property
     def id(self) -> str:
@@ -49,42 +49,27 @@ class SpanContext:
         """
         return self._span_id
 
-    def set_payload(self, data: dict[str, Any]) -> None:
-        """Update the span payload.
+    def set_result(self, data: dict[str, Any]) -> None:
+        """Set the span result payload.
 
-        This merges the provided data with any existing payload data.
-        The updates are queued for async processing.
+        The result is stored locally and sent as ``result_payload`` when the
+        span is finished via the context manager.
 
         Args:
-            data: Dictionary of data to add to the span payload.
+            data: Dictionary of result data for the span.
         """
-        import asyncio
-
-        self._payload.update(data)
-        # Queue async update
-        # Note: We don't await here - updates are best-effort
-        try:
-            asyncio.get_running_loop()
-            asyncio.create_task(self._span_manager.update_payload(self._span_id, data))
-        except RuntimeError:
-            # No running event loop - run synchronously
-            asyncio.run(self._span_manager.update_payload(self._span_id, data))
-
-    def get_payload(self) -> dict[str, Any]:
-        """Get the current payload data.
-
-        Returns:
-            Copy of the current payload dictionary.
-        """
-        return self._payload.copy()
+        self._result_payload.update(data)
 
     async def finish(self) -> None:
-        """Finish the span early.
+        """Finish the span, sending any stored result payload.
 
         This is called automatically when exiting a context manager,
         but can be called manually if needed.
         """
-        await self._span_manager.finish(self._span_id)
+        await self._span_manager.finish(
+            self._span_id,
+            result_payload=self._result_payload or None,
+        )
 
 
 __all__ = ["SpanContext"]

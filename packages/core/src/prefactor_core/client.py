@@ -204,6 +204,7 @@ class PrefactorCoreClient:
             elif operation.type == OperationType.FINISH_SPAN:
                 await self._http.agent_spans.finish(
                     agent_span_id=operation.payload["span_id"],
+                    result_payload=operation.payload.get("result_payload"),
                 )
 
             # Note: UPDATE_SPAN_PAYLOAD requires API support or batching
@@ -292,6 +293,7 @@ class PrefactorCoreClient:
         schema_name: str,
         parent_span_id: str | None = None,
         span_id: str | None = None,
+        payload: dict[str, Any] | None = None,
     ):
         """Context manager for creating and finishing a span.
 
@@ -303,6 +305,7 @@ class PrefactorCoreClient:
             schema_name: Name of the schema for this span.
             parent_span_id: Optional explicit parent span ID.
             span_id: Optional custom ID for the span.
+            payload: Optional initial payload (params/inputs) stored on creation.
 
         Yields:
             SpanContext for the created span.
@@ -322,6 +325,7 @@ class PrefactorCoreClient:
             schema_name=schema_name,
             parent_span_id=parent_span_id,
             span_id=span_id,
+            payload=payload,
         )
 
         context = SpanContext(
@@ -332,7 +336,7 @@ class PrefactorCoreClient:
         try:
             yield context
         finally:
-            await self._span_manager.finish(span_id)
+            await context.finish()
 
 
 __all__ = ["PrefactorCoreClient"]

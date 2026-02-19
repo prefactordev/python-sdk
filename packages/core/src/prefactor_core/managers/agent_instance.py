@@ -191,6 +191,7 @@ class AgentInstanceHandle:
         self,
         schema_name: str,
         parent_span_id: str | None = None,
+        payload: dict[str, Any] | None = None,
     ):
         """Create a span within this instance.
 
@@ -199,6 +200,7 @@ class AgentInstanceHandle:
         Args:
             schema_name: Name of the schema for this span.
             parent_span_id: Optional explicit parent span ID.
+            payload: Optional initial payload (params/inputs) stored on creation.
 
         Yields:
             SpanContext for the created span.
@@ -207,6 +209,7 @@ class AgentInstanceHandle:
             instance_id=self._instance_id,
             schema_name=schema_name,
             parent_span_id=parent_span_id,
+            payload=payload,
         ) as context:
             yield context
 

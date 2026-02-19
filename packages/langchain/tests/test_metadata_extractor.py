@@ -11,84 +11,74 @@ from prefactor_langchain.metadata_extractor import (
 class TestExtractTokenUsage:
     """Test token usage extraction."""
 
-    def test_extract_token_usage_from_llm_result(self):
-        """Test extracting token usage from LLMResult."""
-        # Mock LLMResult with llm_output containing token counts
-        llm_result = Mock()
-        llm_result.llm_output = {
-            "token_usage": {
-                "prompt_tokens": 10,
-                "completion_tokens": 20,
-                "total_tokens": 30,
-            }
+    def test_extract_token_usage_from_model_response(self):
+        """Test extracting token usage from a ModelResponse with usage_metadata."""
+        msg = Mock()
+        msg.usage_metadata = {
+            "input_tokens": 10,
+            "output_tokens": 20,
+            "total_tokens": 30,
         }
+        response = Mock()
+        response.result = [msg]
 
-        usage = extract_token_usage(llm_result)
+        usage = extract_token_usage(response)
 
         assert usage is not None
         assert usage.prompt_tokens == 10
         assert usage.completion_tokens == 20
         assert usage.total_tokens == 30
 
-    def test_extract_token_usage_alternative_keys(self):
-        """Test extracting token usage with alternative key names."""
-        # Some providers use different keys
-        llm_result = Mock()
-        llm_result.llm_output = {
-            "usage": {
-                "prompt_tokens": 15,
-                "completion_tokens": 25,
-                "total_tokens": 40,
-            }
+    def test_extract_token_usage_multiple_messages(self):
+        """Test accumulating token usage across multiple messages."""
+        msg1 = Mock()
+        msg1.usage_metadata = {
+            "input_tokens": 10,
+            "output_tokens": 20,
+            "total_tokens": 30,
         }
+        msg2 = Mock()
+        msg2.usage_metadata = {
+            "input_tokens": 5,
+            "output_tokens": 5,
+            "total_tokens": 10,
+        }
+        response = Mock()
+        response.result = [msg1, msg2]
 
-        usage = extract_token_usage(llm_result)
+        usage = extract_token_usage(response)
 
         assert usage is not None
         assert usage.prompt_tokens == 15
         assert usage.completion_tokens == 25
         assert usage.total_tokens == 40
 
-    def test_extract_token_usage_no_llm_output(self):
-        """Test extracting token usage when llm_output is missing."""
-        llm_result = Mock()
-        llm_result.llm_output = None
+    def test_extract_token_usage_no_result(self):
+        """Test extracting token usage when result is empty."""
+        response = Mock()
+        response.result = []
 
-        usage = extract_token_usage(llm_result)
-
-        assert usage is None
-
-    def test_extract_token_usage_no_usage_data(self):
-        """Test extracting token usage when usage data is missing."""
-        llm_result = Mock()
-        llm_result.llm_output = {"other_field": "value"}
-
-        usage = extract_token_usage(llm_result)
+        usage = extract_token_usage(response)
 
         assert usage is None
 
-    def test_extract_token_usage_missing_fields(self):
-        """Test extracting token usage with missing fields."""
-        llm_result = Mock()
-        llm_result.llm_output = {
-            "token_usage": {
-                "prompt_tokens": 10,
-                # missing completion_tokens and total_tokens
-            }
-        }
+    def test_extract_token_usage_no_usage_metadata(self):
+        """Test extracting token usage when messages have no usage_metadata."""
+        msg = Mock()
+        msg.usage_metadata = None
+        response = Mock()
+        response.result = [msg]
 
-        usage = extract_token_usage(llm_result)
+        usage = extract_token_usage(response)
 
-        # Should return None if required fields are missing
         assert usage is None
 
     def test_extract_token_usage_exception(self):
         """Test extracting token usage when an exception occurs."""
-        llm_result = Mock()
-        llm_result.llm_output = Mock()
-        llm_result.llm_output.__getitem__ = Mock(side_effect=Exception("Error"))
+        response = Mock()
+        response.result = Mock(side_effect=Exception("Error"))
 
-        usage = extract_token_usage(llm_result)
+        usage = extract_token_usage(response)
 
         # Should return None on exception
         assert usage is None
