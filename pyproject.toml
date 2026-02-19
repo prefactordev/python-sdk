@@ -55,6 +55,15 @@ possibly-missing-attribute = "ignore"
 invalid-argument-type = "ignore"
 missing-argument = "ignore"
 not-subscriptable = "ignore"
+unresolved-import = "ignore"
+
+# Suppress unresolved-import for langchain source and examples — langchain
+# is an optional peer dependency not installed in all environments
+[[tool.ty.overrides]]
+include = ["packages/langchain/**"]
+
+[tool.ty.overrides.rules]
+unresolved-import = "ignore"
 
 [tool.pytest.ini_options]
 testpaths = ["packages/core/tests", "packages/http/tests", "packages/langchain/tests"]
