@@ -173,18 +173,21 @@ class SpanContext:
 
         self._finished = True
 
-        if not self._started and self._finish_status == "cancelled":
-            await self._span_manager.cancel_unstarted(self._span_id)
-            return
+        try:
+            if not self._started and self._finish_status == "cancelled":
+                await self._span_manager.cancel_unstarted(self._span_id)
+                return
 
-        if not self._started:
-            await self.start(self._default_payload)
+            if not self._started:
+                await self.start(self._default_payload)
 
-        await self._span_manager.finish(
-            self._span_id,
-            result_payload=self._result_payload or None,
-            status=self._finish_status,  # type: ignore[arg-type]
-        )
+            await self._span_manager.finish(
+                self._span_id,
+                result_payload=self._result_payload or None,
+                status=self._finish_status,  # type: ignore[arg-type]
+            )
+        except Exception:
+            raise
 
 
 __all__ = ["SpanContext"]
