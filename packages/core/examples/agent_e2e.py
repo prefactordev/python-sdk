@@ -160,6 +160,12 @@ async def simulate_tool(name: str, input_text: str) -> str:
     return f"[{name}] result for: {input_text}"
 
 
+async def simulate_failing_tool(name: str, input_text: str) -> None:
+    """Simulate a tool that raises an exception."""
+    await asyncio.sleep(0.01)
+    raise RuntimeError(f"[{name}] timed out processing: {input_text}")
+
+
 async def simulate_retrieval(query: str) -> list[str]:
     """Simulate a retrieval step with a small async delay."""
     await asyncio.sleep(0.03)
@@ -190,7 +196,7 @@ async def main() -> None:
         # Register the agent instance — schema version derived from registry.
         instance = await client.create_agent_instance(
             agent_id=agent_id,
-            agent_version={"name": "Example Agent", "external_identifier": "v2.0.0"},
+            agent_version={"name": "Example Agent", "external_identifier": "v6.0.0"},
         )
 
         await instance.start()
@@ -223,6 +229,18 @@ async def main() -> None:
                     tool_result = await simulate_tool("web_search", "recent news")
                     await tool_span.complete({"output": tool_result, "success": True})
 
+                # ----------------------------------------------------------
+                # 1b. A second tool call that fails — demonstrates span.fail()
+                # ----------------------------------------------------------
+                async with instance.span("agent:tool_call") as bad_tool_span:
+                    await bad_tool_span.start(
+                        {"tool_name": "database_lookup", "input": "recent news"}
+                    )
+                    try:
+                        await simulate_failing_tool("database_lookup", "recent news")
+                    except RuntimeError as exc:
+                        await bad_tool_span.fail({"output": str(exc), "success": False})
+
                 await plan_span.complete({"response": plan_result, "tokens": 150})
 
             # --------------------------------------------------------------
@@ -240,7 +258,24 @@ async def main() -> None:
                 await ret_span.complete({"documents": docs, "count": len(docs)})
 
             # --------------------------------------------------------------
-            # 3. Final synthesis LLM call (child of root — auto-detected)
+            # 3. Low-priority secondary retrieval — cancelled because the
+            #    primary retrieval already returned enough context.
+            #    Demonstrates span.cancel(): the span is never started, so
+            #    cancel() posts it directly as "cancelled" in one shot.
+            # --------------------------------------------------------------
+            sufficient_context = len(docs) >= 3
+            async with instance.span("agent:retrieval") as extra_ret_span:
+                if sufficient_context:
+                    await extra_ret_span.cancel()
+                else:
+                    await extra_ret_span.start({"query": "background context"})
+                    extra_docs = await simulate_retrieval("background context")
+                    await extra_ret_span.complete(
+                        {"documents": extra_docs, "count": len(extra_docs)}
+                    )
+
+            # --------------------------------------------------------------
+            # 4. Final synthesis LLM call (child of root — auto-detected)
             # --------------------------------------------------------------
             async with instance.span("agent:llm_call") as final_span:
                 await final_span.start(

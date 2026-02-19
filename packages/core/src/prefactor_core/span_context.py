@@ -145,14 +145,25 @@ class SpanContext:
         await self._finish()
 
     async def _finish(self) -> None:
-        """Internal finish — idempotent, auto-starts with default payload if needed."""
+        """Internal finish — idempotent.
+
+        If the span was never started and the final status is ``cancelled``,
+        the span is posted directly as ``cancelled`` (the API does not allow
+        transitioning an ``active`` span to ``cancelled``).  Otherwise the
+        span is auto-started with the default payload before finishing.
+        """
         if self._finished:
+            return
+
+        self._finished = True
+
+        if not self._started and self._finish_status == "cancelled":
+            await self._span_manager.cancel_unstarted(self._span_id)
             return
 
         if not self._started:
             await self.start(self._default_payload)
 
-        self._finished = True
         await self._span_manager.finish(
             self._span_id,
             result_payload=self._result_payload or None,

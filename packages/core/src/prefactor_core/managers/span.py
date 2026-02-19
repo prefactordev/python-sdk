@@ -182,6 +182,49 @@ class SpanManager:
         )
         return await self.start(temp_id, payload=payload)
 
+    async def cancel_unstarted(self, temp_id: str) -> None:
+        """Post a never-started span directly as ``cancelled``.
+
+        When a span is cancelled before ``start()`` is called, posting it as
+        ``active`` then finishing as ``cancelled`` would be rejected by the
+        API (only ``pending`` spans can be cancelled). This method creates
+        the span in a single ``cancelled`` POST instead.
+
+        Args:
+            temp_id: The temporary ID returned by ``prepare()``.
+
+        Raises:
+            KeyError: If temp_id is not a known pending span.
+        """
+        if temp_id not in self._spans:
+            raise KeyError(f"Unknown span: {temp_id}")
+
+        span = self._spans[temp_id]
+
+        # Create as pending then immediately cancel via the finish endpoint —
+        # the API requires a span to exist before it can be cancelled.
+        result = await self._http.agent_spans.create(
+            agent_instance_id=span.instance_id,
+            schema_name=span.schema_name,
+            status="pending",
+            payload={},
+            parent_span_id=span.parent_span_id,
+        )
+        api_id = result.id
+
+        await self._http.agent_spans.finish(
+            agent_span_id=api_id,
+            status="cancelled",
+        )
+
+        span.status = "cancelled"
+        span.finished_at = datetime.now()
+
+        if SpanContextStack.peek() == temp_id:
+            SpanContextStack.pop()
+
+        del self._spans[temp_id]
+
     async def finish(
         self,
         span_id: str,
