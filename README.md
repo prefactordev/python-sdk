@@ -5,27 +5,41 @@ Automatic observability for LangChain agents. Trace LLM calls, tool executions, 
 ## Installation
 
 ```bash
-pip install prefactor-sdk
+pip install prefactor-langchain
 ```
 
 ## Quick Start
 
 ```python
-import prefactor_sdk
+import asyncio
 from langchain.agents import create_agent
+from langchain_core.tools import tool
+from prefactor_langchain import PrefactorMiddleware
 
-# Initialize Prefactor
-middleware = prefactor_sdk.init()
+@tool
+def calculator(expression: str) -> str:
+    """Evaluate a mathematical expression."""
+    return str(eval(expression))
 
-# Create agent with middleware
-agent = create_agent(
-    model="claude-sonnet-4-5-20250929",
-    tools=[...],
-    middleware=[middleware]
-)
+async def main():
+    middleware = PrefactorMiddleware.from_config(
+        api_url="https://api.prefactor.ai",
+        api_token="your-token",
+        agent_id="my-agent",
+        agent_name="My Agent",
+    )
 
-# All operations are automatically traced
-result = agent.invoke({"messages": [{"role": "user", "content": "Hello!"}]})
+    agent = create_agent(
+        model="claude-haiku-4-5-20251001",
+        tools=[calculator],
+        middleware=[middleware],
+    )
+
+    # All LLM calls and tool executions are automatically traced
+    result = await agent.ainvoke({"messages": [{"role": "user", "content": "What is 6 * 7?"}]})
+    await middleware.close()
+
+asyncio.run(main())
 ```
 
 ## Features
@@ -41,7 +55,7 @@ result = agent.invoke({"messages": [{"role": "user", "content": "Hello!"}]})
 
 This project uses [mise](https://mise.jdx.dev) for reproducible development environments with the following tools:
 
-- **Python 3.13** with **uv** as the package manager
+- **Python 3.11** with **uv** as the package manager
 - **ty** for blazing-fast type checking (10-100x faster than mypy/pyright)
 - **ruff** for linting and formatting (replaces Black, isort, Flake8, etc.)
 - **lefthook** for git pre-commit hooks
@@ -125,13 +139,13 @@ mise run install
 pytest
 
 # Run specific test file
-pytest packages/core/tests/test_config.py
+pytest packages/core/tests/test_client.py
 
 # Run with verbose output
 pytest -v
 
 # Run specific test
-pytest packages/core/tests/test_config.py::TestConfig::test_config_defaults -v
+pytest packages/core/tests/test_client.py::TestClient::test_initialize -v
 ```
 
 ### Pre-commit Hooks
@@ -152,13 +166,12 @@ lefthook run pre-commit
 ```
 python-sdk/
 ├── packages/
-│   ├── core/           # Core tracing and transport
-│   ├── langchain/      # LangChain instrumentation
-│   └── sdk/            # Public SDK interface
-├── examples/           # Usage examples
+│   ├── core/           # Core tracing and span lifecycle
+│   ├── http/           # HTTP client for the Prefactor API
+│   └── langchain/      # LangChain instrumentation
 ├── mise.toml           # mise configuration
 ├── lefthook.yml        # Git hooks configuration
-└── pyproject.toml      # Python project configuration
+└── pyproject.toml      # Python project configuration (workspace root)
 ```
 
 ### Tools Reference
