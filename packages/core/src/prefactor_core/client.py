@@ -286,6 +286,56 @@ class PrefactorCoreClient:
             client=self,
         )
 
+    async def create_span(
+        self,
+        instance_id: str,
+        schema_name: str,
+        parent_span_id: str | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> str:
+        """Create a span and return its ID without finishing it.
+
+        Use this for spans that need to stay open across multiple operations.
+        Call finish_span() when done.
+
+        Args:
+            instance_id: ID of the agent instance this span belongs to.
+            schema_name: Name of the schema for this span.
+            parent_span_id: Optional explicit parent span ID.
+            payload: Optional initial payload (params/inputs) stored on creation.
+
+        Returns:
+            The span ID.
+        """
+        self._ensure_initialized()
+        assert self._span_manager is not None
+
+        if parent_span_id is None:
+            parent_span_id = SpanContextStack.peek()
+
+        return await self._span_manager.create(
+            instance_id=instance_id,
+            schema_name=schema_name,
+            parent_span_id=parent_span_id,
+            payload=payload,
+        )
+
+    async def finish_span(
+        self,
+        span_id: str,
+        result_payload: dict[str, Any] | None = None,
+    ) -> None:
+        """Finish a previously created span.
+
+        Args:
+            span_id: The ID of the span to finish.
+            result_payload: Optional result data to store on the span.
+        """
+        self._ensure_initialized()
+        assert self._span_manager is not None
+
+        await self._span_manager.finish(span_id, result_payload=result_payload)
+
     @asynccontextmanager
     async def span(
         self,

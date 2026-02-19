@@ -267,7 +267,7 @@ def register_langchain_schemas(registry: Any) -> None:
         result_schema=LANGCHAIN_LLM_RESULT_SCHEMA,
         title="LLM Call",
         description="A call to a language model",
-        template="{{model_name}}: {{inputs.messages}} → {{outputs.messages}}",
+        template="{{model_name}}",
     )
     registry.register_type(
         name="langchain:tool",
@@ -275,7 +275,7 @@ def register_langchain_schemas(registry: Any) -> None:
         result_schema=LANGCHAIN_TOOL_RESULT_SCHEMA,
         title="Tool Call",
         description="A LangChain tool execution span",
-        template="{{tool_name}}({{inputs.arguments}}) → {{outputs.output}}",
+        template="{{tool_name}}",
     )
 
 

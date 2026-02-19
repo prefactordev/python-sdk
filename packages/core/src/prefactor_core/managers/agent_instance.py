@@ -186,6 +186,44 @@ class AgentInstanceHandle:
         await manager.finish(self._instance_id)
         self._finished = True
 
+    async def create_span(
+        self,
+        schema_name: str,
+        parent_span_id: str | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> str:
+        """Create a span within this instance and return its ID.
+
+        The span stays open until finish_span() is called.
+
+        Args:
+            schema_name: Name of the schema for this span.
+            parent_span_id: Optional explicit parent span ID.
+            payload: Optional initial payload (params/inputs) stored on creation.
+
+        Returns:
+            The span ID.
+        """
+        return await self._client.create_span(
+            instance_id=self._instance_id,
+            schema_name=schema_name,
+            parent_span_id=parent_span_id,
+            payload=payload,
+        )
+
+    async def finish_span(
+        self,
+        span_id: str,
+        result_payload: dict[str, Any] | None = None,
+    ) -> None:
+        """Finish a previously created span.
+
+        Args:
+            span_id: The ID of the span to finish.
+            result_payload: Optional result data to store on the span.
+        """
+        await self._client.finish_span(span_id, result_payload=result_payload)
+
     @asynccontextmanager
     async def span(
         self,

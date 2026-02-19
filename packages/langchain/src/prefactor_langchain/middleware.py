@@ -136,7 +136,6 @@ class PrefactorMiddleware(AgentMiddleware):
             raise ValueError("Provide either 'client' or 'instance', not both.")
 
         if instance is not None:
-            # Caller owns the instance; middleware just borrows it.
             self._client = None
             self._agent_id = agent_id
             self._agent_name = agent_name
@@ -144,6 +143,8 @@ class PrefactorMiddleware(AgentMiddleware):
             self._owns_instance = False
             self._owns_client = False
             self._agent_span_context: SpanContext | None = None
+            self._agent_span_id: str | None = None
+            self._current_parent_span_id: str | None = None
             self._loop: asyncio.AbstractEventLoop | None = None
             self._pending_emit_futures: list[asyncio.Task[None]] = []
             return
@@ -167,13 +168,13 @@ class PrefactorMiddleware(AgentMiddleware):
         self._agent_id = agent_id
         self._agent_name = agent_name
 
-        # Client and instance tracking
         self._instance: AgentInstanceHandle | None = None
-        self._owns_instance = True  # We create the agent instance
-        self._owns_client = False  # We didn't create the client
+        self._owns_instance = True
+        self._owns_client = False
 
-        # Agent span context storage
         self._agent_span_context: SpanContext | None = None
+        self._agent_span_id: str | None = None
+        self._current_parent_span_id: str | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._pending_emit_futures: list[asyncio.Task[None]] = []
 
@@ -229,15 +230,16 @@ class PrefactorMiddleware(AgentMiddleware):
         )
         client = PrefactorCoreClient(config)
 
-        # Create middleware that owns the client (lazy init, no validation yet)
         middleware = cls.__new__(cls)
         middleware._client = client
         middleware._agent_id = agent_id
         middleware._agent_name = agent_name
         middleware._instance = None
         middleware._owns_instance = True
-        middleware._owns_client = True  # We created the client, we'll manage it
+        middleware._owns_client = True
         middleware._agent_span_context = None
+        middleware._agent_span_id = None
+        middleware._current_parent_span_id = None
         middleware._loop = None
         middleware._pending_emit_futures = []
         logger.debug("PrefactorMiddleware created via from_config()")
@@ -487,14 +489,38 @@ class PrefactorMiddleware(AgentMiddleware):
             result["error"] = span_data.error.to_dict()
         return result
 
-    def _emit_span(self, span_data: Any) -> None:
-        """Schedule span emission as a task on the event loop.
+    def _create_agent_span_sync(
+        self,
+        instance: AgentInstanceHandle,
+        params: dict[str, Any],
+    ) -> str:
+        """Synchronously create an agent span and return its ID.
 
-        This helper is used by sync hooks (before_agent, wrap_model_call,
-        wrap_tool_call) which may be called from worker threads spawned by
-        LangChain. It uses call_soon_threadsafe to schedule back onto the
-        event loop that owns the middleware, and tracks the resulting task
-        so close() can await completion before shutting down the client.
+        Uses run_coroutine_threadsafe to block until the span is created,
+        ensuring the ID is available for child spans to reference.
+        """
+        loop = self._loop
+        if loop is None or loop.is_closed():
+            return ""
+
+        import asyncio
+
+        future = asyncio.run_coroutine_threadsafe(
+            instance.create_span(
+                schema_name="langchain:agent",
+                payload=params,
+            ),
+            loop,
+        )
+        span_id = future.result(timeout=5.0)
+        self._agent_span_id = span_id
+        self._current_parent_span_id = span_id
+        return span_id
+
+    def _emit_child_span(self, span_data: Any) -> None:
+        """Schedule a child span (LLM/tool) emission with parent tracking.
+
+        Uses the current parent span ID from _current_parent_span_id.
         """
         if self._instance is None:
             return
@@ -504,6 +530,7 @@ class PrefactorMiddleware(AgentMiddleware):
 
         instance = self._instance
         schema_name: str = span_data.type
+        parent_span_id = self._current_parent_span_id
         pending = self._pending_emit_futures
 
         if schema_name == "langchain:llm":
@@ -513,11 +540,12 @@ class PrefactorMiddleware(AgentMiddleware):
             params = self._build_tool_params(span_data)
             result = self._build_tool_result(span_data)
         else:
-            params = self._build_agent_params(span_data)
-            result = self._build_agent_result(span_data)
+            return
 
         async def _emit() -> None:
-            async with instance.span(schema_name, payload=params) as ctx:
+            async with instance.span(
+                schema_name, payload=params, parent_span_id=parent_span_id
+            ) as ctx:
                 ctx.set_result(result)
 
         def _schedule() -> None:
@@ -539,21 +567,26 @@ class PrefactorMiddleware(AgentMiddleware):
             Optional state updates.
         """
         try:
+            if self._instance is None:
+                return None
+
             messages = []
             if hasattr(state, "get"):
                 messages = state.get("messages", [])
             elif hasattr(state, "messages"):
                 messages = state.messages
 
-            span_data = AgentSpan(
-                name="agent",
-                type="langchain:agent",
-                inputs={
-                    "messages": [str(m) for m in messages[-3:]] if messages else []
-                },
+            params = self._build_agent_params(
+                AgentSpan(
+                    name="agent",
+                    type="langchain:agent",
+                    inputs={
+                        "messages": [str(m) for m in messages[-3:]] if messages else []
+                    },
+                )
             )
-            self._emit_span(span_data)
-            logger.debug("Scheduled agent span")
+            self._create_agent_span_sync(self._instance, params)
+            logger.debug("Created agent span %s", self._agent_span_id)
             return None
 
         except Exception as e:
@@ -563,6 +596,8 @@ class PrefactorMiddleware(AgentMiddleware):
     def after_agent(self, state: Any, runtime: Any) -> dict[str, Any] | None:
         """Hook called after agent completes execution.
 
+        Finishes the agent span created in before_agent.
+
         Args:
             state: The agent state.
             runtime: The runtime context.
@@ -571,21 +606,36 @@ class PrefactorMiddleware(AgentMiddleware):
             Optional state updates.
         """
         try:
-            if self._agent_span_context is not None:
-                messages = []
-                if hasattr(state, "get"):
-                    messages = state.get("messages", [])
-                elif hasattr(state, "messages"):
-                    messages = state.messages
+            if self._agent_span_id is None or self._instance is None:
+                return None
 
-                outputs = {
-                    "messages": [str(m) for m in messages[-3:]] if messages else []
-                }
-                self._agent_span_context.set_result(
-                    {"outputs": outputs, "status": "completed"}
-                )
+            messages = []
+            if hasattr(state, "get"):
+                messages = state.get("messages", [])
+            elif hasattr(state, "messages"):
+                messages = state.messages
 
-            logger.debug("Ended agent span")
+            outputs = {"messages": [str(m) for m in messages[-3:]] if messages else []}
+            result = {"outputs": outputs, "status": "completed"}
+
+            loop = self._loop
+            if loop is None or loop.is_closed():
+                return None
+
+            import asyncio
+
+            instance = self._instance
+            span_id = self._agent_span_id
+
+            async def _finish() -> None:
+                await instance.finish_span(span_id, result_payload=result)
+
+            future = asyncio.run_coroutine_threadsafe(_finish(), loop)
+            future.result(timeout=5.0)
+
+            self._agent_span_id = None
+            self._current_parent_span_id = None
+            logger.debug("Finished agent span %s", span_id)
 
         except Exception as e:
             logger.error("Error in after_agent: %s", e, exc_info=True)
@@ -622,13 +672,13 @@ class PrefactorMiddleware(AgentMiddleware):
             span_data.complete(outputs=self._extract_model_outputs(response))
             span_data.token_usage = extract_token_usage(response)
 
-            self._emit_span(span_data)
+            self._emit_child_span(span_data)
             logger.debug("Model call completed")
             return response
 
         except Exception as e:
             span_data.fail(e)
-            self._emit_span(span_data)
+            self._emit_child_span(span_data)
             logger.error("Model call failed: %s", e, exc_info=True)
             raise
 
@@ -707,13 +757,13 @@ class PrefactorMiddleware(AgentMiddleware):
             outputs = self._extract_tool_output(response)
             span_data.complete(outputs=outputs)
 
-            self._emit_span(span_data)
+            self._emit_child_span(span_data)
             logger.debug("Tool call completed (%s)", tool_name)
             return response
 
         except Exception as e:
             span_data.fail(e)
-            self._emit_span(span_data)
+            self._emit_child_span(span_data)
             logger.error("Tool call failed: %s", e, exc_info=True)
             raise
 
