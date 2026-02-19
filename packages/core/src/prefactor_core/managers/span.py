@@ -196,8 +196,11 @@ class SpanManager:
         span.status = "cancelled"
         span.finished_at = datetime.now()
 
-        if SpanContextStack.peek() == temp_id:
-            SpanContextStack.pop()
+        stack = SpanContextStack.get_stack()
+        if temp_id in stack:
+            from ..context_stack import _current_span_stack
+
+            _current_span_stack.set([s for s in stack if s != temp_id])
 
         del self._spans[temp_id]
 
