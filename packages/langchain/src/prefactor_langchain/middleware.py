@@ -444,7 +444,7 @@ class PrefactorMiddleware(AgentMiddleware):
 
     def _build_llm_result(self, span_data: Any) -> dict[str, Any]:
         """Build the result_payload dict for an LLM span."""
-        result: dict[str, Any] = {"status": span_data.status}
+        result: dict[str, Any] = {}
         if span_data.outputs:
             result["outputs"] = span_data.outputs
         if span_data.token_usage:
@@ -464,7 +464,7 @@ class PrefactorMiddleware(AgentMiddleware):
 
     def _build_tool_result(self, span_data: Any) -> dict[str, Any]:
         """Build the result_payload dict for a tool span."""
-        result: dict[str, Any] = {"status": span_data.status}
+        result: dict[str, Any] = {}
         if span_data.outputs:
             result["outputs"] = span_data.outputs
         if span_data.error:
@@ -482,12 +482,26 @@ class PrefactorMiddleware(AgentMiddleware):
 
     def _build_agent_result(self, span_data: Any) -> dict[str, Any]:
         """Build the result_payload dict for an agent span."""
-        result: dict[str, Any] = {"status": span_data.status}
+        result: dict[str, Any] = {}
         if span_data.outputs:
             result["outputs"] = span_data.outputs
         if span_data.error:
             result["error"] = span_data.error.to_dict()
         return result
+
+    def set_parent_span(self, span_id: str | None) -> None:
+        """Set the parent span ID for the next agent invocation.
+
+        Call this from async code before invoking the LangChain agent when you
+        want ``langchain:agent`` to be a child of an outer workflow span.
+        Because ``before_agent`` runs in a worker thread (via run_in_executor),
+        it cannot read the async context stack — so the parent must be passed
+        explicitly via this method.
+
+        Args:
+            span_id: The span ID to use as the parent, or None to clear it.
+        """
+        self._current_parent_span_id = span_id
 
     def _create_agent_span_sync(
         self,
@@ -505,10 +519,16 @@ class PrefactorMiddleware(AgentMiddleware):
 
         import asyncio
 
+        # Use whatever parent was set by set_parent_span() from the async side.
+        # We cannot read the SpanContextStack here because run_in_executor does
+        # not copy contextvars into threads (only asyncio.Task does).
+        parent_span_id = self._current_parent_span_id
+
         future = asyncio.run_coroutine_threadsafe(
             instance.create_span(
                 schema_name="langchain:agent",
                 payload=params,
+                parent_span_id=parent_span_id,
             ),
             loop,
         )
@@ -542,11 +562,15 @@ class PrefactorMiddleware(AgentMiddleware):
         else:
             return
 
+        is_failed = span_data.status == "failed"
+
         async def _emit() -> None:
-            async with instance.span(
-                schema_name, payload=params, parent_span_id=parent_span_id
-            ) as ctx:
-                ctx.set_result(result)
+            async with instance.span(schema_name, parent_span_id=parent_span_id) as ctx:
+                await ctx.start(params)
+                if is_failed:
+                    await ctx.fail(result)
+                else:
+                    await ctx.complete(result)
 
         def _schedule() -> None:
             task = loop.create_task(_emit())
@@ -616,7 +640,7 @@ class PrefactorMiddleware(AgentMiddleware):
                 messages = state.messages
 
             outputs = {"messages": [str(m) for m in messages[-3:]] if messages else []}
-            result = {"outputs": outputs, "status": "completed"}
+            result = {"outputs": outputs}
 
             loop = self._loop
             if loop is None or loop.is_closed():
@@ -706,22 +730,21 @@ class PrefactorMiddleware(AgentMiddleware):
             model_name=inputs.get("model"),
         )
 
-        async with instance.span(
-            "langchain:llm", payload=self._build_llm_params(span_data)
-        ) as ctx:
+        async with instance.span("langchain:llm") as ctx:
+            await ctx.start(self._build_llm_params(span_data))
             try:
                 response = await handler(request)
 
                 span_data.complete(outputs=self._extract_model_outputs(response))
                 span_data.token_usage = extract_token_usage(response)
 
-                ctx.set_result(self._build_llm_result(span_data))
+                await ctx.complete(self._build_llm_result(span_data))
                 logger.debug("Model call completed")
                 return response
 
             except Exception as e:
                 span_data.fail(e)
-                ctx.set_result(self._build_llm_result(span_data))
+                await ctx.fail(self._build_llm_result(span_data))
                 logger.error("Model call failed: %s", e, exc_info=True)
                 raise
 
@@ -793,20 +816,19 @@ class PrefactorMiddleware(AgentMiddleware):
             tool_name=tool_name,
         )
 
-        async with instance.span(
-            "langchain:tool", payload=self._build_tool_params(span_data)
-        ) as ctx:
+        async with instance.span("langchain:tool") as ctx:
+            await ctx.start(self._build_tool_params(span_data))
             try:
                 response = await handler(request)
 
                 span_data.complete(outputs=self._extract_tool_output(response))
 
-                ctx.set_result(self._build_tool_result(span_data))
+                await ctx.complete(self._build_tool_result(span_data))
                 logger.debug("Tool call completed (%s)", tool_name)
                 return response
 
             except Exception as e:
                 span_data.fail(e)
-                ctx.set_result(self._build_tool_result(span_data))
+                await ctx.fail(self._build_tool_result(span_data))
                 logger.error("Tool call failed: %s", e, exc_info=True)
                 raise

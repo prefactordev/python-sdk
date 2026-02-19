@@ -65,7 +65,7 @@ class LangChainSpan:
     name: str = "unnamed"
     start_time: float = field(default_factory=lambda: datetime.now().timestamp())
     end_time: Optional[float] = None
-    status: Literal["pending", "running", "completed", "error"] = "pending"
+    status: Literal["pending", "running", "completed", "failed"] = "pending"
     inputs: dict[str, Any] = field(default_factory=dict)
     outputs: Optional[dict[str, Any]] = None
     metadata: dict[str, Any] = field(default_factory=dict)
@@ -81,7 +81,7 @@ class LangChainSpan:
 
     def fail(self, error: Exception) -> None:
         """Mark the span as failed with error information."""
-        self.status = "error"
+        self.status = "failed"
         self.end_time = datetime.now().timestamp()
         self.error = ErrorInfo(
             error_type=type(error).__name__,
