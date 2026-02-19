@@ -10,13 +10,13 @@
 - **Run all quality checks**: `mise run check` (runs format, lint, typecheck)
 
 ## Mise
-- Mise manages Python 3.13, uv, ruff, jq, and lefthook
+- Mise manages Python 3.11, uv, ruff, jq, and lefthook
 - Auto-installs dependencies on directory enter via hook
 - **Setup project**: `mise run setup` (installs deps and lefthook)
 - **Install dependencies**: `mise run install` (runs `uv sync --all-extras`)
 
 ## Code Style
-- Python 3.12+ with `from __future__ import annotations`
+- Python 3.11+ with `from __future__ import annotations`
 - Line length: 88 chars, double quotes, spaces for indent
 - Import order: stdlib → third-party → local (ruff handles this)
 - Use `| None` instead of `Optional`, `list[T]` instead of `List[T]`
@@ -26,6 +26,6 @@
 - Use `async/await` for async code; use `TYPE_CHECKING` for type-only imports
 
 ## Monorepo Structure
-- 5 packages in `packages/`: core, http, langchain, next, sdk
+- 3 packages in `packages/`: core, http, langchain
 - Each package has own `pyproject.toml`
 - Tests live in `packages/<name>/tests/`
