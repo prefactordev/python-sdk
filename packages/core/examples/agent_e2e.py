@@ -196,7 +196,7 @@ async def main() -> None:
         # Register the agent instance — schema version derived from registry.
         instance = await client.create_agent_instance(
             agent_id=agent_id,
-            agent_version={"name": "Example Agent", "external_identifier": "v6.0.0"},
+            agent_version={"name": "Example Agent", "external_identifier": "v8.0.0"},
         )
 
         await instance.start()

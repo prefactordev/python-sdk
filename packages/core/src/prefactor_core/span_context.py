@@ -14,34 +14,40 @@ class SpanContext:
     """Context for an active span.
 
     Returned by ``instance.span()`` / ``client.span()`` context managers.
-    Call ``await span.start(payload)`` to explicitly POST the span to the
-    API with its params payload. If ``start()`` is not called before the
-    context exits, the context manager calls it automatically (with no
-    payload) so the span is always flushed.
 
-    Use the status-based finish methods before the context exits to control
-    the final span status:
+    Spans follow a three-phase lifecycle:
 
-    - ``await span.complete(result)`` — mark as successfully completed
-    - ``await span.fail(result)``     — mark as failed
-    - ``await span.cancel()``         — mark as cancelled
+    1. **Enter context** — span is prepared locally (no HTTP call yet).
+    2. **``await span.start(payload)``** — POSTs the span to the API as
+       ``pending`` with the given params payload.
+    3. **``await span.complete(result)``** (or ``.fail()`` / ``.cancel()``)
+       — finishes the span with the appropriate terminal status.
 
-    ``set_result()`` stores result data that is sent when the context
-    manager auto-finishes the span (using ``complete`` status by default).
+    Because spans are created as ``pending``, all three terminal statuses
+    are valid transitions — including ``cancelled``, which the API only
+    accepts from ``pending``.
+
+    If ``start()`` or a finish method is omitted, the context manager calls
+    them automatically on exit (auto-start uses ``default_payload``; the
+    default finish status is ``complete``), so explicit calls are opt-in.
 
     Example::
 
         async with instance.span("agent:llm_call") as span:
             await span.start({"model": "claude-3-5-sonnet", "prompt": "Hi"})
-            response = await call_llm(...)
-            await span.complete({"response": response, "tokens": 42})
+            try:
+                response = await call_llm(...)
+                await span.complete({"response": response, "tokens": 42})
+            except Exception as exc:
+                await span.fail({"error": str(exc)})
 
-        # Or let the context manager handle finish automatically:
-        async with instance.span("agent:llm_call") as span:
-            await span.start({"model": "claude-3-5-sonnet", "prompt": "Hi"})
-            response = await call_llm(...)
-            span.set_result({"response": response, "tokens": 42})
-        # span.complete() called automatically on exit
+        # Skip start entirely to cancel before any work begins:
+        async with instance.span("agent:retrieval") as span:
+            if not needed:
+                await span.cancel()
+            else:
+                await span.start({"query": "..."})
+                ...
     """
 
     def __init__(
@@ -56,7 +62,7 @@ class SpanContext:
             temp_id: The temporary local ID returned by SpanManager.prepare().
             span_manager: The manager for span operations.
             default_payload: Payload to use if ``start()`` is never explicitly
-                called (i.e. the context manager calls ``start()`` on exit).
+                called (i.e. the context manager auto-starts on exit).
         """
         self._span_id = temp_id  # replaced by API ID after start()
         self._span_manager = span_manager
@@ -79,15 +85,17 @@ class SpanContext:
         return self._span_id
 
     async def start(self, payload: dict[str, Any] | None = None) -> None:
-        """Post the span to the API with the given params payload.
+        """Post the span to the API as ``pending`` with the given params payload.
 
-        This triggers the HTTP ``POST /api/v1/agent_spans`` request. Must be
-        called at most once. Subsequent calls are no-ops.
+        This triggers ``POST /api/v1/agent_spans``. The span is created as
+        ``pending`` so that any terminal status (``complete``, ``failed``,
+        ``cancelled``) is a valid transition via the finish endpoint. Must be
+        called at most once; subsequent calls are no-ops.
 
         Args:
             payload: Optional params/inputs for the span (e.g. model name,
-                prompt text, tool input). These are stored as the span's
-                ``payload`` field in the API.
+                prompt text, tool input). Stored as the span's ``payload``
+                field in the API.
         """
         if self._started:
             return
@@ -100,9 +108,7 @@ class SpanContext:
         """Store result data to be sent when the span finishes.
 
         The data is merged and sent as ``result_payload`` when the span
-        completes. Calling this does **not** finish the span — the finish
-        happens when the context exits or when an explicit status method is
-        called.
+        finishes. Calling this does **not** finish the span.
 
         Args:
             data: Dictionary of result data for the span.
@@ -132,7 +138,13 @@ class SpanContext:
         await self._finish()
 
     async def cancel(self) -> None:
-        """Finish the span with ``cancelled`` status."""
+        """Finish the span with ``cancelled`` status.
+
+        Can be called before or after ``start()``. If ``start()`` has not
+        been called yet, the span is posted as ``pending`` then immediately
+        cancelled — the API only accepts cancellation from the ``pending``
+        state, so this is always a valid sequence.
+        """
         self._finish_status = "cancelled"
         await self._finish()
 
@@ -147,10 +159,14 @@ class SpanContext:
     async def _finish(self) -> None:
         """Internal finish — idempotent.
 
-        If the span was never started and the final status is ``cancelled``,
-        the span is posted directly as ``cancelled`` (the API does not allow
-        transitioning an ``active`` span to ``cancelled``).  Otherwise the
-        span is auto-started with the default payload before finishing.
+        API state machine constraints:
+          - ``active``  → complete / failed / cancelled  (via finish endpoint)
+          - ``pending`` → cancelled                       (via finish endpoint)
+
+        If ``start()`` was never called and the status is ``cancelled``, the
+        span is posted as ``pending`` then immediately cancelled — the only
+        valid pre-active cancellation path.  For all other statuses the span
+        is auto-started as ``active`` first.
         """
         if self._finished:
             return

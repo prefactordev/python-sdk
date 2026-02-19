@@ -21,27 +21,33 @@ if TYPE_CHECKING:
 class SpanManager:
     """Manages span lifecycle operations.
 
-    This class provides a high-level interface for span operations.
-    Span preparation is synchronous (local state + stack push), while the
-    HTTP POST (start) and finish/update operations are queued for async
-    processing. The manager tracks span state and manages the span stack
-    for automatic parent detection.
+    Spans follow a three-phase lifecycle that maps to the API's state machine:
+
+    1. ``prepare()``  — synchronous; allocates a local temp ID and pushes it
+       onto the SpanContextStack so nested spans can auto-detect their parent.
+       No HTTP call is made.
+    2. ``start()``    — async; POSTs the span to the API with status
+       ``"active"`` and the params payload, then re-keys local state under
+       the API-generated ID. The span is now running.
+    3. ``finish()``   — async; queues a ``FINISH_SPAN`` operation that calls
+       ``POST /agent_spans/{id}/finish`` with the desired terminal status
+       (``complete``, ``failed``, or ``cancelled``).
+
+    API state machine:
+      pending  → cancelled            (cancel_unstarted: POST pending, finish cancelled)
+      active   → complete / failed / cancelled  (start then finish)
+
+    ``cancel_unstarted()`` handles the case where the span is cancelled
+    before ``start()`` is ever called — it POSTs the span as ``pending``
+    then immediately cancels it, which is the only valid pre-active
+    cancellation path the API supports.
 
     Example:
         manager = SpanManager(http_client, enqueue_func)
 
-        # Prepare a span (local state + stack push, no HTTP)
-        span_id = manager.prepare(
-            instance_id="inst-123",
-            schema_name="agent:llm",
-            parent_span_id=None,
-        )
-
-        # Start the span (HTTP POST)
-        await manager.start(span_id, payload={"model": "gpt-4"})
-
-        # Finish the span
-        await manager.finish(span_id, status="complete")
+        temp_id = manager.prepare(instance_id="inst-123", schema_name="agent:llm")
+        api_id  = await manager.start(temp_id, payload={"model": "gpt-4"})
+        await manager.finish(api_id, status="complete", result_payload={...})
     """
 
     def __init__(
@@ -104,10 +110,13 @@ class SpanManager:
         temp_id: str,
         payload: dict[str, Any] | None = None,
     ) -> str:
-        """Post the span to the API and return the API-generated ID.
+        """Post the span to the API as ``active`` and return the API-generated ID.
 
-        Replaces the temporary local ID with the API-generated ID in local
-        state and on the context stack.
+        POSTs the span with ``status="active"``, which allows it to be
+        finished via the finish endpoint with any terminal status
+        (``complete``, ``failed``, or ``cancelled``). Replaces the temporary
+        local ID with the API-generated ID in local state and on the context
+        stack.
 
         Args:
             temp_id: The temporary ID returned by ``prepare()``.
@@ -144,13 +153,53 @@ class SpanManager:
         # Replace temp ID on the context stack
         stack = SpanContextStack.get_stack()
         new_stack = [api_id if s == temp_id else s for s in stack]
-        from contextvars import copy_context  # noqa: F401 — set via internal API
 
         from ..context_stack import _current_span_stack
 
         _current_span_stack.set(new_stack)
 
         return api_id
+
+    async def cancel_unstarted(self, temp_id: str) -> None:
+        """Cancel a span that was never started.
+
+        When ``cancel()`` is called before ``start()``, the span has not yet
+        been posted to the API. The API state machine only allows
+        ``pending → cancelled``, so this method creates the span as
+        ``pending`` then immediately cancels it via the finish endpoint.
+
+        Args:
+            temp_id: The temporary ID returned by ``prepare()``.
+
+        Raises:
+            KeyError: If temp_id is not a known pending span.
+        """
+        if temp_id not in self._spans:
+            raise KeyError(f"Unknown span: {temp_id}")
+
+        span = self._spans[temp_id]
+
+        result = await self._http.agent_spans.create(
+            agent_instance_id=span.instance_id,
+            schema_name=span.schema_name,
+            status="pending",
+            payload={},
+            parent_span_id=span.parent_span_id,
+        )
+        api_id = result.id
+
+        await self._http.agent_spans.finish(
+            agent_span_id=api_id,
+            status="cancelled",
+        )
+
+        span.status = "cancelled"
+        span.finished_at = datetime.now()
+
+        if SpanContextStack.peek() == temp_id:
+            SpanContextStack.pop()
+
+        del self._spans[temp_id]
 
     async def create(
         self,
@@ -182,49 +231,6 @@ class SpanManager:
         )
         return await self.start(temp_id, payload=payload)
 
-    async def cancel_unstarted(self, temp_id: str) -> None:
-        """Post a never-started span directly as ``cancelled``.
-
-        When a span is cancelled before ``start()`` is called, posting it as
-        ``active`` then finishing as ``cancelled`` would be rejected by the
-        API (only ``pending`` spans can be cancelled). This method creates
-        the span in a single ``cancelled`` POST instead.
-
-        Args:
-            temp_id: The temporary ID returned by ``prepare()``.
-
-        Raises:
-            KeyError: If temp_id is not a known pending span.
-        """
-        if temp_id not in self._spans:
-            raise KeyError(f"Unknown span: {temp_id}")
-
-        span = self._spans[temp_id]
-
-        # Create as pending then immediately cancel via the finish endpoint —
-        # the API requires a span to exist before it can be cancelled.
-        result = await self._http.agent_spans.create(
-            agent_instance_id=span.instance_id,
-            schema_name=span.schema_name,
-            status="pending",
-            payload={},
-            parent_span_id=span.parent_span_id,
-        )
-        api_id = result.id
-
-        await self._http.agent_spans.finish(
-            agent_span_id=api_id,
-            status="cancelled",
-        )
-
-        span.status = "cancelled"
-        span.finished_at = datetime.now()
-
-        if SpanContextStack.peek() == temp_id:
-            SpanContextStack.pop()
-
-        del self._spans[temp_id]
-
     async def finish(
         self,
         span_id: str,
@@ -238,8 +244,10 @@ class SpanManager:
         Args:
             span_id: The ID of the span to finish.
             result_payload: Optional result data to store on the span.
-            status: Finish status — ``"complete"``, ``"failed"``, or
-                ``"cancelled"`` (default: ``"complete"``).
+            status: Terminal status — ``"complete"``, ``"failed"``, or
+                ``"cancelled"`` (default: ``"complete"``). The span must be
+                ``active`` for this to succeed; use ``cancel_unstarted()``
+                to cancel a span that was never started.
 
         Raises:
             KeyError: If the span ID is not known.
