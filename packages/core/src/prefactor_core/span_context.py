@@ -19,13 +19,12 @@ class SpanContext:
 
     1. **Enter context** — span is prepared locally (no HTTP call yet).
     2. **``await span.start(payload)``** — POSTs the span to the API as
-       ``pending`` with the given params payload.
+       ``active`` with the given params payload.
     3. **``await span.complete(result)``** (or ``.fail()`` / ``.cancel()``)
        — finishes the span with the appropriate terminal status.
 
-    Because spans are created as ``pending``, all three terminal statuses
-    are valid transitions — including ``cancelled``, which the API only
-    accepts from ``pending``.
+    ``cancelled`` before start is handled via ``pending → cancelled``; once
+    started, the span transitions from ``active`` to a terminal status.
 
     If ``start()`` or a finish method is omitted, the context manager calls
     them automatically on exit (auto-start uses ``default_payload``; the
@@ -85,7 +84,7 @@ class SpanContext:
         return self._span_id
 
     async def start(self, payload: dict[str, Any] | None = None) -> None:
-        """Post the span to the API as ``pending`` with the given params payload.
+        """Post the span to the API as ``active`` with the given params payload.
 
         This triggers ``POST /api/v1/agent_spans``. The span is created as
         ``pending`` so that any terminal status (``complete``, ``failed``,
