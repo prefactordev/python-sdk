@@ -224,7 +224,7 @@ class TestSpanSerialization:
         except ValueError as e:
             span.fail(e)
 
-        assert span.status == "error"
+        assert span.status == "failed"
         assert span.error is not None
         assert span.error.error_type == "ValueError"
         assert span.error.message == "Test error message"
