@@ -12,7 +12,7 @@ from typing import Any, Optional
 import aiohttp
 
 from prefactor_core.config import HttpTransportConfig
-from prefactor_core.tracing.span import Span, SpanType
+from prefactor_core.tracing.span import Span, SpanStatus, SpanType
 from prefactor_core.transport.base import Transport
 from prefactor_core.utils.logging import get_logger
 from prefactor_core.utils.serialization import serialize_value
@@ -779,6 +779,13 @@ class HttpTransport(Transport):
             SpanType.RETRIEVER: "retriever",
         }
 
+        # Map SDK SpanStatus to API-expected status values
+        api_status_map = {
+            SpanStatus.RUNNING: "active",
+            SpanStatus.SUCCESS: "complete",
+            SpanStatus.ERROR: "failed",
+        }
+
         # Convert timestamps to ISO 8601
         started_at = datetime.fromtimestamp(
             span.start_time, tz=timezone.utc
@@ -828,6 +835,7 @@ class HttpTransport(Transport):
             "details": {
                 "agent_instance_id": self._agent_instance_id,
                 "schema_name": schema_name_map[span.span_type],
+                "status": api_status_map.get(span.status, "active"),
                 "payload": serialize_value(payload),
                 "parent_span_id": parent_span_id,
                 "started_at": started_at,
