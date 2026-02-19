@@ -95,22 +95,17 @@ async def run_agent_step(
 
     The middleware's auto-instrumentation creates langchain:llm and
     langchain:tool child spans automatically beneath this span.
-    """
-    import functools
 
+    ainvoke() stays in the async event loop — no executor is needed, and
+    SpanContextStack propagates correctly so langchain:agent is automatically
+    parented to workflow:agent_step.
+    """
     instance = await middleware._ensure_initialized()
 
     async with instance.span("workflow:agent_step") as ctx:
         await ctx.start({"message_count": len(messages)})
-        # Tell the middleware which span to use as the parent for langchain:agent.
-        # before_agent() runs in a worker thread where contextvars are not
-        # inherited, so the parent must be wired explicitly before the executor.
-        middleware.set_parent_span(ctx.id)
-        loop = asyncio.get_running_loop()
         try:
-            result = await loop.run_in_executor(
-                None, functools.partial(agent.invoke, {"messages": messages})
-            )
+            result = await agent.ainvoke({"messages": messages})
             await ctx.complete({"status": "ok"})
         except Exception as e:
             await ctx.fail({"error": str(e)})

@@ -4,7 +4,7 @@ import asyncio
 import hashlib
 import json
 import logging
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any, AsyncContextManager, Callable
 
 from langchain.agents.middleware import AgentMiddleware
 from prefactor_core import (
@@ -142,6 +142,7 @@ class PrefactorMiddleware(AgentMiddleware):
             self._instance = instance
             self._owns_instance = False
             self._owns_client = False
+            self._agent_span_cm: AsyncContextManager[SpanContext] | None = None
             self._agent_span_context: SpanContext | None = None
             self._agent_span_id: str | None = None
             self._current_parent_span_id: str | None = None
@@ -172,6 +173,7 @@ class PrefactorMiddleware(AgentMiddleware):
         self._owns_instance = True
         self._owns_client = False
 
+        self._agent_span_cm: AsyncContextManager[SpanContext] | None = None
         self._agent_span_context: SpanContext | None = None
         self._agent_span_id: str | None = None
         self._current_parent_span_id: str | None = None
@@ -237,6 +239,7 @@ class PrefactorMiddleware(AgentMiddleware):
         middleware._instance = None
         middleware._owns_instance = True
         middleware._owns_client = True
+        middleware._agent_span_cm = None
         middleware._agent_span_context = None
         middleware._agent_span_id = None
         middleware._current_parent_span_id = None
@@ -490,13 +493,15 @@ class PrefactorMiddleware(AgentMiddleware):
         return result
 
     def set_parent_span(self, span_id: str | None) -> None:
-        """Set the parent span ID for the next agent invocation.
+        """Set the parent span ID for the next agent invocation (sync path only).
 
-        Call this from async code before invoking the LangChain agent when you
-        want ``langchain:agent`` to be a child of an outer workflow span.
-        Because ``before_agent`` runs in a worker thread (via run_in_executor),
-        it cannot read the async context stack — so the parent must be passed
-        explicitly via this method.
+        Only needed when using ``agent.invoke()`` via ``run_in_executor``.
+        In that case, ``before_agent`` runs in a worker thread where
+        ``contextvars`` are not inherited, so the parent span ID must be
+        passed explicitly before entering the executor.
+
+        When using ``agent.ainvoke()`` (the recommended async path), parent
+        wiring is automatic via ``SpanContextStack`` — do not call this method.
 
         Args:
             span_id: The span ID to use as the parent, or None to clear it.
@@ -663,6 +668,96 @@ class PrefactorMiddleware(AgentMiddleware):
 
         except Exception as e:
             logger.error("Error in after_agent: %s", e, exc_info=True)
+
+        return None
+
+    async def abefore_agent(self, state: Any, runtime: Any) -> dict[str, Any] | None:
+        """Async hook called before agent starts execution.
+
+        Creates a ``langchain:agent`` span using the async context manager so
+        that ``SpanContextStack`` is updated automatically.  Any outer workflow
+        span already on the stack (e.g. ``workflow:agent_step``) is picked up
+        as the parent without any manual ``set_parent_span()`` call.
+
+        The span context is kept open and stored in ``_agent_span_context``
+        until ``aafter_agent`` exits it.
+
+        Args:
+            state: The agent state.
+            runtime: The runtime context.
+
+        Returns:
+            Optional state updates.
+        """
+        try:
+            instance = await self._ensure_initialized()
+
+            messages = []
+            if hasattr(state, "get"):
+                messages = state.get("messages", [])
+            elif hasattr(state, "messages"):
+                messages = state.messages
+
+            params = self._build_agent_params(
+                AgentSpan(
+                    name="agent",
+                    type="langchain:agent",
+                    inputs={
+                        "messages": [str(m) for m in messages[-3:]] if messages else []
+                    },
+                )
+            )
+
+            # Enter the span context manager and store both the CM object (for
+            # __aexit__ in aafter_agent) and the yielded SpanContext.
+            # SpanContextStack.peek() here returns the outer workflow span
+            # because we are executing in the async event loop context.
+            self._agent_span_cm = instance.span("langchain:agent")
+            self._agent_span_context = await self._agent_span_cm.__aenter__()
+            await self._agent_span_context.start(params)
+
+            self._agent_span_id = self._agent_span_context.id
+            logger.debug("Created agent span %s (async)", self._agent_span_id)
+
+        except Exception as e:
+            logger.error("Error in abefore_agent: %s", e, exc_info=True)
+
+        return None
+
+    async def aafter_agent(self, state: Any, runtime: Any) -> dict[str, Any] | None:
+        """Async hook called after agent completes execution.
+
+        Finishes the ``langchain:agent`` span opened by ``abefore_agent`` by
+        exiting its async context manager.
+
+        Args:
+            state: The agent state.
+            runtime: The runtime context.
+
+        Returns:
+            Optional state updates.
+        """
+        try:
+            if self._agent_span_cm is None or self._agent_span_context is None:
+                return None
+
+            messages = []
+            if hasattr(state, "get"):
+                messages = state.get("messages", [])
+            elif hasattr(state, "messages"):
+                messages = state.messages
+
+            outputs = {"messages": [str(m) for m in messages[-3:]] if messages else []}
+            await self._agent_span_context.complete({"outputs": outputs})
+            await self._agent_span_cm.__aexit__(None, None, None)
+
+            logger.debug("Finished agent span %s (async)", self._agent_span_id)
+            self._agent_span_cm = None
+            self._agent_span_context = None
+            self._agent_span_id = None
+
+        except Exception as e:
+            logger.error("Error in aafter_agent: %s", e, exc_info=True)
 
         return None
 
