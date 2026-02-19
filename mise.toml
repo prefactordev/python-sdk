@@ -39,5 +39,31 @@ uv sync --all-extras
 lefthook install
 """
 
+[tasks.build]
+description = "Build all packages"
+run = """
+uv build --package prefactor-http
+uv build --package prefactor-core
+uv build --package prefactor-langchain
+"""
+
+[tasks.publish]
+description = "Publish all packages to PyPI in dependency order (requires UV_PUBLISH_TOKEN)"
+depends = ["build"]
+run = """
+uv publish dist/prefactor_http-*
+uv publish dist/prefactor_core-*
+uv publish dist/prefactor_langchain-*
+"""
+
+[tasks.publish-test]
+description = "Publish all packages to TestPyPI (requires UV_PUBLISH_TOKEN)"
+depends = ["build"]
+run = """
+uv publish --publish-url https://test.pypi.org/legacy/ dist/prefactor_http-*
+uv publish --publish-url https://test.pypi.org/legacy/ dist/prefactor_core-*
+uv publish --publish-url https://test.pypi.org/legacy/ dist/prefactor_langchain-*
+"""
+
 [hooks]
 enter = "uv sync --all-extras --quiet"

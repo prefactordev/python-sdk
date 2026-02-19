@@ -3,6 +3,10 @@ name = "prefactor-http"
 version = "0.1.0"
 description = "HTTP client library for Prefactor API"
 readme = "README.md"
+license = { text = "MIT" }
+authors = [
+    { name = "Prefactor Pty Ltd", email = "josh@prefactor.tech" }
+]
 requires-python = ">=3.11.0, <4.0.0"
 dependencies = [
     "aiohttp>=3.9.0",

@@ -3,6 +3,10 @@ name = "prefactor-core"
 version = "0.1.0"
 description = "Core Prefactor SDK with async queue-based operations"
 readme = "README.md"
+license = { text = "MIT" }
+authors = [
+    { name = "Prefactor Pty Ltd", email = "josh@prefactor.tech" }
+]
 requires-python = ">=3.11.0, <4.0.0"
 dependencies = [
     "prefactor-http>=0.1.0",
