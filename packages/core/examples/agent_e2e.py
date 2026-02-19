@@ -4,16 +4,19 @@ E2E example for prefactor-core.
 Demonstrates:
   - SchemaRegistry with multiple span types
   - Hierarchical spans (root → child → grandchild)
-  - Parallel sibling spans
-  - set_result() usage
+  - Sibling spans
+  - Explicit span.start(payload) lifecycle
+  - Status-based finish: span.complete(result) / span.fail(result) / span.cancel()
   - Manual parent_span_id override
 
-Current vs. desired lifecycle note:
-  The current API uses the span context manager for creation and
-  set_result() + automatic context-exit finish for completion.
-  A future API may expose explicit span.start(payload) to trigger the HTTP
-  POST separately, and status-based methods (span.complete(), span.fail(),
-  span.cancel()) instead of a generic finish. See TODO comments below.
+Span lifecycle:
+  1. Enter the context manager — span is *prepared* locally (no HTTP yet)
+  2. ``await span.start(payload)`` — POSTs the span to the API with params
+  3. Do work
+  4. ``await span.complete(result)`` (or .fail() / .cancel()) — finishes span
+
+  If start() / complete() are omitted the context manager handles them
+  automatically on exit, so the API is fully opt-in.
 
 Run via mise (env vars set automatically):
     mise exec -- python packages/core/examples/agent_e2e.py
@@ -184,11 +187,10 @@ async def main() -> None:
     )
 
     async with PrefactorCoreClient(config) as client:
-        # Register the agent instance — schema version is derived automatically
-        # from the registry attached to the config.
+        # Register the agent instance — schema version derived from registry.
         instance = await client.create_agent_instance(
             agent_id=agent_id,
-            agent_version={"name": "Example Agent", "external_identifier": "v1.0.0"},
+            agent_version={"name": "Example Agent", "external_identifier": "v2.0.0"},
         )
 
         await instance.start()
@@ -196,68 +198,58 @@ async def main() -> None:
         # ------------------------------------------------------------------
         # Root span — represents the entire agent run
         # ------------------------------------------------------------------
-        # TODO: future API — span.start(payload) triggers HTTP POST here
-        async with instance.span(
-            "agent:run",
-            payload={"task": "summarise recent news"},
-        ) as root:
+        async with instance.span("agent:run") as root:
+            await root.start({"task": "summarise recent news"})
+
             # --------------------------------------------------------------
             # 1. Planning LLM call (child of root — parent auto-detected from
             #    SpanContextStack)
             # --------------------------------------------------------------
-            # TODO: future API — span.start(payload) triggers HTTP POST here
-            async with instance.span(
-                "agent:llm_call",
-                payload={"model": "claude-3-5-sonnet", "prompt": "Plan the task"},
-            ) as plan_span:
+            async with instance.span("agent:llm_call") as plan_span:
+                await plan_span.start(
+                    {"model": "claude-3-5-sonnet", "prompt": "Plan the task"}
+                )
+
                 plan_result = await simulate_llm("claude-3-5-sonnet", "Plan the task")
 
                 # ----------------------------------------------------------
                 # 1a. Tool call — grandchild of root, child of plan_span.
-                #     Parent is auto-detected from the stack.
+                #     Parent auto-detected from the stack.
                 # ----------------------------------------------------------
-                # TODO: future API — span.start(payload) triggers HTTP POST here
-                async with instance.span(
-                    "agent:tool_call",
-                    payload={"tool_name": "web_search", "input": "recent news"},
-                ) as tool_span:
+                async with instance.span("agent:tool_call") as tool_span:
+                    await tool_span.start(
+                        {"tool_name": "web_search", "input": "recent news"}
+                    )
                     tool_result = await simulate_tool("web_search", "recent news")
-                    # TODO: future API — tool_span.complete(result) / .fail(result)
-                    tool_span.set_result({"output": tool_result, "success": True})
+                    await tool_span.complete({"output": tool_result, "success": True})
 
-                # TODO: future API — plan_span.complete(result) / .fail(result)
-                plan_span.set_result({"response": plan_result, "tokens": 150})
+                await plan_span.complete({"response": plan_result, "tokens": 150})
 
             # --------------------------------------------------------------
             # 2. Knowledge retrieval — child of root.
             #    parent_span_id is passed explicitly here to demonstrate
             #    manual wiring (equivalent to the auto-detected behaviour).
             # --------------------------------------------------------------
-            # TODO: future API — span.start(payload) triggers HTTP POST here
             async with client.span(
                 instance_id=instance.id,
                 schema_name="agent:retrieval",
-                parent_span_id=root.id,  # explicit override — same as auto-detected
-                payload={"query": "recent news"},
+                parent_span_id=root.id,  # explicit override
             ) as ret_span:
+                await ret_span.start({"query": "recent news"})
                 docs = await simulate_retrieval("recent news")
-                # TODO: future API — ret_span.complete(result) / .fail(result)
-                ret_span.set_result({"documents": docs, "count": len(docs)})
+                await ret_span.complete({"documents": docs, "count": len(docs)})
 
             # --------------------------------------------------------------
             # 3. Final synthesis LLM call (child of root — auto-detected)
             # --------------------------------------------------------------
-            # TODO: future API — span.start(payload) triggers HTTP POST here
-            async with instance.span(
-                "agent:llm_call",
-                payload={"model": "claude-3-5-sonnet", "prompt": "Summarise"},
-            ) as final_span:
+            async with instance.span("agent:llm_call") as final_span:
+                await final_span.start(
+                    {"model": "claude-3-5-sonnet", "prompt": "Summarise"}
+                )
                 summary = await simulate_llm("claude-3-5-sonnet", "Summarise")
-                # TODO: future API — final_span.complete(result) / .fail(result)
-                final_span.set_result({"response": summary, "tokens": 200})
+                await final_span.complete({"response": summary, "tokens": 200})
 
-            # TODO: future API — root.complete(result) / .fail(result)
-            root.set_result({"summary": summary})
+            await root.complete({"summary": summary})
 
         await instance.finish()
 

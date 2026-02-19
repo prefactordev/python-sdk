@@ -204,6 +204,7 @@ class PrefactorCoreClient:
             elif operation.type == OperationType.FINISH_SPAN:
                 await self._http.agent_spans.finish(
                     agent_span_id=operation.payload["span_id"],
+                    status=operation.payload.get("status", "complete"),
                     result_payload=operation.payload.get("result_payload"),
                 )
 
@@ -350,12 +351,23 @@ class PrefactorCoreClient:
         If parent_span_id is not provided, the current span from the
         SpanContextStack is used as the parent.
 
+        The returned :class:`SpanContext` supports an explicit lifecycle:
+
+        1. ``await span.start(payload)`` — POST the span to the API.
+        2. Do work.
+        3. ``await span.complete(result)`` / ``span.fail(result)`` /
+           ``span.cancel()`` — finish with a specific status.
+
+        If ``start()`` or a finish method is not called explicitly, the
+        context manager handles them automatically on exit.
+
         Args:
             instance_id: ID of the agent instance this span belongs to.
             schema_name: Name of the schema for this span.
             parent_span_id: Optional explicit parent span ID.
-            span_id: Optional custom ID for the span.
-            payload: Optional initial payload (params/inputs) stored on creation.
+            span_id: Ignored (API generates IDs).
+            payload: Optional initial payload sent via auto-start on exit
+                if ``start()`` is never called explicitly.
 
         Yields:
             SpanContext for the created span.
@@ -370,17 +382,16 @@ class PrefactorCoreClient:
         if parent_span_id is None:
             parent_span_id = SpanContextStack.peek()
 
-        span_id = await self._span_manager.create(
+        temp_id = self._span_manager.prepare(
             instance_id=instance_id,
             schema_name=schema_name,
             parent_span_id=parent_span_id,
-            span_id=span_id,
-            payload=payload,
         )
 
         context = SpanContext(
-            span_id=span_id,
+            temp_id=temp_id,
             span_manager=self._span_manager,
+            default_payload=payload,
         )
 
         try:
