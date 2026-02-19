@@ -220,6 +220,7 @@ class PrefactorCoreClient:
                 f"Failed to process operation {operation.type}: {e}",
                 exc_info=True,
             )
+            raise
 
     async def create_agent_instance(
         self,
