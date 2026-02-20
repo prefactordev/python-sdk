@@ -1,6 +1,6 @@
 [project]
 name = "prefactor-core"
-version = "0.1.0"
+version = "0.1.1"
 description = "Core Prefactor SDK with async queue-based operations"
 readme = "README.md"
 license = { text = "MIT" }
