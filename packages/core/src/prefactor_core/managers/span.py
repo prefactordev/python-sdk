@@ -6,7 +6,7 @@ the span stack for automatic parent detection.
 """
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
 from ..context_stack import SpanContextStack
@@ -194,7 +194,7 @@ class SpanManager:
         )
 
         span.status = "cancelled"
-        span.finished_at = datetime.now()
+        span.finished_at = datetime.now(timezone.utc)
 
         stack = SpanContextStack.get_stack()
         if temp_id in stack:
@@ -259,7 +259,7 @@ class SpanManager:
             raise KeyError(f"Unknown span: {span_id}")
 
         self._spans[span_id].status = status
-        self._spans[span_id].finished_at = datetime.now()
+        self._spans[span_id].finished_at = datetime.now(timezone.utc)
 
         if SpanContextStack.peek() == span_id:
             SpanContextStack.pop()
@@ -271,7 +271,7 @@ class SpanManager:
         operation = Operation(
             type=OperationType.FINISH_SPAN,
             payload=op_payload,
-            timestamp=datetime.now(),
+            timestamp=datetime.now(timezone.utc),
         )
 
         await self._enqueue(operation)
@@ -303,7 +303,7 @@ class SpanManager:
                 "span_id": span_id,
                 "payload": payload,
             },
-            timestamp=datetime.now(),
+            timestamp=datetime.now(timezone.utc),
         )
 
         await self._enqueue(operation)

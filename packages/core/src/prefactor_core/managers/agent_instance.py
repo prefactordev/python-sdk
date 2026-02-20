@@ -6,7 +6,7 @@ an agent instance and creating spans within it.
 """
 
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
 from ..operations import Operation, OperationType
@@ -94,7 +94,7 @@ class AgentInstanceManager:
         operation = Operation(
             type=OperationType.START_AGENT_INSTANCE,
             payload={"instance_id": instance_id},
-            timestamp=datetime.now(),
+            timestamp=datetime.now(timezone.utc),
         )
 
         await self._enqueue(operation)
@@ -110,7 +110,7 @@ class AgentInstanceManager:
         operation = Operation(
             type=OperationType.FINISH_AGENT_INSTANCE,
             payload={"instance_id": instance_id},
-            timestamp=datetime.now(),
+            timestamp=datetime.now(timezone.utc),
         )
 
         await self._enqueue(operation)

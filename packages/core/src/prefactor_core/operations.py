@@ -46,7 +46,7 @@ class Operation:
                 "schema_name": "agent:llm",
                 "span_id": "span-456"
             },
-            timestamp=datetime.now(),
+            timestamp=datetime.now(timezone.utc),
             idempotency_key="span-456"
         )
     """

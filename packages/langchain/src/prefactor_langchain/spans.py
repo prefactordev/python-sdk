@@ -10,7 +10,7 @@ automatically, so they are not included in these span definitions.
 
 import traceback
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Literal, Optional
 
 
@@ -63,7 +63,9 @@ class LangChainSpan:
     """
 
     name: str = "unnamed"
-    start_time: float = field(default_factory=lambda: datetime.now().timestamp())
+    start_time: float = field(
+        default_factory=lambda: datetime.now(timezone.utc).timestamp()
+    )
     end_time: Optional[float] = None
     status: Literal["pending", "running", "completed", "failed"] = "pending"
     inputs: dict[str, Any] = field(default_factory=dict)
@@ -75,14 +77,14 @@ class LangChainSpan:
     def complete(self, outputs: Optional[dict[str, Any]] = None) -> None:
         """Mark the span as completed with outputs."""
         self.status = "completed"
-        self.end_time = datetime.now().timestamp()
+        self.end_time = datetime.now(timezone.utc).timestamp()
         if outputs:
             self.outputs = outputs
 
     def fail(self, error: Exception) -> None:
         """Mark the span as failed with error information."""
         self.status = "failed"
-        self.end_time = datetime.now().timestamp()
+        self.end_time = datetime.now(timezone.utc).timestamp()
         self.error = ErrorInfo(
             error_type=type(error).__name__,
             message=str(error),
