@@ -71,7 +71,9 @@ class AgentInstanceManager:
             agent_id: ID of the agent to create an instance for.
             agent_version: Version information (name, external_identifier, etc.).
             agent_schema_version: Schema version information.
-            instance_id: Ignored (API generates IDs with correct partition).
+            instance_id: Optional ID to forward to the API as ``id``.  When
+                provided, the API uses it as the instance ID; when omitted,
+                the API generates one.
 
         Returns:
             The instance ID (API-generated).
@@ -169,7 +171,7 @@ class AgentInstanceHandle:
         if self._started:
             return
 
-        manager = self._client._instance_manager
+        manager = self._client.instance_manager
         assert manager is not None
         await manager.start(self._instance_id)
         self._started = True
@@ -182,7 +184,7 @@ class AgentInstanceHandle:
         if self._finished:
             return
 
-        manager = self._client._instance_manager
+        manager = self._client.instance_manager
         assert manager is not None
         await manager.finish(self._instance_id)
         self._finished = True

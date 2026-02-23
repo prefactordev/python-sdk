@@ -261,8 +261,11 @@ class SpanManager:
         self._spans[span_id].status = status
         self._spans[span_id].finished_at = datetime.now(timezone.utc)
 
-        if SpanContextStack.peek() == span_id:
-            SpanContextStack.pop()
+        stack = SpanContextStack.get_stack()
+        if span_id in stack:
+            from ..context_stack import _current_span_stack
+
+            _current_span_stack.set([s for s in stack if s != span_id])
 
         op_payload: dict[str, Any] = {"span_id": span_id, "status": status}
         if result_payload is not None:

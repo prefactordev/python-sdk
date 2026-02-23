@@ -38,6 +38,8 @@ class Operation:
         metadata: Optional additional metadata.
 
     Example:
+        from datetime import datetime, timezone
+
         operation = Operation(
             type=OperationType.CREATE_SPAN,
             payload={

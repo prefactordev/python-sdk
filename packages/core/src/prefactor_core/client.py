@@ -221,6 +221,11 @@ class PrefactorCoreClient:
             )
             raise
 
+    @property
+    def instance_manager(self) -> AgentInstanceManager | None:
+        """Public accessor for the agent instance manager."""
+        return self._instance_manager
+
     async def create_agent_instance(
         self,
         agent_id: str,
@@ -344,7 +349,6 @@ class PrefactorCoreClient:
         instance_id: str,
         schema_name: str,
         parent_span_id: str | None = None,
-        span_id: str | None = None,
         payload: dict[str, Any] | None = None,
     ):
         """Context manager for creating and finishing a span.
@@ -366,7 +370,6 @@ class PrefactorCoreClient:
             instance_id: ID of the agent instance this span belongs to.
             schema_name: Name of the schema for this span.
             parent_span_id: Optional explicit parent span ID.
-            span_id: Ignored (API generates IDs).
             payload: Optional initial payload sent via auto-start on exit
                 if ``start()`` is never called explicitly.
 

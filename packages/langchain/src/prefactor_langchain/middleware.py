@@ -526,7 +526,15 @@ class PrefactorMiddleware(AgentMiddleware):
         if loop is None or loop.is_closed():
             return ""
 
-        import asyncio
+        try:
+            running_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            running_loop = None
+
+        if running_loop is not None and running_loop is loop:
+            raise RuntimeError(
+                "_create_agent_span_sync must be called from a non-event-loop thread"
+            )
 
         # Use whatever parent was set by set_parent_span() from the async side.
         # We cannot read the SpanContextStack here because run_in_executor does
@@ -664,6 +672,17 @@ class PrefactorMiddleware(AgentMiddleware):
             async def _finish() -> None:
                 await instance.finish_span(span_id, result_payload=result)
 
+            try:
+                running_loop = asyncio.get_running_loop()
+            except RuntimeError:
+                running_loop = None
+
+            if running_loop is not None and running_loop is loop:
+                raise RuntimeError(
+                    "after_agent must be called from a non-event-loop thread; "
+                    "use aafter_agent for async execution"
+                )
+
             future = asyncio.run_coroutine_threadsafe(_finish(), loop)
             future.result(timeout=5.0)
 
@@ -718,8 +737,16 @@ class PrefactorMiddleware(AgentMiddleware):
             # SpanContextStack.peek() here returns the outer workflow span
             # because we are executing in the async event loop context.
             self._agent_span_cm = instance.span("langchain:agent")
-            self._agent_span_context = await self._agent_span_cm.__aenter__()
-            await self._agent_span_context.start(params)
+            try:
+                self._agent_span_context = await self._agent_span_cm.__aenter__()
+                await self._agent_span_context.start(params)
+            except BaseException:
+                import sys
+
+                await self._agent_span_cm.__aexit__(*sys.exc_info())
+                self._agent_span_cm = None
+                self._agent_span_context = None
+                raise
 
             self._agent_span_id = self._agent_span_context.id
             logger.debug("Created agent span %s (async)", self._agent_span_id)
