@@ -1,6 +1,6 @@
 [project]
 name = "prefactor-langchain"
-version = "0.2.1"
+version = "0.2.2"
 description = "LangChain integration for Prefactor observability"
 readme = "README.md"
 license = { text = "MIT" }
@@ -9,7 +9,7 @@ authors = [
 ]
 requires-python = ">=3.11.0, <4.0.0"
 dependencies = [
-    "prefactor-core>=0.1.0",
+    "prefactor-core>=0.2.1",
     "langchain-core>=1.0.0",
 ]
 
