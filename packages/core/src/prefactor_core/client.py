@@ -7,6 +7,7 @@ through an async queue-based architecture.
 
 from __future__ import annotations
 
+import logging
 import time
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any
@@ -28,6 +29,8 @@ from .queue.memory import InMemoryQueue
 
 if TYPE_CHECKING:
     from .managers.agent_instance import AgentInstanceHandle
+
+logger = logging.getLogger(__name__)
 
 
 class PrefactorCoreClient:
@@ -207,15 +210,11 @@ class PrefactorCoreClient:
                     agent_span_id=operation.payload["span_id"],
                     status=operation.payload.get("status", "complete"),
                     result_payload=operation.payload.get("result_payload"),
+                    timestamp=operation.timestamp,
                 )
-
-            # Note: UPDATE_SPAN_PAYLOAD requires API support or batching
 
         except Exception as e:
             # Log error but don't re-raise - we don't want to crash the worker
-            import logging
-
-            logger = logging.getLogger(__name__)
             logger.error(
                 f"Failed to process operation {operation.type}: {e}",
                 exc_info=True,

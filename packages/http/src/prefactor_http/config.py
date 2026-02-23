@@ -50,5 +50,7 @@ class HttpClientConfig:
             raise ValueError("initial_retry_delay must be positive")
         if self.max_retry_delay <= 0:
             raise ValueError("max_retry_delay must be positive")
+        if self.initial_retry_delay > self.max_retry_delay:
+            raise ValueError("initial_retry_delay must be <= max_retry_delay")
         if self.retry_multiplier < 1:
             raise ValueError("retry_multiplier must be >= 1")

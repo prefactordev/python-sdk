@@ -11,15 +11,29 @@ pip install prefactor-langchain
 ## Quick Start
 
 ```python
+import ast
 import asyncio
+import operator
 from langchain.agents import create_agent
 from langchain_core.tools import tool
 from prefactor_langchain import PrefactorMiddleware
 
+_OPS = {ast.Add: operator.add, ast.Sub: operator.sub,
+        ast.Mult: operator.mul, ast.Div: operator.truediv}
+
+def _safe_eval(node):
+    if isinstance(node, ast.Constant): return node.n
+    if isinstance(node, ast.BinOp): return _OPS[type(node.op)](_safe_eval(node.left), _safe_eval(node.right))
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub): return -_safe_eval(node.operand)
+    raise ValueError(f"Unsupported: {node}")
+
 @tool
 def calculator(expression: str) -> str:
-    """Evaluate a mathematical expression."""
-    return str(eval(expression))
+    """Evaluate a mathematical expression safely."""
+    try:
+        return str(_safe_eval(ast.parse(expression, mode='eval').body))
+    except Exception as e:
+        return f"Error: {e}"
 
 async def main():
     middleware = PrefactorMiddleware.from_config(
@@ -36,8 +50,10 @@ async def main():
     )
 
     # All LLM calls and tool executions are automatically traced
-    result = await agent.ainvoke({"messages": [{"role": "user", "content": "What is 6 * 7?"}]})
-    await middleware.close()
+    try:
+        result = await agent.ainvoke({"messages": [{"role": "user", "content": "What is 6 * 7?"}]})
+    finally:
+        await middleware.close()
 
 asyncio.run(main())
 ```

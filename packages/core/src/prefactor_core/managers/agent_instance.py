@@ -80,6 +80,7 @@ class AgentInstanceManager:
             agent_id=agent_id,
             agent_version=agent_version,
             agent_schema_version=agent_schema_version,
+            id=instance_id,
         )
         return result.id
 

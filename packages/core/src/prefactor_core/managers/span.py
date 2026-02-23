@@ -276,38 +276,6 @@ class SpanManager:
 
         await self._enqueue(operation)
 
-    async def update_payload(
-        self,
-        span_id: str,
-        payload: dict[str, Any],
-    ) -> None:
-        """Update a span's payload.
-
-        Queues an update operation for the span payload.
-
-        Args:
-            span_id: The ID of the span to update.
-            payload: Payload data to merge with existing data.
-
-        Raises:
-            KeyError: If the span ID is not known.
-        """
-        if span_id not in self._spans:
-            raise KeyError(f"Unknown span: {span_id}")
-
-        self._spans[span_id].payload.update(payload)
-
-        operation = Operation(
-            type=OperationType.UPDATE_SPAN_PAYLOAD,
-            payload={
-                "span_id": span_id,
-                "payload": payload,
-            },
-            timestamp=datetime.now(timezone.utc),
-        )
-
-        await self._enqueue(operation)
-
     def get_span(self, span_id: str) -> Span | None:
         """Get a span by ID.
 

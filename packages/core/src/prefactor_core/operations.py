@@ -21,7 +21,6 @@ class OperationType(Enum):
     FINISH_AGENT_INSTANCE = auto()
     CREATE_SPAN = auto()
     FINISH_SPAN = auto()
-    UPDATE_SPAN_PAYLOAD = auto()
 
 
 @dataclass(frozen=True)

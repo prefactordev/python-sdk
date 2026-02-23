@@ -22,7 +22,9 @@ Example:
     python simple_agent.py
 """
 
+import ast
 import asyncio
+import operator
 import os
 from datetime import datetime
 
@@ -36,11 +38,29 @@ from prefactor_langchain import PrefactorMiddleware
 # ---------------------------------------------------------------------------
 
 
+_OPS = {
+    ast.Add: operator.add,
+    ast.Sub: operator.sub,
+    ast.Mult: operator.mul,
+    ast.Div: operator.truediv,
+}
+
+
+def _safe_eval(node: ast.expr) -> float:
+    if isinstance(node, ast.Constant):
+        return node.n  # type: ignore[return-value]
+    if isinstance(node, ast.BinOp):
+        return _OPS[type(node.op)](_safe_eval(node.left), _safe_eval(node.right))
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
+        return -_safe_eval(node.operand)
+    raise ValueError(f"Unsupported expression: {ast.dump(node)}")
+
+
 @tool
 def calculator(expression: str) -> str:
-    """Evaluate a mathematical expression."""
+    """Evaluate a mathematical expression safely."""
     try:
-        result = eval(expression)  # noqa: S307
+        result = _safe_eval(ast.parse(expression, mode="eval").body)
         return f"Result: {result}"
     except Exception as e:
         return f"Error: {str(e)}"
@@ -100,7 +120,7 @@ async def run_agent_step(
     SpanContextStack propagates correctly so langchain:agent is automatically
     parented to workflow:agent_step.
     """
-    instance = await middleware._ensure_initialized()
+    instance = await middleware.ensure_initialized()
 
     async with instance.span("workflow:agent_step") as ctx:
         await ctx.start({"message_count": len(messages)})
@@ -136,7 +156,7 @@ async def run_workflow(
               langchain:tool  (if the agent calls a tool)
           workflow:post_process
     """
-    instance = await middleware._ensure_initialized()
+    instance = await middleware.ensure_initialized()
 
     async with instance.span("workflow:run") as root:
         await root.start({"label": label, "query": query})

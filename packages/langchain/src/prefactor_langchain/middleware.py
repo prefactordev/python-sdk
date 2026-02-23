@@ -274,7 +274,7 @@ class PrefactorMiddleware(AgentMiddleware):
         # Derive a stable schema version ID from the registry + agent_name so
         # that the same configuration always maps to the same version
         # (idempotent across runs) and any change produces a new, distinct ID.
-        agent_version_name = "langchain-agent"
+        agent_version_name = self._agent_name or "langchain-agent"
         schema_version_id = f"langchain-{self._agent_id}"
         if self._client._config.schema_registry is not None:
             raw = self._client._config.schema_registry.to_agent_schema_version(
@@ -302,6 +302,10 @@ class PrefactorMiddleware(AgentMiddleware):
         await self._instance.start()
         logger.debug("Initialized agent instance %s", self._instance.id)
         return self._instance
+
+    async def ensure_initialized(self) -> AgentInstanceHandle:
+        """Initialize the middleware and return the agent instance handle."""
+        return await self._ensure_initialized()
 
     async def close(self) -> None:
         """Close the middleware and cleanup resources.
@@ -580,6 +584,7 @@ class PrefactorMiddleware(AgentMiddleware):
         def _schedule() -> None:
             task = loop.create_task(_emit())
             pending.append(task)
+            task.add_done_callback(pending.remove)
 
         loop.call_soon_threadsafe(_schedule)
 
