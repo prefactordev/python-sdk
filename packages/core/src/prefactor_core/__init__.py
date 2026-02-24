@@ -1,42 +1,57 @@
-"""Prefactor Core - Framework-agnostic tracing primitives."""
+"""Public API for prefactor-core.
 
-from prefactor_core.config import Config, HttpTransportConfig
-from prefactor_core.tracing.context import SpanContext
-from prefactor_core.tracing.span import (
-    ErrorInfo,
-    Span,
-    SpanStatus,
-    SpanType,
-    TokenUsage,
+This module exports the main classes and functions for the prefactor-core SDK.
+"""
+
+from .client import PrefactorCoreClient
+from .config import PrefactorCoreConfig, QueueConfig
+from .context_stack import SpanContextStack
+from .exceptions import (
+    ClientAlreadyInitializedError,
+    ClientNotInitializedError,
+    InstanceNotFoundError,
+    OperationError,
+    PrefactorCoreError,
+    SpanNotFoundError,
 )
-from prefactor_core.tracing.tracer import Tracer
-from prefactor_core.transport.base import Transport
-from prefactor_core.transport.http import HttpTransport
-from prefactor_core.transport.stdio import StdioTransport
-from prefactor_core.utils.logging import configure_logging, get_logger
-from prefactor_core.utils.serialization import serialize_value, truncate_string
+from .managers.agent_instance import AgentInstanceHandle
+from .models import AgentInstance, Span
+from .operations import Operation, OperationType
+from .queue import InMemoryQueue, Queue, QueueClosedError, TaskExecutor
+from .schema_registry import SchemaRegistry
+from .span_context import SpanContext
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 
 __all__ = [
+    # Client
+    "PrefactorCoreClient",
     # Config
-    "Config",
-    "HttpTransportConfig",
-    # Tracing
-    "Span",
-    "SpanType",
-    "SpanStatus",
-    "TokenUsage",
-    "ErrorInfo",
-    "Tracer",
+    "PrefactorCoreConfig",
+    "QueueConfig",
+    # Context
     "SpanContext",
-    # Transport
-    "Transport",
-    "StdioTransport",
-    "HttpTransport",
-    # Utils
-    "configure_logging",
-    "get_logger",
-    "serialize_value",
-    "truncate_string",
+    "SpanContextStack",
+    # Exceptions
+    "PrefactorCoreError",
+    "ClientNotInitializedError",
+    "ClientAlreadyInitializedError",
+    "OperationError",
+    "InstanceNotFoundError",
+    "SpanNotFoundError",
+    # Models
+    "AgentInstance",
+    "Span",
+    # Operations
+    "Operation",
+    "OperationType",
+    # Queue
+    "Queue",
+    "QueueClosedError",
+    "InMemoryQueue",
+    "TaskExecutor",
+    # Handle
+    "AgentInstanceHandle",
+    # Schema Registry
+    "SchemaRegistry",
 ]

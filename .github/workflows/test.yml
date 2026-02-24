@@ -1,11 +1,12 @@
-name: "Test"
+name: CI
 
 on:
   pull_request:
   push:
 
 jobs:
-  tests:
+  lint:
+    name: Lint & type check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -14,6 +15,23 @@ jobs:
           install: true
           cache: true
       - run: uv sync --all-extras
-      - run: ruff format --check . && ruff check .
-      - run: uvx ty check .
+      - run: ruff format --check .
+      - run: ruff check .
+      - run: uv run ty check .
+
+  tests:
+    name: Tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    needs: lint
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v3
+        with:
+          install: true
+          cache: true
+      - run: uv sync --all-extras --python ${{ matrix.python-version }}
       - run: uv run pytest

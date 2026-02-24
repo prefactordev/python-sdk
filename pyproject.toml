@@ -1,16 +1,15 @@
 [project]
 name = "prefactor-workspace"
 version = "0.0.0"
-requires-python = ">=3.12"
+requires-python = ">=3.11.0, <4.0.0"
 
 [tool.uv.workspace]
 members = ["packages/*"]
-exclude = ["packages/http"]
 
 [tool.uv.sources]
 prefactor-core = { workspace = true }
+prefactor-http = { workspace = true }
 prefactor-langchain = { workspace = true }
-prefactor-sdk = { workspace = true }
 
 [dependency-groups]
 dev = [
@@ -23,13 +22,13 @@ dev = [
     "ty>=0.0.11",
     "ruff>=0.8.0",
     "prefactor-core",
+    "prefactor-http",
     "prefactor-langchain",
-    "prefactor-sdk",
 ]
 
 [tool.ruff]
 line-length = 88
-target-version = "py312"
+target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W"]
@@ -53,9 +52,21 @@ include = ["packages/*/tests/**"]
 
 [tool.ty.overrides.rules]
 possibly-missing-attribute = "ignore"
+invalid-argument-type = "ignore"
+missing-argument = "ignore"
+not-subscriptable = "ignore"
+unresolved-import = "ignore"
+
+# Suppress unresolved-import for langchain source and examples — langchain
+# is an optional peer dependency not installed in all environments
+[[tool.ty.overrides]]
+include = ["packages/langchain/**"]
+
+[tool.ty.overrides.rules]
+unresolved-import = "ignore"
 
 [tool.pytest.ini_options]
-testpaths = ["packages/core/tests", "packages/langchain/tests", "packages/sdk/tests"]
+testpaths = ["packages/core/tests", "packages/http/tests", "packages/langchain/tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]

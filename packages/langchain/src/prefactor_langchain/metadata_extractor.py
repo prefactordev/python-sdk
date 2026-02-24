@@ -1,61 +1,52 @@
 """Utilities for extracting metadata from LangChain objects."""
 
+import logging
 import traceback
 from typing import Any, Optional
 
-from prefactor_core.tracing.span import ErrorInfo, TokenUsage
-from prefactor_core.utils.logging import get_logger
+from .spans import ErrorInfo, TokenUsage
 
-logger = get_logger("instrumentation.langchain.metadata_extractor")
+logger = logging.getLogger("prefactor_langchain.metadata_extractor")
 
 
-def extract_token_usage(llm_result: Any) -> Optional[TokenUsage]:
-    """
-    Extract token usage from LangChain LLMResult.
+def extract_token_usage(response: Any) -> Optional[TokenUsage]:
+    """Extract token usage from a ModelResponse.
+
+    Checks each message in ``response.result`` for ``usage_metadata``
+    (the standard LangChain field populated by all providers), accumulating
+    totals across messages.
 
     Args:
-        llm_result: The LLMResult object from LangChain.
+        response: A ModelResponse object from LangChain.
 
     Returns:
         TokenUsage if available, None otherwise.
     """
     try:
-        if not hasattr(llm_result, "llm_output") or llm_result.llm_output is None:
+        prompt_tokens = 0
+        completion_tokens = 0
+        total_tokens = 0
+        found = False
+
+        messages = getattr(response, "result", None) or []
+        for msg in messages:
+            usage = getattr(msg, "usage_metadata", None)
+            if not usage:
+                continue
+            # usage_metadata keys: input_tokens, output_tokens, total_tokens
+            prompt_tokens += usage.get("input_tokens", 0)
+            completion_tokens += usage.get("output_tokens", 0)
+            total_tokens += usage.get("total_tokens", 0)
+            found = True
+
+        if not found:
             return None
 
-        llm_output = llm_result.llm_output
-
-        # Try different possible keys for token usage
-        usage_data = None
-
-        # Try "token_usage" key (OpenAI and others)
-        if "token_usage" in llm_output:
-            usage_data = llm_output["token_usage"]
-        # Try "usage" key (alternative format)
-        elif "usage" in llm_output:
-            usage_data = llm_output["usage"]
-
-        if usage_data is None:
-            return None
-
-        # Extract token counts
-        prompt_tokens = usage_data.get("prompt_tokens")
-        completion_tokens = usage_data.get("completion_tokens")
-        total_tokens = usage_data.get("total_tokens")
-
-        # All fields must be present
-        if (
-            prompt_tokens is not None
-            and completion_tokens is not None
-            and total_tokens is not None
-        ):
-            return TokenUsage(
-                prompt_tokens=prompt_tokens,
-                completion_tokens=completion_tokens,
-                total_tokens=total_tokens,
-            )
-
-        return None
+        return TokenUsage(
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=total_tokens or (prompt_tokens + completion_tokens),
+        )
 
     except Exception as e:
         logger.debug(f"Failed to extract token usage: {e}")
@@ -63,8 +54,7 @@ def extract_token_usage(llm_result: Any) -> Optional[TokenUsage]:
 
 
 def extract_error_info(error: Exception) -> ErrorInfo:
-    """
-    Extract error information from an exception.
+    """Extract error information from an exception.
 
     Args:
         error: The exception to extract information from.
