@@ -214,7 +214,7 @@ class PrefactorCoreClient:
                 )
 
         except Exception as e:
-            # Log error but don't re-raise - we don't want to crash the worker
+            # Log error and re-raise so TaskExecutor retries can run
             logger.error(
                 f"Failed to process operation {operation.type}: {e}",
                 exc_info=True,
