@@ -5,13 +5,13 @@ calls into Operation objects that are queued for processing. It also manages
 the span stack for automatic parent detection.
 """
 
-import uuid
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
 from ..context_stack import SpanContextStack
 from ..models import Span
 from ..operations import Operation, OperationType
+from ..utils import generate_idempotency_key
 
 if TYPE_CHECKING:
     from prefactor_http.client import PrefactorHttpClient
@@ -90,7 +90,7 @@ class SpanManager:
         if parent_span_id is None:
             parent_span_id = SpanContextStack.peek()
 
-        temp_id = str(uuid.uuid4())
+        temp_id = generate_idempotency_key()
 
         span = Span(
             id=temp_id,
@@ -139,6 +139,7 @@ class SpanManager:
             status="active",
             payload=payload or {},
             parent_span_id=span.parent_span_id,
+            idempotency_key=generate_idempotency_key(),
         )
 
         api_id = result.id
@@ -185,12 +186,14 @@ class SpanManager:
             status="pending",
             payload={},
             parent_span_id=span.parent_span_id,
+            idempotency_key=generate_idempotency_key(),
         )
         api_id = result.id
 
         await self._http.agent_spans.finish(
             agent_span_id=api_id,
             status="cancelled",
+            idempotency_key=generate_idempotency_key(),
         )
 
         span.status = "cancelled"
@@ -267,7 +270,11 @@ class SpanManager:
 
             _current_span_stack.set([s for s in stack if s != span_id])
 
-        op_payload: dict[str, Any] = {"span_id": span_id, "status": status}
+        op_payload: dict[str, Any] = {
+            "span_id": span_id,
+            "status": status,
+            "idempotency_key": generate_idempotency_key(),
+        }
         if result_payload is not None:
             op_payload["result_payload"] = result_payload
 

@@ -60,6 +60,12 @@ class AgentInstanceClient:
             PrefactorApiError: On API errors
             PrefactorValidationError: On validation errors
         """
+        if idempotency_key is not None and len(idempotency_key) > 64:
+            raise ValueError(
+                f"Idempotency key must be at most 64 characters, got "
+                f"{len(idempotency_key)}"
+            )
+
         payload = {
             "agent_id": agent_id,
             "agent_version": agent_version,
@@ -102,6 +108,12 @@ class AgentInstanceClient:
             PrefactorNotFoundError: If instance not found
             PrefactorApiError: On other errors
         """
+        if idempotency_key is not None and len(idempotency_key) > 64:
+            raise ValueError(
+                f"Idempotency key must be at most 64 characters, got "
+                f"{len(idempotency_key)}"
+            )
+
         payload = {"timestamp": timestamp.isoformat() if timestamp else None}
         if idempotency_key:
             payload["idempotency_key"] = idempotency_key
@@ -139,6 +151,12 @@ class AgentInstanceClient:
             PrefactorNotFoundError: If instance not found
             PrefactorApiError: On other errors
         """
+        if idempotency_key is not None and len(idempotency_key) > 64:
+            raise ValueError(
+                f"Idempotency key must be at most 64 characters, got "
+                f"{len(idempotency_key)}"
+            )
+
         finish_request = FinishInstanceRequest(
             status=status,
             timestamp=timestamp.isoformat() if timestamp else None,

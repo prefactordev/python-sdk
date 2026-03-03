@@ -67,6 +67,12 @@ class AgentSpanClient:
             PrefactorApiError: On API errors
             PrefactorValidationError: On validation errors
         """
+        if idempotency_key is not None and len(idempotency_key) > 64:
+            raise ValueError(
+                f"Idempotency key must be at most 64 characters, got "
+                f"{len(idempotency_key)}"
+            )
+
         create_request = CreateAgentSpanRequest(
             agent_instance_id=agent_instance_id,
             schema_name=schema_name,
@@ -118,6 +124,12 @@ class AgentSpanClient:
             PrefactorNotFoundError: If span not found
             PrefactorApiError: On other errors
         """
+        if idempotency_key is not None and len(idempotency_key) > 64:
+            raise ValueError(
+                f"Idempotency key must be at most 64 characters, got "
+                f"{len(idempotency_key)}"
+            )
+
         finish_request = FinishSpanRequest(
             status=status,
             result_payload=result_payload,
