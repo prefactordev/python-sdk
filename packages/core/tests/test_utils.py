@@ -1,5 +1,7 @@
 """Tests for prefactor_core utility functions."""
 
+from __future__ import annotations
+
 import uuid
 
 import pytest

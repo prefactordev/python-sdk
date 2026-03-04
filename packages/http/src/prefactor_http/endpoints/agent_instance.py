@@ -1,5 +1,7 @@
 """AgentInstance endpoint client."""
 
+from __future__ import annotations
+
 from datetime import datetime
 from typing import TYPE_CHECKING
 
@@ -9,6 +11,21 @@ from prefactor_http.models.types import FinishStatus
 
 if TYPE_CHECKING:
     from prefactor_http.client import PrefactorHttpClient
+
+
+def _validate_idempotency_key(key: str) -> None:
+    """Validate that an idempotency key is at most 64 characters.
+
+    Args:
+        key: The idempotency key to validate.
+
+    Raises:
+        ValueError: If the key exceeds 64 characters.
+    """
+    if len(key) > 64:
+        raise ValueError(
+            f"Idempotency key must be at most 64 characters, got {len(key)}"
+        )
 
 
 class AgentInstanceClient:
@@ -60,11 +77,8 @@ class AgentInstanceClient:
             PrefactorApiError: On API errors
             PrefactorValidationError: On validation errors
         """
-        if idempotency_key is not None and len(idempotency_key) > 64:
-            raise ValueError(
-                f"Idempotency key must be at most 64 characters, got "
-                f"{len(idempotency_key)}"
-            )
+        if idempotency_key is not None:
+            _validate_idempotency_key(idempotency_key)
 
         payload = {
             "agent_id": agent_id,
@@ -108,14 +122,11 @@ class AgentInstanceClient:
             PrefactorNotFoundError: If instance not found
             PrefactorApiError: On other errors
         """
-        if idempotency_key is not None and len(idempotency_key) > 64:
-            raise ValueError(
-                f"Idempotency key must be at most 64 characters, got "
-                f"{len(idempotency_key)}"
-            )
+        if idempotency_key is not None:
+            _validate_idempotency_key(idempotency_key)
 
         payload = {"timestamp": timestamp.isoformat() if timestamp else None}
-        if idempotency_key:
+        if idempotency_key is not None:
             payload["idempotency_key"] = idempotency_key
 
         response = await self._client.request(
@@ -151,11 +162,8 @@ class AgentInstanceClient:
             PrefactorNotFoundError: If instance not found
             PrefactorApiError: On other errors
         """
-        if idempotency_key is not None and len(idempotency_key) > 64:
-            raise ValueError(
-                f"Idempotency key must be at most 64 characters, got "
-                f"{len(idempotency_key)}"
-            )
+        if idempotency_key is not None:
+            _validate_idempotency_key(idempotency_key)
 
         finish_request = FinishInstanceRequest(
             status=status,

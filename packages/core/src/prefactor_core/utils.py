@@ -1,5 +1,7 @@
 """Utility functions for prefactor-core."""
 
+from __future__ import annotations
+
 import uuid
 
 

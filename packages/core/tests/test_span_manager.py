@@ -1,5 +1,7 @@
 """Tests for SpanManager idempotency key auto-generation."""
 
+from __future__ import annotations
+
 import uuid
 from unittest.mock import AsyncMock, MagicMock
 
@@ -15,6 +17,7 @@ def _make_span_result(span_id: str = "api-span-id") -> MagicMock:
 
 @pytest.fixture
 def http_client():
+    """Return a mock HTTP client with stubbed agent_spans create/finish methods."""
     client = MagicMock()
     client.agent_spans = MagicMock()
     client.agent_spans.create = AsyncMock(return_value=_make_span_result())
@@ -24,16 +27,21 @@ def http_client():
 
 @pytest.fixture
 def enqueue():
+    """Return an async mock for the enqueue callback."""
     return AsyncMock()
 
 
 @pytest.fixture
 def manager(http_client, enqueue):
+    """Return a SpanManager wired to the mock http_client and enqueue fixtures."""
     return SpanManager(http_client, enqueue)
 
 
 class TestSpanManagerIdempotencyKeys:
+    """Tests that SpanManager generates and propagates idempotency keys correctly."""
+
     async def test_start_passes_idempotency_key(self, manager, http_client):
+        """start() should pass a valid UUID idempotency key to agent_spans.create."""
         temp_id = manager.prepare(instance_id="inst-1", schema_name="agent:llm")
         await manager.start(temp_id)
 
@@ -44,6 +52,7 @@ class TestSpanManagerIdempotencyKeys:
         uuid.UUID(key)  # must be valid UUID
 
     async def test_cancel_unstarted_passes_distinct_keys(self, manager, http_client):
+        """cancel_unstarted() should use distinct keys for create and finish calls."""
         temp_id = manager.prepare(instance_id="inst-1", schema_name="agent:llm")
         await manager.cancel_unstarted(temp_id)
 
@@ -61,6 +70,7 @@ class TestSpanManagerIdempotencyKeys:
     async def test_finish_includes_idempotency_key_in_operation(
         self, manager, http_client, enqueue
     ):
+        """finish() should enqueue an operation with a valid UUID idempotency key."""
         # Start a span first to get a real API id
         temp_id = manager.prepare(instance_id="inst-1", schema_name="agent:llm")
         api_id = await manager.start(temp_id)
