@@ -18,7 +18,7 @@ def generate_idempotency_key() -> str:
 
 
 def validate_idempotency_key(key: str) -> str:
-    """Validate that an idempotency key is at most 64 characters.
+    """Validate that an idempotency key is a non-empty string of at most 64 characters.
 
     Args:
         key: The idempotency key to validate.
@@ -27,8 +27,10 @@ def validate_idempotency_key(key: str) -> str:
         The key unchanged if valid.
 
     Raises:
-        ValueError: If the key exceeds 64 characters.
+        ValueError: If the key is empty or exceeds 64 characters.
     """
+    if not key:
+        raise ValueError("Idempotency key must not be empty")
     if len(key) > 64:
         raise ValueError(
             f"Idempotency key must be at most 64 characters, got {len(key)}"

@@ -32,6 +32,10 @@ class TestValidateIdempotencyKey:
         key = "abc"
         assert validate_idempotency_key(key) == key
 
+    def test_rejects_empty_key(self):
+        with pytest.raises(ValueError, match="must not be empty"):
+            validate_idempotency_key("")
+
     def test_rejects_oversized_key(self):
         key = "a" * 65
         with pytest.raises(ValueError, match="64 characters"):
