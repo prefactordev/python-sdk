@@ -254,3 +254,73 @@ class TestAgentSpanEndpoints:
             )
             assert "status" not in body
             assert "result_payload" not in body
+
+
+class TestIdempotencyKeyValidation:
+    """Tests that oversized idempotency keys are rejected before making HTTP calls."""
+
+    @pytest.mark.asyncio
+    async def test_agent_span_create_rejects_oversized_key(self, config):
+        async with PrefactorHttpClient(config) as client:
+            with pytest.raises(ValueError, match="64 characters"):
+                await client.agent_spans.create(
+                    agent_instance_id="inst-1",
+                    schema_name="tool_call",
+                    status="active",
+                    idempotency_key="a" * 65,
+                )
+
+    @pytest.mark.asyncio
+    async def test_agent_span_finish_rejects_oversized_key(self, config):
+        async with PrefactorHttpClient(config) as client:
+            with pytest.raises(ValueError, match="64 characters"):
+                await client.agent_spans.finish(
+                    "span-1",
+                    idempotency_key="a" * 65,
+                )
+
+    @pytest.mark.asyncio
+    async def test_agent_instance_register_rejects_oversized_key(self, config):
+        async with PrefactorHttpClient(config) as client:
+            with pytest.raises(ValueError, match="64 characters"):
+                await client.agent_instances.register(
+                    agent_id="agent-1",
+                    agent_version={},
+                    agent_schema_version={},
+                    idempotency_key="a" * 65,
+                )
+
+    @pytest.mark.asyncio
+    async def test_agent_instance_start_rejects_oversized_key(self, config):
+        async with PrefactorHttpClient(config) as client:
+            with pytest.raises(ValueError, match="64 characters"):
+                await client.agent_instances.start(
+                    "inst-1",
+                    idempotency_key="a" * 65,
+                )
+
+    @pytest.mark.asyncio
+    async def test_agent_instance_finish_rejects_oversized_key(self, config):
+        async with PrefactorHttpClient(config) as client:
+            with pytest.raises(ValueError, match="64 characters"):
+                await client.agent_instances.finish(
+                    "inst-1",
+                    idempotency_key="a" * 65,
+                )
+
+    @pytest.mark.asyncio
+    async def test_exactly_64_chars_is_accepted(self, config):
+        """A key of exactly 64 characters should not raise."""
+        with aioresponses() as m:
+            m.post(
+                "https://api.test.com/api/v1/agent_spans",
+                payload={"status": "success", "details": MOCK_SPAN},
+            )
+            async with PrefactorHttpClient(config) as client:
+                result = await client.agent_spans.create(
+                    agent_instance_id="inst-1",
+                    schema_name="tool_call",
+                    status="active",
+                    idempotency_key="a" * 64,
+                )
+            assert result.id == "span-1"

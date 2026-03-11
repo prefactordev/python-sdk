@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
 from ..operations import Operation, OperationType
+from ..utils import generate_idempotency_key
 
 if TYPE_CHECKING:
     from prefactor_http.client import PrefactorHttpClient
@@ -83,6 +84,7 @@ class AgentInstanceManager:
             agent_version=agent_version,
             agent_schema_version=agent_schema_version,
             id=instance_id,
+            idempotency_key=generate_idempotency_key(),
         )
         return result.id
 
@@ -96,7 +98,10 @@ class AgentInstanceManager:
         """
         operation = Operation(
             type=OperationType.START_AGENT_INSTANCE,
-            payload={"instance_id": instance_id},
+            payload={
+                "instance_id": instance_id,
+                "idempotency_key": generate_idempotency_key(),
+            },
             timestamp=datetime.now(timezone.utc),
         )
 
@@ -112,7 +117,10 @@ class AgentInstanceManager:
         """
         operation = Operation(
             type=OperationType.FINISH_AGENT_INSTANCE,
-            payload={"instance_id": instance_id},
+            payload={
+                "instance_id": instance_id,
+                "idempotency_key": generate_idempotency_key(),
+            },
             timestamp=datetime.now(timezone.utc),
         )
 

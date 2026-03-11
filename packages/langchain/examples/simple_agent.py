@@ -50,7 +50,7 @@ def _safe_eval(node: ast.expr) -> float:
     if isinstance(node, ast.Constant):
         return node.n  # type: ignore[return-value]
     if isinstance(node, ast.BinOp):
-        return _OPS[type(node.op)](_safe_eval(node.left), _safe_eval(node.right))
+        return _OPS[type(node.op)](_safe_eval(node.left), _safe_eval(node.right))  # type: ignore[invalid-argument-type]
     if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
         return -_safe_eval(node.operand)
     raise ValueError(f"Unsupported expression: {ast.dump(node)}")

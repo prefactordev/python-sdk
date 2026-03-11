@@ -20,6 +20,7 @@ from .operations import Operation, OperationType
 from .queue import InMemoryQueue, Queue, QueueClosedError, TaskExecutor
 from .schema_registry import SchemaRegistry
 from .span_context import SpanContext
+from .utils import generate_idempotency_key, validate_idempotency_key
 
 __version__ = "0.2.1"
 
@@ -54,4 +55,7 @@ __all__ = [
     "AgentInstanceHandle",
     # Schema Registry
     "SchemaRegistry",
+    # Utils
+    "generate_idempotency_key",
+    "validate_idempotency_key",
 ]

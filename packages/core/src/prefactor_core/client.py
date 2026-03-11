@@ -188,12 +188,14 @@ class PrefactorCoreClient:
                 await self._http.agent_instances.start(
                     agent_instance_id=operation.payload["instance_id"],
                     timestamp=operation.timestamp,
+                    idempotency_key=operation.payload.get("idempotency_key"),
                 )
 
             elif operation.type == OperationType.FINISH_AGENT_INSTANCE:
                 await self._http.agent_instances.finish(
                     agent_instance_id=operation.payload["instance_id"],
                     timestamp=operation.timestamp,
+                    idempotency_key=operation.payload.get("idempotency_key"),
                 )
             elif operation.type == OperationType.CREATE_SPAN:
                 await self._http.agent_spans.create(
@@ -211,6 +213,7 @@ class PrefactorCoreClient:
                     status=operation.payload.get("status", "complete"),
                     result_payload=operation.payload.get("result_payload"),
                     timestamp=operation.timestamp,
+                    idempotency_key=operation.payload.get("idempotency_key"),
                 )
 
         except Exception as e:
