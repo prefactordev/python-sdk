@@ -1,6 +1,6 @@
 [project]
 name = "prefactor-langchain"
-version = "0.2.2"
+version = "0.2.3"
 description = "LangChain integration for Prefactor observability"
 readme = "README.md"
 license = { text = "MIT" }
