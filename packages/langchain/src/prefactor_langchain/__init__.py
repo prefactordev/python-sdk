@@ -1,5 +1,7 @@
 """Prefactor LangChain - LangChain integration for Prefactor observability."""
 
+from __future__ import annotations
+
 from prefactor_langchain.metadata_extractor import (
     extract_error_info,
     extract_token_usage,

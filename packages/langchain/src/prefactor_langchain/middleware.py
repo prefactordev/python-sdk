@@ -1,5 +1,7 @@
 """LangChain middleware for automatic tracing via prefactor-core."""
 
+from __future__ import annotations
+
 import asyncio
 import hashlib
 import json

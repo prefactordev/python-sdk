@@ -343,6 +343,10 @@ def register_langchain_schemas(
             ``toolSchemas`` or ``tool_schemas`` config.
         tool_schemas: Optional Python-first per-tool schema configuration.
 
+    Returns:
+        A dict mapping tool names to their normalized span types. Returns an
+        empty dict when no tool-specific schemas are registered.
+
     Example:
         from prefactor_core import SchemaRegistry
         from prefactor_langchain.schemas import register_langchain_schemas
