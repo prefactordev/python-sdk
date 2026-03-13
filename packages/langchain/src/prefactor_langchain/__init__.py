@@ -6,9 +6,12 @@ from prefactor_langchain.metadata_extractor import (
 )
 from prefactor_langchain.middleware import PrefactorMiddleware
 from prefactor_langchain.schemas import (
+    DEFAULT_LANGCHAIN_AGENT_SCHEMA,
     LANGCHAIN_AGENT_SCHEMA,
     LANGCHAIN_LLM_SCHEMA,
     LANGCHAIN_TOOL_SCHEMA,
+    LangChainToolSchemaConfig,
+    compile_langchain_agent_schema,
     register_langchain_schemas,
 )
 from prefactor_langchain.spans import (
@@ -30,6 +33,9 @@ __all__ = [
     "extract_error_info",
     # Schemas
     "register_langchain_schemas",
+    "compile_langchain_agent_schema",
+    "LangChainToolSchemaConfig",
+    "DEFAULT_LANGCHAIN_AGENT_SCHEMA",
     "LANGCHAIN_AGENT_SCHEMA",
     "LANGCHAIN_LLM_SCHEMA",
     "LANGCHAIN_TOOL_SCHEMA",
