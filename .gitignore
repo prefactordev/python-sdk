@@ -69,3 +69,4 @@ htmlcov/
 # Env
 .env
 mise.local.toml
+prefactor.json
