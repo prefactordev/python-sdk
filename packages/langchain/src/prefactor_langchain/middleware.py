@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import json
 import logging
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, AsyncContextManager, Callable
 
 from langchain.agents.middleware import AgentMiddleware
@@ -20,7 +21,7 @@ if TYPE_CHECKING:
     pass
 
 from .metadata_extractor import extract_token_usage
-from .schemas import register_langchain_schemas
+from .schemas import LangChainToolSchemaConfig, register_langchain_schemas
 from .spans import AgentSpan, LLMSpan, ToolSpan
 
 logger = logging.getLogger("prefactor_langchain.middleware")
@@ -111,6 +112,8 @@ class PrefactorMiddleware(AgentMiddleware):
         agent_id: str = "langchain-agent",
         agent_name: str | None = None,
         instance: AgentInstanceHandle | None = None,
+        tool_schemas: Mapping[str, LangChainToolSchemaConfig | Mapping[str, Any]]
+        | None = None,
     ):
         """Initialize the middleware with a pre-configured client or instance.
 
@@ -148,6 +151,9 @@ class PrefactorMiddleware(AgentMiddleware):
             self._current_parent_span_id: str | None = None
             self._loop: asyncio.AbstractEventLoop | None = None
             self._pending_emit_futures: list[asyncio.Task[None]] = []
+            self._tool_span_types = (
+                self._register_tool_schemas(None, tool_schemas) if tool_schemas else {}
+            )
             return
 
         if client is None:
@@ -179,6 +185,10 @@ class PrefactorMiddleware(AgentMiddleware):
         self._current_parent_span_id: str | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._pending_emit_futures: list[asyncio.Task[None]] = []
+        self._tool_span_types = {}
+
+        if tool_schemas:
+            self._tool_span_types = self._register_tool_schemas(client, tool_schemas)
 
     @classmethod
     def from_config(
@@ -189,6 +199,8 @@ class PrefactorMiddleware(AgentMiddleware):
         agent_name: str | None = None,
         schema_registry: SchemaRegistry | None = None,
         include_langchain_schemas: bool = True,
+        tool_schemas: Mapping[str, LangChainToolSchemaConfig | Mapping[str, Any]]
+        | None = None,
     ) -> "PrefactorMiddleware":
         """Factory method to create middleware from configuration.
 
@@ -203,6 +215,8 @@ class PrefactorMiddleware(AgentMiddleware):
             schema_registry: Optional SchemaRegistry for registering span schemas.
             include_langchain_schemas: If True and schema_registry is provided,
                 automatically register LangChain-specific schemas.
+            tool_schemas: Optional per-tool schema configuration for tool-specific
+                span types.
 
         Returns:
             A configured PrefactorMiddleware instance with lazy initialization.
@@ -223,8 +237,12 @@ class PrefactorMiddleware(AgentMiddleware):
 
         # Create or augment schema registry
         registry = schema_registry or SchemaRegistry()
-        if include_langchain_schemas and not registry.has_schema("langchain:llm"):
-            register_langchain_schemas(registry)
+        tool_span_types: dict[str, str] = {}
+        if include_langchain_schemas or tool_schemas:
+            tool_span_types = register_langchain_schemas(
+                registry,
+                tool_schemas=tool_schemas,
+            )
 
         config = PrefactorCoreConfig(
             http_config=http_config,
@@ -245,8 +263,31 @@ class PrefactorMiddleware(AgentMiddleware):
         middleware._current_parent_span_id = None
         middleware._loop = None
         middleware._pending_emit_futures = []
+        middleware._tool_span_types = tool_span_types
         logger.debug("PrefactorMiddleware created via from_config()")
         return middleware
+
+    def _register_tool_schemas(
+        self,
+        client: PrefactorCoreClient | None,
+        tool_schemas: Mapping[str, LangChainToolSchemaConfig | Mapping[str, Any]],
+    ) -> dict[str, str]:
+        """Register tool schemas into a client registry when available."""
+        if client is None:
+            return register_langchain_schemas(
+                SchemaRegistry(),
+                tool_schemas=tool_schemas,
+            )
+
+        registry = client._config.schema_registry
+        if registry is None:
+            registry = SchemaRegistry()
+            client._config.schema_registry = registry
+
+        return register_langchain_schemas(
+            registry,
+            tool_schemas=tool_schemas,
+        )
 
     async def _ensure_initialized(self) -> AgentInstanceHandle:
         """Ensure the agent instance is initialized (lazily created if needed).
@@ -419,6 +460,18 @@ class PrefactorMiddleware(AgentMiddleware):
                     "tool_name": tool_call.get("name", "unknown"),
                     "arguments": tool_call.get("args", {}),
                 }
+            if hasattr(request, "tool") and hasattr(request.tool, "name"):
+                return {
+                    "tool_name": getattr(request.tool, "name", "unknown"),
+                    "arguments": getattr(request, "args", {}),
+                }
+            if hasattr(request, "name"):
+                return {
+                    "tool_name": request.name,
+                    "arguments": getattr(
+                        request, "input", getattr(request, "args", {})
+                    ),
+                }
             return {}
         except Exception as e:
             logger.error("Error extracting tool inputs: %s", e, exc_info=True)
@@ -460,12 +513,14 @@ class PrefactorMiddleware(AgentMiddleware):
             result["error"] = span_data.error.to_dict()
         return result
 
-    def _build_tool_params(self, span_data: Any) -> dict[str, Any]:
+    def _build_tool_params(self, span_data: Any, schema_name: str) -> dict[str, Any]:
         """Build the payload (params) dict for a tool span."""
         params: dict[str, Any] = {}
         if span_data.tool_name:
             params["tool_name"] = span_data.tool_name
-        if span_data.inputs:
+        if schema_name != "langchain:tool":
+            params["inputs"] = span_data.arguments
+        elif span_data.inputs:
             params["inputs"] = span_data.inputs
         return params
 
@@ -554,7 +609,7 @@ class PrefactorMiddleware(AgentMiddleware):
         self._current_parent_span_id = span_id
         return span_id
 
-    def _emit_child_span(self, span_data: Any) -> None:
+    def _emit_child_span(self, span_data: Any, schema_name: str | None = None) -> None:
         """Schedule a child span (LLM/tool) emission with parent tracking.
 
         Uses the current parent span ID from _current_parent_span_id.
@@ -566,15 +621,15 @@ class PrefactorMiddleware(AgentMiddleware):
             return
 
         instance = self._instance
-        schema_name: str = span_data.type
+        schema_name = schema_name or span_data.type
         parent_span_id = self._current_parent_span_id
         pending = self._pending_emit_futures
 
         if schema_name == "langchain:llm":
             params = self._build_llm_params(span_data)
             result = self._build_llm_result(span_data)
-        elif schema_name == "langchain:tool":
-            params = self._build_tool_params(span_data)
+        elif schema_name.startswith("langchain:tool"):
+            params = self._build_tool_params(span_data, schema_name)
             result = self._build_tool_result(span_data)
         else:
             return
@@ -899,7 +954,9 @@ class PrefactorMiddleware(AgentMiddleware):
             type="langchain:tool",
             inputs=inputs,
             tool_name=tool_name,
+            arguments=inputs.get("arguments", {}),
         )
+        schema_name = self._resolve_tool_schema_name(tool_name)
 
         try:
             response = handler(request)
@@ -907,13 +964,13 @@ class PrefactorMiddleware(AgentMiddleware):
             outputs = self._extract_tool_output(response)
             span_data.complete(outputs=outputs)
 
-            self._emit_child_span(span_data)
+            self._emit_child_span(span_data, schema_name=schema_name)
             logger.debug("Tool call completed (%s)", tool_name)
             return response
 
         except Exception as e:
             span_data.fail(e)
-            self._emit_child_span(span_data)
+            self._emit_child_span(span_data, schema_name=schema_name)
             logger.error("Tool call failed: %s", e, exc_info=True)
             raise
 
@@ -941,10 +998,12 @@ class PrefactorMiddleware(AgentMiddleware):
             type="langchain:tool",
             inputs=inputs,
             tool_name=tool_name,
+            arguments=inputs.get("arguments", {}),
         )
+        schema_name = self._resolve_tool_schema_name(tool_name)
 
-        async with instance.span("langchain:tool") as ctx:
-            await ctx.start(self._build_tool_params(span_data))
+        async with instance.span(schema_name) as ctx:
+            await ctx.start(self._build_tool_params(span_data, schema_name))
             try:
                 response = await handler(request)
 
@@ -959,3 +1018,7 @@ class PrefactorMiddleware(AgentMiddleware):
                 await ctx.fail(self._build_tool_result(span_data))
                 logger.error("Tool call failed: %s", e, exc_info=True)
                 raise
+
+    def _resolve_tool_schema_name(self, tool_name: str) -> str:
+        """Resolve a tool's configured span type, if one exists."""
+        return self._tool_span_types.get(tool_name, "langchain:tool")
