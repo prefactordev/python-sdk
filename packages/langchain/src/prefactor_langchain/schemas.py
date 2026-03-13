@@ -269,9 +269,7 @@ class LangChainToolSchemaConfig:
     input_schema: dict[str, Any]
 
 
-ToolSchemaMapping = Mapping[
-    str, LangChainToolSchemaConfig | Mapping[str, Any]
-]
+ToolSchemaMapping = Mapping[str, LangChainToolSchemaConfig | Mapping[str, Any]]
 
 
 # Legacy aliases for backwards compatibility

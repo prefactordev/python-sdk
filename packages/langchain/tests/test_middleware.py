@@ -1,9 +1,11 @@
 """Tests for LangChain middleware."""
 
 import asyncio
+from types import SimpleNamespace
+from typing import cast
 from unittest.mock import Mock
 
-from prefactor_core import PrefactorCoreConfig, SchemaRegistry
+from prefactor_core import AgentInstanceHandle, PrefactorCoreConfig, SchemaRegistry
 from prefactor_http.config import HttpClientConfig
 from prefactor_langchain.middleware import PrefactorMiddleware
 from prefactor_langchain.schemas import (
@@ -103,6 +105,7 @@ class TestPrefactorMiddleware:
         assert middleware._tool_span_types == {
             "send_email": "langchain:tool:send-email"
         }
+        assert middleware._client is not None
         schema_version = (
             middleware._client._config.schema_registry.to_agent_schema_version(
                 "schema-v1"
@@ -166,6 +169,7 @@ class TestPrefactorMiddleware:
             api_token="test-token",
         )
 
+        assert middleware._client is not None
         schema_version = (
             middleware._client._config.schema_registry.to_agent_schema_version(
                 "schema-v1"
@@ -252,9 +256,7 @@ class TestMiddlewareMethods:
         """Tool extraction should support request shapes without tool_call."""
         middleware = self._middleware
 
-        request = type("NamedToolRequest", (), {})()
-        request.name = "calculator"
-        request.input = {"x": 1}
+        request = SimpleNamespace(name="calculator", input={"x": 1})
 
         inputs = middleware._extract_tool_inputs(request)
         assert inputs == {
@@ -288,7 +290,7 @@ class TestToolSchemaRuntimeBehavior:
             },
         )
         instance = RecordingInstance()
-        middleware._instance = instance
+        middleware._instance = cast(AgentInstanceHandle, instance)
 
         async def handler(_request):
             return {"output": "queued"}

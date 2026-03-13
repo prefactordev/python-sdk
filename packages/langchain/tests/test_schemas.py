@@ -242,7 +242,10 @@ class TestRegisterLangChainSchemas:
 
         with pytest.raises(
             ValueError,
-            match=r"Invalid tool_schemas\.send_email: expected an object with span_type",
+            match=(
+                r"Invalid tool_schemas\.send_email: expected an object "
+                r"with span_type"
+            ),
         ):
             register_langchain_schemas(
                 registry,
