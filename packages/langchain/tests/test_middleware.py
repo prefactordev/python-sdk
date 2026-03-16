@@ -1,14 +1,60 @@
 """Tests for LangChain middleware."""
 
+from __future__ import annotations
+
+import asyncio
+from types import SimpleNamespace
+from typing import cast
 from unittest.mock import Mock
 
+from prefactor_core import AgentInstanceHandle, PrefactorCoreConfig, SchemaRegistry
+from prefactor_http.config import HttpClientConfig
 from prefactor_langchain.middleware import PrefactorMiddleware
 from prefactor_langchain.schemas import (
     LANGCHAIN_AGENT_SCHEMA,
     LANGCHAIN_LLM_SCHEMA,
     LANGCHAIN_TOOL_SCHEMA,
+    LangChainToolSchemaConfig,
 )
 from prefactor_langchain.spans import AgentSpan, LLMSpan, ToolSpan
+
+
+class RecordingSpanContext:
+    """Async context manager that records span payloads."""
+
+    def __init__(self, call: dict[str, object]):
+        self._call = call
+
+    async def __aenter__(self) -> "RecordingSpanContext":
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        return None
+
+    async def start(self, payload: dict[str, object]) -> None:
+        self._call["start_payload"] = payload
+
+    async def complete(self, result_payload: dict[str, object]) -> None:
+        self._call["result_payload"] = result_payload
+
+    async def fail(self, result_payload: dict[str, object]) -> None:
+        self._call["failed_payload"] = result_payload
+
+
+class RecordingInstance:
+    """Minimal AgentInstanceHandle stand-in for middleware tests."""
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    def span(self, schema_name: str, parent_span_id=None, payload=None):
+        call = {
+            "schema_name": schema_name,
+            "parent_span_id": parent_span_id,
+            "payload": payload,
+        }
+        self.calls.append(call)
+        return RecordingSpanContext(call)
 
 
 class TestPrefactorMiddleware:
@@ -41,6 +87,36 @@ class TestPrefactorMiddleware:
 
         assert middleware._agent_id == "my-agent"
         assert middleware._agent_name == "My Test Agent"
+
+    def test_factory_pattern_with_tool_schemas(self):
+        """from_config() should register tool schemas and store span mappings."""
+        middleware = PrefactorMiddleware.from_config(
+            api_url="http://test",
+            api_token="test-token",
+            tool_schemas={
+                "send_email": LangChainToolSchemaConfig(
+                    span_type="send-email",
+                    input_schema={
+                        "type": "object",
+                        "properties": {"to": {"type": "string"}},
+                    },
+                )
+            },
+        )
+
+        assert middleware._tool_span_types == {
+            "send_email": "langchain:tool:send-email"
+        }
+        assert middleware._client is not None
+        schema_version = (
+            middleware._client._config.schema_registry.to_agent_schema_version(
+                "schema-v1"
+            )
+        )
+        registered_names = {
+            item["name"] for item in schema_version.get("span_type_schemas", [])
+        }
+        assert "langchain:tool:send-email" in registered_names
 
     def test_configuration_mode(self):
         """Test configuration mode with pre-created (mocked) client."""
@@ -87,6 +163,28 @@ class TestPrefactorMiddleware:
 
         with pytest.raises(ValueError, match="Either 'client' or 'instance'"):
             PrefactorMiddleware()
+
+    def test_factory_pattern_without_tool_schemas_keeps_default_registration(self):
+        """Default registration should not add tool-specific span types."""
+        middleware = PrefactorMiddleware.from_config(
+            api_url="http://test",
+            api_token="test-token",
+        )
+
+        assert middleware._client is not None
+        schema_version = (
+            middleware._client._config.schema_registry.to_agent_schema_version(
+                "schema-v1"
+            )
+        )
+        registered_names = [
+            item["name"] for item in schema_version.get("span_type_schemas", [])
+        ]
+        assert registered_names == [
+            "langchain:agent",
+            "langchain:llm",
+            "langchain:tool",
+        ]
 
 
 class TestMiddlewareMethods:
@@ -154,6 +252,149 @@ class TestMiddlewareMethods:
         assert inputs == {
             "tool_name": "calculator",
             "arguments": {"x": 1},
+        }
+
+    def test_extract_tool_inputs_falls_back_to_named_request(self):
+        """Tool extraction should support request shapes without tool_call."""
+        middleware = self._middleware
+
+        request = SimpleNamespace(name="calculator", input={"x": 1})
+
+        inputs = middleware._extract_tool_inputs(request)
+        assert inputs == {
+            "tool_name": "calculator",
+            "arguments": {"x": 1},
+        }
+
+
+class TestToolSchemaRuntimeBehavior:
+    """Tests for runtime selection of tool-specific span types."""
+
+    def test_client_mode_registers_tool_schemas_and_uses_mapped_span_type(self):
+        """client= mode should augment the registry and emit tool-specific spans."""
+        client = Mock()
+        client._initialized = True
+        client._config = PrefactorCoreConfig(
+            http_config=HttpClientConfig(api_url="http://test", api_token="token"),
+            schema_registry=SchemaRegistry(),
+        )
+
+        middleware = PrefactorMiddleware(
+            client=client,
+            tool_schemas={
+                "send_email": LangChainToolSchemaConfig(
+                    span_type="send-email",
+                    input_schema={
+                        "type": "object",
+                        "properties": {"to": {"type": "string"}},
+                    },
+                )
+            },
+        )
+        instance = RecordingInstance()
+        middleware._instance = cast(AgentInstanceHandle, instance)
+
+        async def handler(_request):
+            return {"output": "queued"}
+
+        request = Mock()
+        request.tool_call = {"name": "send_email", "args": {"to": "dev@example.com"}}
+        response = asyncio.run(middleware.awrap_tool_call(request, handler))
+
+        assert response == {"output": "queued"}
+        assert middleware._tool_span_types == {
+            "send_email": "langchain:tool:send-email"
+        }
+        assert client._config.schema_registry.has_schema("langchain:tool:send-email")
+        assert instance.calls[0]["schema_name"] == "langchain:tool:send-email"
+        assert instance.calls[0]["start_payload"] == {
+            "tool_name": "send_email",
+            "inputs": {"to": "dev@example.com"},
+        }
+
+    def test_instance_mode_uses_tool_specific_span_type(self):
+        """instance= mode should resolve the configured tool span type at runtime."""
+        instance = RecordingInstance()
+        middleware = PrefactorMiddleware(
+            instance=instance,
+            tool_schemas={
+                "send_email": LangChainToolSchemaConfig(
+                    span_type="send-email",
+                    input_schema={"type": "object"},
+                )
+            },
+        )
+
+        async def handler(_request):
+            return {"output": "queued"}
+
+        request = Mock()
+        request.tool_call = {"name": "send_email", "args": {"to": "dev@example.com"}}
+        asyncio.run(middleware.awrap_tool_call(request, handler))
+
+        assert instance.calls[0]["schema_name"] == "langchain:tool:send-email"
+        assert instance.calls[0]["start_payload"] == {
+            "tool_name": "send_email",
+            "inputs": {"to": "dev@example.com"},
+        }
+
+    def test_tool_specific_spans_preserve_empty_argument_objects(self):
+        """Tool-specific spans should emit empty args as an empty inputs object."""
+        instance = RecordingInstance()
+        middleware = PrefactorMiddleware(
+            instance=instance,
+            tool_schemas={
+                "get_current_date": LangChainToolSchemaConfig(
+                    span_type="get-current-date",
+                    input_schema={
+                        "type": "object",
+                        "properties": {},
+                        "additionalProperties": False,
+                    },
+                )
+            },
+        )
+
+        async def handler(_request):
+            return {"output": "queued"}
+
+        request = Mock()
+        request.tool_call = {"name": "get_current_date", "args": {}}
+        asyncio.run(middleware.awrap_tool_call(request, handler))
+
+        assert instance.calls[0]["schema_name"] == "langchain:tool:get-current-date"
+        assert instance.calls[0]["start_payload"] == {
+            "tool_name": "get_current_date",
+            "inputs": {},
+        }
+
+    def test_unknown_tools_fall_back_to_generic_langchain_tool_schema(self):
+        """Unknown tools should continue to emit the generic langchain:tool span."""
+        instance = RecordingInstance()
+        middleware = PrefactorMiddleware(
+            instance=instance,
+            tool_schemas={
+                "send_email": LangChainToolSchemaConfig(
+                    span_type="send-email",
+                    input_schema={"type": "object"},
+                )
+            },
+        )
+
+        async def handler(_request):
+            return {"output": "ok"}
+
+        request = Mock()
+        request.tool_call = {"name": "lookup_customer", "args": {"id": "cust_123"}}
+        asyncio.run(middleware.awrap_tool_call(request, handler))
+
+        assert instance.calls[0]["schema_name"] == "langchain:tool"
+        assert instance.calls[0]["start_payload"] == {
+            "tool_name": "lookup_customer",
+            "inputs": {
+                "tool_name": "lookup_customer",
+                "arguments": {"id": "cust_123"},
+            },
         }
 
 

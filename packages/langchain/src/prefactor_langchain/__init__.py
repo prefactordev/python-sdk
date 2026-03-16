@@ -1,14 +1,19 @@
 """Prefactor LangChain - LangChain integration for Prefactor observability."""
 
+from __future__ import annotations
+
 from prefactor_langchain.metadata_extractor import (
     extract_error_info,
     extract_token_usage,
 )
 from prefactor_langchain.middleware import PrefactorMiddleware
 from prefactor_langchain.schemas import (
+    DEFAULT_LANGCHAIN_AGENT_SCHEMA,
     LANGCHAIN_AGENT_SCHEMA,
     LANGCHAIN_LLM_SCHEMA,
     LANGCHAIN_TOOL_SCHEMA,
+    LangChainToolSchemaConfig,
+    compile_langchain_agent_schema,
     register_langchain_schemas,
 )
 from prefactor_langchain.spans import (
@@ -20,7 +25,7 @@ from prefactor_langchain.spans import (
     ToolSpan,
 )
 
-__version__ = "0.2.2"
+__version__ = "0.2.4"
 
 __all__ = [
     # Middleware
@@ -30,6 +35,9 @@ __all__ = [
     "extract_error_info",
     # Schemas
     "register_langchain_schemas",
+    "compile_langchain_agent_schema",
+    "LangChainToolSchemaConfig",
+    "DEFAULT_LANGCHAIN_AGENT_SCHEMA",
     "LANGCHAIN_AGENT_SCHEMA",
     "LANGCHAIN_LLM_SCHEMA",
     "LANGCHAIN_TOOL_SCHEMA",

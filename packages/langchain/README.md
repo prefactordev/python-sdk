@@ -13,13 +13,26 @@ pip install prefactor-langchain
 ### Factory pattern (quickest setup)
 
 ```python
-from prefactor_langchain import PrefactorMiddleware
+from prefactor_langchain import LangChainToolSchemaConfig, PrefactorMiddleware
 
 middleware = PrefactorMiddleware.from_config(
     api_url="https://api.prefactor.ai",
     api_token="your-api-token",
     agent_id="my-agent",
     agent_name="My Agent",  # optional
+    tool_schemas={
+        "send_email": LangChainToolSchemaConfig(
+            span_type="send-email",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "to": {"type": "string", "format": "email"},
+                    "subject": {"type": "string"},
+                },
+                "required": ["to", "subject"],
+            },
+        )
+    },
 )
 
 # Use with LangChain's create_agent()
@@ -27,6 +40,7 @@ middleware = PrefactorMiddleware.from_config(
 # - Agent execution (langchain:agent)
 # - LLM calls (langchain:llm)
 # - Tool executions (langchain:tool)
+# - Tool-specific executions (for example langchain:tool:send-email)
 
 result = agent.invoke({"messages": [...]})
 
@@ -60,6 +74,47 @@ result = agent.invoke({"messages": [...]})
 # You own the client; close both separately
 await middleware.close()  # closes the agent instance only
 await client.close()
+```
+
+### SchemaRegistry composition
+
+Use a shared ``SchemaRegistry`` when you want custom workflow span types and
+LangChain tool schemas to be published together.
+
+```python
+from prefactor_core import SchemaRegistry
+from prefactor_langchain import (
+    LangChainToolSchemaConfig,
+    PrefactorMiddleware,
+    register_langchain_schemas,
+)
+
+registry = SchemaRegistry()
+registry.register_type(
+    name="workflow:run",
+    params_schema={"type": "object"},
+    result_schema={"type": "object"},
+)
+register_langchain_schemas(
+    registry,
+    tool_schemas={
+        "send_email": LangChainToolSchemaConfig(
+            span_type="send-email",
+            input_schema={
+                "type": "object",
+                "properties": {"to": {"type": "string"}},
+                "required": ["to"],
+            },
+        )
+    },
+)
+
+middleware = PrefactorMiddleware.from_config(
+    api_url="https://api.prefactor.ai",
+    api_token="your-api-token",
+    agent_id="my-agent",
+    schema_registry=registry,
+)
 ```
 
 ### Pre-configured instance (spans outside the agent)
@@ -99,6 +154,12 @@ async with instance.span("custom:postprocessing") as ctx:
 await instance.finish()
 await client.close()
 ```
+
+If you pass ``tool_schemas=...`` with a pre-created instance, the middleware
+uses those mappings to emit the right tool span types at runtime. The instance's
+already-registered schema version is not mutated, so you must register matching
+tool schemas before creating the instance if you want those per-tool span types
+to appear in the backend schema version.
 
 ## Span Types
 
