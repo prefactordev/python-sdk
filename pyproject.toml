@@ -10,12 +10,14 @@ members = ["packages/*"]
 prefactor-core = { workspace = true }
 prefactor-http = { workspace = true }
 prefactor-langchain = { workspace = true }
+prefactor-livekit = { workspace = true }
 
 [dependency-groups]
 dev = [
     "langchain>=1.0.0",
     "langchain-openai>=0.3.0",
     "langchain-anthropic>=0.4.0",
+    "livekit-agents~=1.5",
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
     "aioresponses>=0.7.6",
@@ -24,6 +26,7 @@ dev = [
     "prefactor-core",
     "prefactor-http",
     "prefactor-langchain",
+    "prefactor-livekit",
 ]
 
 [tool.ruff]
@@ -65,8 +68,19 @@ include = ["packages/langchain/**"]
 [tool.ty.overrides.rules]
 unresolved-import = "ignore"
 
+[[tool.ty.overrides]]
+include = ["packages/livekit/**"]
+
+[tool.ty.overrides.rules]
+unresolved-import = "ignore"
+
 [tool.pytest.ini_options]
-testpaths = ["packages/core/tests", "packages/http/tests", "packages/langchain/tests"]
+testpaths = [
+    "packages/core/tests",
+    "packages/http/tests",
+    "packages/langchain/tests",
+    "packages/livekit/tests",
+]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
