@@ -49,7 +49,7 @@ _OPS: dict[type[ast.operator], Callable[[float, float], float]] = {
 
 def _safe_eval(node: ast.expr) -> float:
     if isinstance(node, ast.Constant):
-        if isinstance(node.value, int | float):
+        if isinstance(node.value, (int, float)) and not isinstance(node.value, bool):
             return float(node.value)
         raise ValueError(f"Unsupported constant: {node.value!r}")
     if isinstance(node, ast.BinOp):

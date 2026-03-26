@@ -691,9 +691,9 @@ class PrefactorLiveKitSession:
 
         if reason == "error":
             error_dict = self._safe_error_dict(error) if error is not None else None
-            self._schedule(self._detach_session(final_status="failed"))
             if error_dict is not None:
                 self._schedule(self._finish_session_span("failed", error=error_dict))
+            self._schedule(self._detach_session(final_status="failed"))
             return
 
         if reason in {"job_shutdown", "participant_disconnected", "user_initiated"}:
