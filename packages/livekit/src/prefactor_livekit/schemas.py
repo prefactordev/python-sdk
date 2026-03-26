@@ -250,10 +250,18 @@ def _normalize_tool_config(
             raise ValueError(
                 f"Invalid tool_schemas.{tool_name}: expected an object with span_type"
             )
+        if not isinstance(input_schema, dict):
+            raise ValueError(
+                f"Invalid tool_schemas.{tool_name}.input_schema: expected an object"
+            )
+        if not isinstance(result_schema, dict):
+            raise ValueError(
+                f"Invalid tool_schemas.{tool_name}.result_schema: expected an object"
+            )
         normalized = LiveKitToolSchemaConfig(
             span_type=span_type,
-            input_schema=input_schema,  # type: ignore[arg-type]
-            result_schema=result_schema,  # type: ignore[arg-type]
+            input_schema=input_schema,
+            result_schema=result_schema,
         )
     else:
         raise ValueError(

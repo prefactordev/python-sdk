@@ -6,7 +6,7 @@ for durability requirements.
 """
 
 from asyncio import Queue as AsyncQueue
-from typing import TypeVar
+from typing import TypeVar, cast
 
 from .base import Queue, QueueClosedError
 
@@ -34,7 +34,7 @@ class InMemoryQueue(Queue[T]):
 
     def __init__(self) -> None:
         """Initialize an empty in-memory queue."""
-        self._queue: AsyncQueue[T] = AsyncQueue()
+        self._queue: AsyncQueue[T | object] = AsyncQueue()
         self._closed = False
 
     async def put(self, item: T) -> None:
@@ -66,7 +66,7 @@ class InMemoryQueue(Queue[T]):
         # Re-raise as closed so the worker exits cleanly.
         if item is self._SENTINEL:
             raise QueueClosedError("Queue is closed and empty")
-        return item
+        return cast(T, item)
 
     def size(self) -> int:
         """Return the current number of items in the queue.
@@ -89,7 +89,7 @@ class InMemoryQueue(Queue[T]):
         self._closed = True
         # Wake any workers blocked in asyncio.Queue.get() so they can exit.
         for _ in range(num_waiters):
-            await self._queue.put(self._SENTINEL)  # type: ignore[arg-type]
+            await self._queue.put(self._SENTINEL)
 
     @property
     def closed(self) -> bool:

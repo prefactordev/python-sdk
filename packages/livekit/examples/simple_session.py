@@ -29,7 +29,7 @@ import warnings
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 from livekit.agents import Agent, AgentSession, function_tool
 from prefactor_livekit import LiveKitToolSchemaConfig, PrefactorLiveKitSession
@@ -167,6 +167,11 @@ def make_llm_metrics(model: str, now: float) -> Any:
     )
 
 
+def emit_session_event(session: AgentSession, event: str, payload: Any) -> None:
+    """Emit a synthetic event payload for the smoke example."""
+    cast(Any, session).emit(event, payload)
+
+
 def extract_text_content(item: Any) -> str:
     """Extract plain text from a LiveKit message item."""
     content = getattr(item, "content", None)
@@ -194,7 +199,8 @@ async def run_smoke_demo(
         instance = await tracer.attach(session)
     now = time.time()
 
-    session.emit(
+    emit_session_event(
+        session,
         "agent_state_changed",
         SimpleNamespace(
             old_state="initializing",
@@ -202,7 +208,8 @@ async def run_smoke_demo(
             created_at=now,
         ),
     )
-    session.emit(
+    emit_session_event(
+        session,
         "user_input_transcribed",
         SimpleNamespace(
             transcript="What's the weather in Melbourne, and say hello to Alex.",
@@ -212,7 +219,8 @@ async def run_smoke_demo(
             created_at=now + 0.1,
         ),
     )
-    session.emit(
+    emit_session_event(
+        session,
         "speech_created",
         SimpleNamespace(
             source="generate_reply",
@@ -220,7 +228,8 @@ async def run_smoke_demo(
             created_at=now + 0.2,
         ),
     )
-    session.emit(
+    emit_session_event(
+        session,
         "function_tools_executed",
         SimpleNamespace(
             zipped=lambda: [
@@ -250,11 +259,13 @@ async def run_smoke_demo(
             "ignore",
             message="metrics_collected is deprecated.*",
         )
-        session.emit(
+        emit_session_event(
+            session,
             "metrics_collected",
             SimpleNamespace(metrics=make_llm_metrics(model=model, now=now + 0.4)),
         )
-    session.emit(
+    emit_session_event(
+        session,
         "conversation_item_added",
         SimpleNamespace(
             created_at=now + 0.5,
@@ -273,7 +284,8 @@ async def run_smoke_demo(
             ),
         ),
     )
-    session.emit(
+    emit_session_event(
+        session,
         "session_usage_updated",
         SimpleNamespace(
             usage=SimpleNamespace(

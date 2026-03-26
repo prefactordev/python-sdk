@@ -285,8 +285,7 @@ class TestPrefactorLiveKitSession:
                 source="generate_reply", user_initiated=True, created_at=1.0
             ),
         )
-        await wrapper._drain_pending_tasks()
-        assert wrapper._assistant_span_context is not None
+        assert wrapper._pending_assistant_turn is not None
 
         session.emit(
             "conversation_item_added",
@@ -300,7 +299,7 @@ class TestPrefactorLiveKitSession:
         )
         await wrapper._drain_pending_tasks()
 
-        assert wrapper._assistant_span_context is None
+        assert wrapper._pending_assistant_turn is None
         assert instance.calls[-1]["schema_name"] == "livekit:assistant_turn"
         assert (
             instance.calls[-1]["result_payload"]["outputs"]["message"]["role"]

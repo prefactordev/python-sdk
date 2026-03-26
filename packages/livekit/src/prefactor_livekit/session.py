@@ -69,7 +69,8 @@ class PrefactorLiveKitSession:
         )
 
         self._loop: asyncio.AbstractEventLoop | None = None
-        self._pending_tasks: list[asyncio.Task[None]] = []
+        self._event_queue: asyncio.Queue[Any] | None = None
+        self._event_worker_task: asyncio.Task[None] | None = None
         self._session: Any | None = None
         self._bound_handlers: dict[str, Any] = {}
 
@@ -77,8 +78,7 @@ class PrefactorLiveKitSession:
         self._session_span_context: SpanContext | None = None
         self._session_span_id: str | None = None
 
-        self._assistant_span_cm: Any | None = None
-        self._assistant_span_context: SpanContext | None = None
+        self._pending_assistant_turn: dict[str, Any] | None = None
 
         self._partial_transcripts: list[dict[str, Any]] = []
         self._conversation_summary: dict[str, Any] = {
@@ -125,14 +125,14 @@ class PrefactorLiveKitSession:
         wrapper._owns_instance = True
         wrapper._tool_span_types = tool_span_types
         wrapper._loop = None
-        wrapper._pending_tasks = []
+        wrapper._event_queue = None
+        wrapper._event_worker_task = None
         wrapper._session = None
         wrapper._bound_handlers = {}
         wrapper._session_span_cm = None
         wrapper._session_span_context = None
         wrapper._session_span_id = None
-        wrapper._assistant_span_cm = None
-        wrapper._assistant_span_context = None
+        wrapper._pending_assistant_turn = None
         wrapper._partial_transcripts = []
         wrapper._conversation_summary = {
             "items_seen": 0,
@@ -236,6 +236,7 @@ class PrefactorLiveKitSession:
 
         await self._drain_pending_tasks()
         await self._detach_session(final_status="completed")
+        await self._shutdown_event_worker()
 
         if self._instance is not None and self._owns_instance:
             await self._instance.finish()
@@ -303,7 +304,7 @@ class PrefactorLiveKitSession:
 
         self._closed = True
         self._unbind_session_events()
-        await self._close_assistant_turn(status=final_status)
+        await self._flush_pending_assistant_turn(status=final_status)
         await self._finish_session_span(status=final_status)
         self._session = None
 
@@ -341,17 +342,13 @@ class PrefactorLiveKitSession:
     def _schedule(self, coro: Any) -> None:
         loop = self._loop
         if loop is None or loop.is_closed():
+            coro.close()
             return
 
         def _spawn() -> None:
-            task = loop.create_task(coro)
-            self._pending_tasks.append(task)
-
-            def _cleanup(done: asyncio.Task[None]) -> None:
-                if done in self._pending_tasks:
-                    self._pending_tasks.remove(done)
-
-            task.add_done_callback(_cleanup)
+            self._ensure_event_worker()
+            assert self._event_queue is not None
+            self._event_queue.put_nowait(coro)
 
         try:
             running_loop = asyncio.get_running_loop()
@@ -363,11 +360,40 @@ class PrefactorLiveKitSession:
         else:
             loop.call_soon_threadsafe(_spawn)
 
-    async def _drain_pending_tasks(self) -> None:
-        if not self._pending_tasks:
+    def _ensure_event_worker(self) -> None:
+        if self._loop is None:
             return
-        await asyncio.gather(*self._pending_tasks, return_exceptions=True)
-        self._pending_tasks.clear()
+        if self._event_queue is None:
+            self._event_queue = asyncio.Queue()
+        if self._event_worker_task is None or self._event_worker_task.done():
+            self._event_worker_task = self._loop.create_task(self._event_worker())
+
+    async def _event_worker(self) -> None:
+        assert self._event_queue is not None
+        while True:
+            coro = await self._event_queue.get()
+            try:
+                if coro is None:
+                    return
+                await coro
+            except Exception:
+                logger.exception("Error processing prefactor-livekit event")
+            finally:
+                self._event_queue.task_done()
+
+    async def _drain_pending_tasks(self) -> None:
+        if self._event_queue is None:
+            return
+        await self._event_queue.join()
+
+    async def _shutdown_event_worker(self) -> None:
+        if self._event_queue is None or self._event_worker_task is None:
+            return
+        await self._event_queue.join()
+        self._event_queue.put_nowait(None)
+        await self._event_worker_task
+        self._event_worker_task = None
+        self._event_queue = None
 
     async def _emit_span(
         self,
@@ -390,48 +416,53 @@ class PrefactorLiveKitSession:
             else:
                 await ctx.complete(result)
 
-    async def _open_assistant_turn(self, event: Any) -> None:
-        await self._close_assistant_turn(status="completed")
-        instance = await self._ensure_initialized()
-        self._assistant_span_cm = instance.span(
+    async def _emit_assistant_turn(
+        self,
+        payload: dict[str, Any],
+        *,
+        status: str,
+        outputs: dict[str, Any] | None = None,
+        error: dict[str, Any] | None = None,
+    ) -> None:
+        result: dict[str, Any] = {"status": status}
+        if outputs is not None:
+            result["outputs"] = outputs
+        if error is not None:
+            result["error"] = error
+        await self._emit_span(
             "livekit:assistant_turn",
-            parent_span_id=self._session_span_id,
+            payload,
+            result,
+            failed=status == "failed",
         )
-        self._assistant_span_context = await self._assistant_span_cm.__aenter__()
-        payload = {
+
+    def _assistant_payload_from_event(self, event: Any) -> dict[str, Any]:
+        return {
             "name": "assistant_turn",
             "source": getattr(event, "source", "unknown"),
             "user_initiated": getattr(event, "user_initiated", False),
             "created_at": getattr(event, "created_at", None),
             "metadata": {},
         }
-        await self._assistant_span_context.start(payload)
 
-    async def _close_assistant_turn(
+    async def _flush_pending_assistant_turn(
         self,
         *,
         status: str,
         outputs: dict[str, Any] | None = None,
         error: dict[str, Any] | None = None,
     ) -> None:
-        if self._assistant_span_context is None or self._assistant_span_cm is None:
+        if self._pending_assistant_turn is None:
             return
 
-        result: dict[str, Any] = {"status": status}
-        if outputs is not None:
-            result["outputs"] = outputs
-        if error is not None:
-            result["error"] = error
-
-        if status == "failed":
-            await self._assistant_span_context.fail(result)
-        elif status == "cancelled":
-            await self._assistant_span_context.cancel()
-        else:
-            await self._assistant_span_context.complete(result)
-        await self._assistant_span_cm.__aexit__(None, None, None)
-        self._assistant_span_cm = None
-        self._assistant_span_context = None
+        payload = self._pending_assistant_turn
+        self._pending_assistant_turn = None
+        await self._emit_assistant_turn(
+            payload,
+            status=status,
+            outputs=outputs,
+            error=error,
+        )
 
     def _safe_model_dump(self, value: Any) -> Any:
         if hasattr(value, "model_dump"):
@@ -496,8 +527,20 @@ class PrefactorLiveKitSession:
         if role == "assistant":
             self._conversation_summary["assistant_messages"] += 1
             outputs = {"message": item_dict}
+            payload = self._pending_assistant_turn or {
+                "name": "assistant_turn",
+                "source": "conversation_item_added",
+                "user_initiated": False,
+                "created_at": getattr(event, "created_at", None),
+                "metadata": {},
+            }
+            self._pending_assistant_turn = None
             self._schedule(
-                self._close_assistant_turn(status="completed", outputs=outputs)
+                self._emit_assistant_turn(
+                    payload,
+                    status="completed",
+                    outputs=outputs,
+                )
             )
         elif role == "user":
             self._conversation_summary["user_messages"] += 1
@@ -612,7 +655,7 @@ class PrefactorLiveKitSession:
         )
 
     def _on_speech_created(self, event: Any) -> None:
-        self._schedule(self._open_assistant_turn(event))
+        self._pending_assistant_turn = self._assistant_payload_from_event(event)
 
     def _on_error(self, event: Any) -> None:
         error = getattr(event, "error", None)
@@ -634,7 +677,9 @@ class PrefactorLiveKitSession:
                 failed=True,
             )
         )
-        self._schedule(self._close_assistant_turn(status="failed", error=error_dict))
+        self._schedule(
+            self._flush_pending_assistant_turn(status="failed", error=error_dict)
+        )
 
     def _on_close(self, event: Any) -> None:
         reason = getattr(
