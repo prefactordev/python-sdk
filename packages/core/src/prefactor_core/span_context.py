@@ -7,6 +7,8 @@ and ensures proper cleanup when the span completes.
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from prefactor_http.models.types import FinishStatus
+
     from .managers.span import SpanManager
 
 
@@ -67,7 +69,7 @@ class SpanContext:
         self._span_manager = span_manager
         self._default_payload = default_payload
         self._result_payload: dict[str, Any] = {}
-        self._finish_status: str = "complete"
+        self._finish_status: FinishStatus = "complete"
         self._started = False
         self._finished = False
 
@@ -183,7 +185,7 @@ class SpanContext:
             await self._span_manager.finish(
                 self._span_id,
                 result_payload=self._result_payload or None,
-                status=self._finish_status,  # type: ignore[arg-type]
+                status=self._finish_status,
             )
         except Exception:
             raise

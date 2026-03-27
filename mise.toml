@@ -45,6 +45,7 @@ run = """
 uv build --package prefactor-http
 uv build --package prefactor-core
 uv build --package prefactor-langchain
+uv build --package prefactor-livekit
 """
 
 [tasks.publish]
@@ -54,6 +55,7 @@ run = """
 uv publish dist/prefactor_http-*
 uv publish dist/prefactor_core-*
 uv publish dist/prefactor_langchain-*
+uv publish dist/prefactor_livekit-*
 """
 
 [tasks.publish-test]
@@ -63,6 +65,7 @@ run = """
 uv publish --publish-url https://test.pypi.org/legacy/ dist/prefactor_http-*
 uv publish --publish-url https://test.pypi.org/legacy/ dist/prefactor_core-*
 uv publish --publish-url https://test.pypi.org/legacy/ dist/prefactor_langchain-*
+uv publish --publish-url https://test.pypi.org/legacy/ dist/prefactor_livekit-*
 """
 
 [hooks]

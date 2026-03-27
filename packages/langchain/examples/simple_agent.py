@@ -27,6 +27,7 @@ import asyncio
 import operator
 import os
 from datetime import datetime
+from typing import Callable
 
 from langchain.agents import create_agent
 from langchain_core.tools import tool
@@ -38,7 +39,7 @@ from prefactor_langchain import PrefactorMiddleware
 # ---------------------------------------------------------------------------
 
 
-_OPS = {
+_OPS: dict[type[ast.operator], Callable[[float, float], float]] = {
     ast.Add: operator.add,
     ast.Sub: operator.sub,
     ast.Mult: operator.mul,
@@ -48,9 +49,14 @@ _OPS = {
 
 def _safe_eval(node: ast.expr) -> float:
     if isinstance(node, ast.Constant):
-        return node.n  # type: ignore[return-value]
+        if isinstance(node.value, (int, float)) and not isinstance(node.value, bool):
+            return float(node.value)
+        raise ValueError(f"Unsupported constant: {node.value!r}")
     if isinstance(node, ast.BinOp):
-        return _OPS[type(node.op)](_safe_eval(node.left), _safe_eval(node.right))  # type: ignore[invalid-argument-type]
+        op_type = type(node.op)
+        if op_type in _OPS:
+            return _OPS[op_type](_safe_eval(node.left), _safe_eval(node.right))
+        raise ValueError(f"Unsupported operator: {ast.dump(node.op)}")
     if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
         return -_safe_eval(node.operand)
     raise ValueError(f"Unsupported expression: {ast.dump(node)}")
