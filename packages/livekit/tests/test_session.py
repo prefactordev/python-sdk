@@ -6,7 +6,9 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 import pytest
+import prefactor_livekit
 from prefactor_livekit import LiveKitToolSchemaConfig, PrefactorLiveKitSession
+from prefactor_livekit._version import PACKAGE_VERSION
 
 
 class RecordingSpanContext:
@@ -358,3 +360,11 @@ class TestPrefactorLiveKitSession:
             instance.calls[0]["set_result"]["usage"]["model_usage"][0]["model"]
             == "gpt-4.1-mini"
         )
+
+
+class TestVersionHelpers:
+    """Tests for package version exports."""
+
+    def test_package_version_matches_public_export(self) -> None:
+        """Test that the package version export matches the internal constant."""
+        assert prefactor_livekit.__version__ == PACKAGE_VERSION
