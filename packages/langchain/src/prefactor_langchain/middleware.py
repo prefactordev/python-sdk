@@ -22,11 +22,14 @@ from prefactor_http.config import HttpClientConfig
 if TYPE_CHECKING:
     pass
 
+from ._version import PACKAGE_NAME as LANGCHAIN_PACKAGE_NAME
+from ._version import PACKAGE_VERSION as LANGCHAIN_PACKAGE_VERSION
 from .metadata_extractor import extract_token_usage
 from .schemas import LangChainToolSchemaConfig, register_langchain_schemas
 from .spans import AgentSpan, LLMSpan, ToolSpan
 
 logger = logging.getLogger("prefactor_langchain.middleware")
+LANGCHAIN_SDK_HEADER_ENTRY = f"{LANGCHAIN_PACKAGE_NAME}@{LANGCHAIN_PACKAGE_VERSION}"
 
 
 class PrefactorMiddleware(AgentMiddleware):
@@ -108,6 +111,15 @@ class PrefactorMiddleware(AgentMiddleware):
         await middleware.close()  # Closes both
     """
 
+    def _register_sdk_header_entry(
+        self, owner: PrefactorCoreClient | AgentInstanceHandle
+    ) -> None:
+        """Register the LangChain SDK header entry on a client-backed owner."""
+        self._sdk_header_owner = owner
+        self._registered_sdk_header_entry = owner.add_sdk_header_entry(
+            LANGCHAIN_SDK_HEADER_ENTRY
+        )
+
     def __init__(
         self,
         client: PrefactorCoreClient | None = None,
@@ -140,7 +152,11 @@ class PrefactorMiddleware(AgentMiddleware):
         if instance is not None and client is not None:
             raise ValueError("Provide either 'client' or 'instance', not both.")
 
+        self._sdk_header_owner: PrefactorCoreClient | AgentInstanceHandle | None = None
+        self._registered_sdk_header_entry = False
+
         if instance is not None:
+            self._register_sdk_header_entry(instance)
             self._client = None
             self._agent_id = agent_id
             self._agent_name = agent_name
@@ -173,6 +189,7 @@ class PrefactorMiddleware(AgentMiddleware):
             )
             raise ValueError(msg)
 
+        self._register_sdk_header_entry(client)
         self._client = client
         self._agent_id = agent_id
         self._agent_name = agent_name
@@ -251,6 +268,9 @@ class PrefactorMiddleware(AgentMiddleware):
             schema_registry=registry,
         )
         client = PrefactorCoreClient(config)
+        registered_sdk_header_entry = client.add_sdk_header_entry(
+            LANGCHAIN_SDK_HEADER_ENTRY
+        )
 
         middleware = cls.__new__(cls)
         middleware._client = client
@@ -265,6 +285,8 @@ class PrefactorMiddleware(AgentMiddleware):
         middleware._current_parent_span_id = None
         middleware._loop = None
         middleware._pending_emit_futures = []
+        middleware._sdk_header_owner = client
+        middleware._registered_sdk_header_entry = registered_sdk_header_entry
         middleware._tool_span_types = tool_span_types
         logger.debug("PrefactorMiddleware created via from_config()")
         return middleware
@@ -366,6 +388,11 @@ class PrefactorMiddleware(AgentMiddleware):
             await self._instance.finish()
             self._instance = None
             self._owns_instance = False
+
+        if self._sdk_header_owner is not None and self._registered_sdk_header_entry:
+            self._sdk_header_owner.remove_sdk_header_entry(LANGCHAIN_SDK_HEADER_ENTRY)
+            self._registered_sdk_header_entry = False
+        self._sdk_header_owner = None
 
         if self._client is not None and self._owns_client:
             await self._client.close()

@@ -1,6 +1,7 @@
 """Tests for Prefactor HTTP Client and idempotency functionality."""
 
 import uuid
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -12,6 +13,8 @@ from prefactor_http import (
     PrefactorRetryExhaustedError,
     PrefactorValidationError,
 )
+from prefactor_http._version import PACKAGE_VERSION, resolve_package_version
+from prefactor_http.sdk_header import DEFAULT_SDK_HEADER, build_sdk_header
 
 
 @pytest.fixture
@@ -292,3 +295,95 @@ class TestAuthorizationHeader:
             call_args = mock_request.call_args
             headers = call_args[1].get("headers", {})
             assert headers.get("Authorization") == f"Bearer {config.api_token}"
+
+    @pytest.mark.asyncio
+    async def test_sdk_header_set(self, client):
+        """Test that the default SDK header is set correctly."""
+
+        with patch.object(client._session, "request") as mock_request:
+            mock_response = AsyncMock()
+            mock_response.status = 200
+            mock_response.json = AsyncMock(return_value={"success": True})
+            mock_request.return_value.__aenter__ = AsyncMock(return_value=mock_response)
+            mock_request.return_value.__aexit__ = AsyncMock(return_value=None)
+
+            await client.request(method="POST", path="/api/v1/test")
+
+            call_args = mock_request.call_args
+            headers = call_args[1].get("headers", {})
+            assert headers.get("X-Prefactor-SDK") == DEFAULT_SDK_HEADER
+
+    @pytest.mark.asyncio
+    async def test_sdk_header_override_set(self, config):
+        """Test that a custom SDK header override is used when provided."""
+
+        client = PrefactorHttpClient(
+            config,
+            sdk_header=build_sdk_header(
+                "prefactor-core@0.2.2",
+                "prefactor-langchain@0.2.4",
+            ),
+        )
+        await client._ensure_session()
+
+        try:
+            with patch.object(client._session, "request") as mock_request:
+                mock_response = AsyncMock()
+                mock_response.status = 200
+                mock_response.json = AsyncMock(return_value={"success": True})
+                mock_request.return_value.__aenter__ = AsyncMock(
+                    return_value=mock_response
+                )
+                mock_request.return_value.__aexit__ = AsyncMock(return_value=None)
+
+                await client.request(method="POST", path="/api/v1/test")
+
+                call_args = mock_request.call_args
+                headers = call_args[1].get("headers", {})
+                assert headers.get("X-Prefactor-SDK") == (
+                    "prefactor-langchain@0.2.4 prefactor-core@0.2.2"
+                )
+        finally:
+            await client.close()
+
+
+class TestVersionHelpers:
+    """Tests for package version lookup helpers."""
+
+    def test_package_version_matches_public_export(self):
+        """Test that the package version helper matches the public export."""
+        import prefactor_http
+
+        assert prefactor_http.__version__ == PACKAGE_VERSION
+
+    def test_resolve_package_version_prefers_installed_metadata(self, monkeypatch):
+        """Test that metadata version is used when available."""
+        monkeypatch.setattr(
+            "prefactor_http._version.metadata.version",
+            lambda _distribution_name: "9.9.9",
+        )
+
+        resolved = resolve_package_version("prefactor-http", Path("/tmp/missing"))
+        assert resolved == "9.9.9"
+
+    def test_resolve_package_version_falls_back_to_pyproject(
+        self, tmp_path, monkeypatch
+    ):
+        """Test that version lookup falls back to pyproject for source imports."""
+
+        def raise_package_not_found(_distribution_name: str) -> str:
+            raise __import__("importlib").metadata.PackageNotFoundError
+
+        monkeypatch.setattr(
+            "prefactor_http._version.metadata.version",
+            raise_package_not_found,
+        )
+
+        pyproject_path = tmp_path / "pyproject.toml"
+        pyproject_path.write_text(
+            '[project]\nname = "prefactor-http"\nversion = "1.2.3"\n',
+            encoding="utf-8",
+        )
+
+        resolved = resolve_package_version("prefactor-http", tmp_path)
+        assert resolved == "1.2.3"

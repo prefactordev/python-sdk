@@ -10,10 +10,17 @@ from __future__ import annotations
 import logging
 import time
 from contextlib import asynccontextmanager
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Iterable
 
 from prefactor_http.client import PrefactorHttpClient
+from prefactor_http.sdk_header import (
+    build_sdk_header,
+    format_sdk_header_entry,
+    normalize_sdk_header_entry,
+)
 
+from ._version import PACKAGE_NAME as CORE_PACKAGE_NAME
+from ._version import PACKAGE_VERSION as CORE_PACKAGE_VERSION
 from .config import PrefactorCoreConfig
 from .context_stack import SpanContextStack
 from .exceptions import (
@@ -31,6 +38,7 @@ if TYPE_CHECKING:
     from .managers.agent_instance import AgentInstanceHandle
 
 logger = logging.getLogger(__name__)
+CORE_SDK_HEADER_ENTRY = format_sdk_header_entry(CORE_PACKAGE_NAME, CORE_PACKAGE_VERSION)
 
 
 class PrefactorCoreClient:
@@ -61,6 +69,7 @@ class PrefactorCoreClient:
         self,
         config: PrefactorCoreConfig,
         queue: Queue[Operation] | None = None,
+        sdk_header_entry: str | None = None,
     ) -> None:
         """Initialize the client.
 
@@ -68,14 +77,78 @@ class PrefactorCoreClient:
             config: Configuration for the client.
             queue: Optional custom queue implementation. If not provided,
                 an InMemoryQueue is used.
+            sdk_header_entry: Optional upstream SDK header entry to prepend.
         """
         self._config = config
         self._queue = queue or InMemoryQueue()
+        self._sdk_header_entries = self._normalize_sdk_header_entries(
+            [sdk_header_entry]
+        )
         self._http: PrefactorHttpClient | None = None
         self._executor: TaskExecutor | None = None
         self._instance_manager: AgentInstanceManager | None = None
         self._span_manager: SpanManager | None = None
         self._initialized = False
+
+    def _normalize_sdk_header_entries(
+        self, entries: Iterable[str | None]
+    ) -> tuple[str, ...]:
+        """Normalize, dedupe, and preserve upstream SDK header entries."""
+        normalized_entries: list[str] = []
+        for entry in entries:
+            if entry is None or not entry.strip():
+                continue
+            normalized_entry = normalize_sdk_header_entry(entry)
+            if normalized_entry not in normalized_entries:
+                normalized_entries.append(normalized_entry)
+        return tuple(normalized_entries)
+
+    def _build_http_sdk_header(self) -> str:
+        """Build the effective SDK header for HTTP requests."""
+        return build_sdk_header(CORE_SDK_HEADER_ENTRY, *self._sdk_header_entries)
+
+    def _sync_http_sdk_header(self) -> None:
+        """Update the live HTTP client header, if initialized."""
+        if self._http is not None:
+            self._http.set_sdk_header(self._build_http_sdk_header())
+
+    @property
+    def sdk_header_entries(self) -> tuple[str, ...]:
+        """Return the currently registered upstream SDK header entries."""
+        return self._sdk_header_entries
+
+    def set_sdk_header_entries(self, entries: Iterable[str | None]) -> None:
+        """Replace the upstream SDK header entries for future requests."""
+        self._sdk_header_entries = self._normalize_sdk_header_entries(entries)
+        self._sync_http_sdk_header()
+
+    def add_sdk_header_entry(self, sdk_header_entry: str) -> bool:
+        """Add an upstream SDK header entry if it is not already present."""
+        normalized_entry = self._normalize_sdk_header_entries([sdk_header_entry])
+        if not normalized_entry:
+            return False
+        if normalized_entry[0] in self._sdk_header_entries:
+            return False
+        self._sdk_header_entries = (*self._sdk_header_entries, normalized_entry[0])
+        self._sync_http_sdk_header()
+        return True
+
+    def remove_sdk_header_entry(self, sdk_header_entry: str) -> bool:
+        """Remove an upstream SDK header entry if it is present."""
+        normalized_entry = self._normalize_sdk_header_entries([sdk_header_entry])
+        if not normalized_entry:
+            return False
+        if normalized_entry[0] not in self._sdk_header_entries:
+            return False
+        self._sdk_header_entries = tuple(
+            entry for entry in self._sdk_header_entries if entry != normalized_entry[0]
+        )
+        self._sync_http_sdk_header()
+        return True
+
+    def set_sdk_header_entry(self, sdk_header_entry: str | None) -> None:
+        """Compatibility shim for replacing the upstream SDK header entry."""
+        self.set_sdk_header_entries([sdk_header_entry])
 
     async def __aenter__(self) -> "PrefactorCoreClient":
         """Enter async context manager."""
@@ -101,7 +174,10 @@ class PrefactorCoreClient:
             raise ClientAlreadyInitializedError("Client is already initialized")
 
         # Initialize HTTP client
-        self._http = PrefactorHttpClient(self._config.http_config)
+        self._http = PrefactorHttpClient(
+            self._config.http_config,
+            sdk_header=self._build_http_sdk_header(),
+        )
         await self._http.__aenter__()
 
         # Initialize executor

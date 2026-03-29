@@ -1,6 +1,6 @@
 [project]
 name = "prefactor-http"
-version = "0.1.1"
+version = "0.1.2"
 description = "HTTP client library for Prefactor API"
 readme = "README.md"
 license = { text = "MIT" }

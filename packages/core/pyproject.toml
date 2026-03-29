@@ -1,6 +1,6 @@
 [project]
 name = "prefactor-core"
-version = "0.2.2"
+version = "0.2.3"
 description = "Core Prefactor SDK with async queue-based operations"
 readme = "README.md"
 license = { text = "MIT" }
@@ -9,7 +9,7 @@ authors = [
 ]
 requires-python = ">=3.11.0, <4.0.0"
 dependencies = [
-    "prefactor-http>=0.1.1",
+    "prefactor-http>=0.1.2",
     "pydantic>=2.0.0",
 ]
 

@@ -14,6 +14,7 @@ from prefactor_http.exceptions import (
     PrefactorValidationError,
 )
 from prefactor_http.retry import RetryHandler
+from prefactor_http.sdk_header import DEFAULT_SDK_HEADER
 
 if TYPE_CHECKING:
     from prefactor_http.endpoints.agent_instance import AgentInstanceClient
@@ -33,19 +34,25 @@ class PrefactorHttpClient:
             span = await client.agent_spans.create(...)
     """
 
-    def __init__(self, config: HttpClientConfig):
+    def __init__(self, config: HttpClientConfig, sdk_header: str | None = None):
         """Initialize the HTTP client.
 
         Args:
             config: HTTP client configuration.
+            sdk_header: Effective SDK header value for outbound requests.
         """
         self.config = config
         self._session: aiohttp.ClientSession | None = None
         self._retry_handler = RetryHandler(config)
+        self._sdk_header = sdk_header or DEFAULT_SDK_HEADER
         # Import here to avoid circular import during __init__.py loading
         self._bulk: BulkClient | None = None
         self._agent_instances: AgentInstanceClient | None = None
         self._agent_spans: AgentSpanClient | None = None
+
+    def set_sdk_header(self, sdk_header: str | None) -> None:
+        """Update the effective SDK header used for future requests."""
+        self._sdk_header = sdk_header or DEFAULT_SDK_HEADER
 
     async def __aenter__(self) -> "PrefactorHttpClient":
         """Async context manager entry."""
@@ -203,6 +210,7 @@ class PrefactorHttpClient:
             "Authorization": f"Bearer {self.config.api_token}",
             "Content-Type": "application/json",
             "Accept": "application/json",
+            "X-Prefactor-SDK": self._sdk_header,
         }
 
         if idempotency_key:

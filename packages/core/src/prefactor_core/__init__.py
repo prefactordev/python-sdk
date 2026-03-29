@@ -3,6 +3,7 @@
 This module exports the main classes and functions for the prefactor-core SDK.
 """
 
+from ._version import PACKAGE_VERSION
 from .client import PrefactorCoreClient
 from .config import PrefactorCoreConfig, QueueConfig
 from .context_stack import SpanContextStack
@@ -22,9 +23,10 @@ from .schema_registry import SchemaRegistry
 from .span_context import SpanContext
 from .utils import generate_idempotency_key, validate_idempotency_key
 
-__version__ = "0.2.1"
+__version__ = PACKAGE_VERSION
 
 __all__ = [
+    "__version__",
     # Client
     "PrefactorCoreClient",
     # Config
