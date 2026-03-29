@@ -1,6 +1,6 @@
 [project]
 name = "prefactor-core"
-version = "0.2.3"
+dynamic = ["version"]
 description = "Core Prefactor SDK with async queue-based operations"
 readme = "README.md"
 license = { text = "MIT" }
@@ -9,13 +9,16 @@ authors = [
 ]
 requires-python = ">=3.11.0, <4.0.0"
 dependencies = [
-    "prefactor-http>=0.1.2",
+    "prefactor-http>=0.1.1",
     "pydantic>=2.0.0",
 ]
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "src/prefactor_core/_version.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/prefactor_core"]

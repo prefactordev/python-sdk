@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING, Any
 
 import aiohttp
 
+from prefactor_http._version import PACKAGE_NAME, PACKAGE_VERSION
 from prefactor_http.config import HttpClientConfig
 from prefactor_http.exceptions import (
     PrefactorApiError,
@@ -14,12 +15,31 @@ from prefactor_http.exceptions import (
     PrefactorValidationError,
 )
 from prefactor_http.retry import RetryHandler
-from prefactor_http.sdk_header import DEFAULT_SDK_HEADER
 
 if TYPE_CHECKING:
     from prefactor_http.endpoints.agent_instance import AgentInstanceClient
     from prefactor_http.endpoints.agent_span import AgentSpanClient
     from prefactor_http.endpoints.bulk import BulkClient
+
+
+def _format_sdk_header_entry(package_name: str, package_version: str) -> str:
+    """Format a single SDK header entry."""
+    return f"{package_name}@{package_version}"
+
+
+def _build_sdk_header(
+    package_name: str,
+    package_version: str,
+    upstream_entry: str | None = None,
+) -> str:
+    """Build the effective SDK header value."""
+    base_entry = _format_sdk_header_entry(package_name, package_version)
+    if upstream_entry is None or not upstream_entry.strip():
+        return base_entry
+    return f"{upstream_entry.strip()} {base_entry}"
+
+
+DEFAULT_SDK_HEADER = _build_sdk_header(PACKAGE_NAME, PACKAGE_VERSION)
 
 
 class PrefactorHttpClient:
@@ -49,10 +69,6 @@ class PrefactorHttpClient:
         self._bulk: BulkClient | None = None
         self._agent_instances: AgentInstanceClient | None = None
         self._agent_spans: AgentSpanClient | None = None
-
-    def set_sdk_header(self, sdk_header: str | None) -> None:
-        """Update the effective SDK header used for future requests."""
-        self._sdk_header = sdk_header or DEFAULT_SDK_HEADER
 
     async def __aenter__(self) -> "PrefactorHttpClient":
         """Async context manager entry."""

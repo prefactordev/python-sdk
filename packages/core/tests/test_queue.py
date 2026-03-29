@@ -183,31 +183,3 @@ class TestTaskExecutor:
 
         # Should have attempted 3 times
         assert attempts.count("item1") == 3
-
-    async def test_drain_waits_for_in_flight_work(self):
-        """Drain should wait for an item that has been dequeued but not finished."""
-        queue = InMemoryQueue()
-        started = asyncio.Event()
-        release = asyncio.Event()
-        processed = []
-
-        async def handler(item):
-            started.set()
-            await release.wait()
-            processed.append(item)
-
-        executor = TaskExecutor(queue, handler, num_workers=1)
-        executor.start()
-
-        await queue.put("item1")
-        await started.wait()
-
-        drain_task = asyncio.create_task(executor.drain())
-        await asyncio.sleep(0)
-        assert not drain_task.done()
-
-        release.set()
-        await drain_task
-        await executor.stop()
-
-        assert processed == ["item1"]

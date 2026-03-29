@@ -1,7 +1,6 @@
 """Tests for Prefactor HTTP Client and idempotency functionality."""
 
 import uuid
-from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -13,8 +12,8 @@ from prefactor_http import (
     PrefactorRetryExhaustedError,
     PrefactorValidationError,
 )
-from prefactor_http._version import PACKAGE_VERSION, resolve_package_version
-from prefactor_http.sdk_header import DEFAULT_SDK_HEADER, build_sdk_header
+from prefactor_http._version import PACKAGE_VERSION
+from prefactor_http.client import DEFAULT_SDK_HEADER
 
 
 @pytest.fixture
@@ -319,10 +318,7 @@ class TestAuthorizationHeader:
 
         client = PrefactorHttpClient(
             config,
-            sdk_header=build_sdk_header(
-                "prefactor-core@0.2.2",
-                "prefactor-langchain@0.2.4",
-            ),
+            sdk_header="prefactor-langchain@0.2.4 prefactor-core@0.2.2",
         )
         await client._ensure_session()
 
@@ -348,42 +344,10 @@ class TestAuthorizationHeader:
 
 
 class TestVersionHelpers:
-    """Tests for package version lookup helpers."""
+    """Tests for package version exports."""
 
     def test_package_version_matches_public_export(self):
-        """Test that the package version helper matches the public export."""
+        """Test that the package version export matches the internal constant."""
         import prefactor_http
 
         assert prefactor_http.__version__ == PACKAGE_VERSION
-
-    def test_resolve_package_version_prefers_installed_metadata(self, monkeypatch):
-        """Test that metadata version is used when available."""
-        monkeypatch.setattr(
-            "prefactor_http._version.metadata.version",
-            lambda _distribution_name: "9.9.9",
-        )
-
-        resolved = resolve_package_version("prefactor-http", Path("/tmp/missing"))
-        assert resolved == "9.9.9"
-
-    def test_resolve_package_version_falls_back_to_pyproject(
-        self, tmp_path, monkeypatch
-    ):
-        """Test that version lookup falls back to pyproject for source imports."""
-
-        def raise_package_not_found(_distribution_name: str) -> str:
-            raise __import__("importlib").metadata.PackageNotFoundError
-
-        monkeypatch.setattr(
-            "prefactor_http._version.metadata.version",
-            raise_package_not_found,
-        )
-
-        pyproject_path = tmp_path / "pyproject.toml"
-        pyproject_path.write_text(
-            '[project]\nname = "prefactor-http"\nversion = "1.2.3"\n',
-            encoding="utf-8",
-        )
-
-        resolved = resolve_package_version("prefactor-http", tmp_path)
-        assert resolved == "1.2.3"

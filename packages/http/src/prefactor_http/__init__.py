@@ -26,7 +26,7 @@ Example:
     >>> asyncio.run(main())
 """
 
-from prefactor_http._version import PACKAGE_VERSION
+from prefactor_http._version import __version__
 from prefactor_http.client import PrefactorHttpClient
 from prefactor_http.config import HttpClientConfig
 from prefactor_http.exceptions import (
@@ -55,18 +55,8 @@ from prefactor_http.models.bulk import (
     BulkResponse,
 )
 from prefactor_http.models.types import AgentStatus, FinishStatus
-from prefactor_http.sdk_header import (
-    DEFAULT_SDK_HEADER,
-    DEFAULT_SDK_HEADER_ENTRY,
-    build_sdk_header,
-    format_sdk_header_entry,
-    normalize_sdk_header_entry,
-)
-
-__version__ = PACKAGE_VERSION
 
 __all__ = [
-    "__version__",
     # Main client
     "PrefactorHttpClient",
     # Configuration
@@ -98,10 +88,5 @@ __all__ = [
     "BulkRequest",
     "BulkResponse",
     "BulkOutput",
-    # SDK header helpers
-    "DEFAULT_SDK_HEADER",
-    "DEFAULT_SDK_HEADER_ENTRY",
-    "build_sdk_header",
-    "format_sdk_header_entry",
-    "normalize_sdk_header_entry",
+    "__version__",
 ]

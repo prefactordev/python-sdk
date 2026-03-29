@@ -1,6 +1,6 @@
 [project]
 name = "prefactor-langchain"
-version = "0.2.5"
+dynamic = ["version"]
 description = "LangChain integration for Prefactor observability"
 readme = "README.md"
 license = { text = "MIT" }
@@ -9,13 +9,16 @@ authors = [
 ]
 requires-python = ">=3.11.0, <4.0.0"
 dependencies = [
-    "prefactor-core>=0.2.3",
+    "prefactor-core>=0.2.2",
     "langchain-core>=1.0.0",
 ]
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "src/prefactor_langchain/_version.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/prefactor_langchain"]
