@@ -12,8 +12,7 @@ from prefactor_http import (
     PrefactorRetryExhaustedError,
     PrefactorValidationError,
 )
-from prefactor_http._version import PACKAGE_VERSION
-from prefactor_http.client import DEFAULT_SDK_HEADER
+from prefactor_http._version import PACKAGE_NAME, PACKAGE_VERSION
 
 
 @pytest.fixture
@@ -310,7 +309,7 @@ class TestAuthorizationHeader:
 
             call_args = mock_request.call_args
             headers = call_args[1].get("headers", {})
-            assert headers.get("X-Prefactor-SDK") == DEFAULT_SDK_HEADER
+            assert headers.get("X-Prefactor-SDK") == f"{PACKAGE_NAME}@{PACKAGE_VERSION}"
 
     @pytest.mark.asyncio
     async def test_sdk_header_override_set(self, config):
