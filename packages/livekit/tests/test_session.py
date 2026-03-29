@@ -5,8 +5,8 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
-import pytest
 import prefactor_livekit
+import pytest
 from prefactor_livekit import LiveKitToolSchemaConfig, PrefactorLiveKitSession
 from prefactor_livekit._version import PACKAGE_VERSION
 
