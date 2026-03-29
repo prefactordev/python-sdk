@@ -173,15 +173,15 @@ class AgentInstanceHandle:
 
     @property
     def sdk_header_entries(self) -> tuple[str, ...]:
-        """Return the upstream SDK header entries active for this instance."""
+        """Return the client-scoped SDK header entries for this instance."""
         return self._client.sdk_header_entries
 
     def add_sdk_header_entry(self, sdk_header_entry: str) -> bool:
-        """Add an upstream SDK header entry for requests made by this instance."""
+        """Acquire a client-scoped SDK header registration."""
         return self._client.add_sdk_header_entry(sdk_header_entry)
 
     def remove_sdk_header_entry(self, sdk_header_entry: str) -> bool:
-        """Remove an upstream SDK header entry for this instance's client."""
+        """Release a client-scoped SDK header registration."""
         return self._client.remove_sdk_header_entry(sdk_header_entry)
 
     async def start(self) -> None:

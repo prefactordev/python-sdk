@@ -57,6 +57,7 @@ class TaskExecutor:
         self._max_retries = max_retries
         self._workers: list[Task] = []
         self._running = False
+        self._active_tasks = 0
 
     def start(self) -> None:
         """Start the worker tasks.
@@ -75,6 +76,10 @@ class TaskExecutor:
 
         logger.info(f"Started {self._num_workers} workers")
 
+    async def drain(self) -> None:
+        """Wait until the queue is empty and all in-flight work is done."""
+        await self._wait_for_idle()
+
     async def stop(self) -> None:
         """Stop all workers gracefully.
 
@@ -89,17 +94,7 @@ class TaskExecutor:
         logger.info("Stopping workers...")
         self._running = False
 
-        # Poll until the queue is empty, yielding on each iteration so that
-        # in-flight fire-and-forget tasks (e.g. _emit_span coroutines) get
-        # scheduled and complete, enqueuing their operations, before we seal
-        # the queue.  Each yield also lets workers process items they already
-        # have, shrinking the queue faster.
-        deadline = asyncio.get_event_loop().time() + 10.0
-        while self._queue.size() > 0:
-            if asyncio.get_event_loop().time() > deadline:
-                logger.warning("Timed out waiting for queue to drain")
-                break
-            await asyncio.sleep(0)
+        await self._wait_for_idle(timeout=10.0)
 
         # Close the queue and wake all workers that are blocked in get().
         await self._queue.close(num_waiters=len(self._workers))
@@ -140,11 +135,14 @@ class TaskExecutor:
                 continue
 
             try:
+                self._active_tasks += 1
                 await self._process_with_retry(item)
             except Exception as e:
                 logger.error(
                     f"Worker {worker_id} failed to process item after retries: {e}"
                 )
+            finally:
+                self._active_tasks -= 1
 
             # Brief yield to allow other tasks to run
             await asyncio.sleep(0)
@@ -178,6 +176,17 @@ class TaskExecutor:
         # All retries exhausted
         if last_error:
             raise last_error
+
+    async def _wait_for_idle(self, timeout: float | None = None) -> None:
+        """Wait until there are no queued or active tasks."""
+        loop = asyncio.get_event_loop()
+        deadline = None if timeout is None else loop.time() + timeout
+
+        while self._queue.size() > 0 or self._active_tasks > 0:
+            if deadline is not None and loop.time() > deadline:
+                logger.warning("Timed out waiting for queue to drain")
+                break
+            await asyncio.sleep(0)
 
 
 __all__ = ["TaskExecutor"]

@@ -386,6 +386,8 @@ class PrefactorMiddleware(AgentMiddleware):
 
         if self._instance is not None and self._owns_instance:
             await self._instance.finish()
+            if self._client is not None:
+                await self._client.flush()
             self._instance = None
             self._owns_instance = False
 

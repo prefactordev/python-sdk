@@ -9,8 +9,9 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Iterable
 from contextlib import asynccontextmanager
-from typing import TYPE_CHECKING, Any, Iterable
+from typing import TYPE_CHECKING, Any
 
 from prefactor_http.client import PrefactorHttpClient
 from prefactor_http.sdk_header import (
@@ -81,8 +82,8 @@ class PrefactorCoreClient:
         """
         self._config = config
         self._queue = queue or InMemoryQueue()
-        self._sdk_header_entries = self._normalize_sdk_header_entries(
-            [sdk_header_entry]
+        self._sdk_header_entry_counts = self._build_sdk_header_entry_counts(
+            self._normalize_sdk_header_entries([sdk_header_entry])
         )
         self._http: PrefactorHttpClient | None = None
         self._executor: TaskExecutor | None = None
@@ -105,7 +106,15 @@ class PrefactorCoreClient:
 
     def _build_http_sdk_header(self) -> str:
         """Build the effective SDK header for HTTP requests."""
-        return build_sdk_header(CORE_SDK_HEADER_ENTRY, *self._sdk_header_entries)
+        return build_sdk_header(
+            CORE_SDK_HEADER_ENTRY, *self._sdk_header_entry_counts.keys()
+        )
+
+    def _build_sdk_header_entry_counts(
+        self, entries: Iterable[str]
+    ) -> dict[str, int]:
+        """Build ordered SDK header registration counts."""
+        return {entry: 1 for entry in entries}
 
     def _sync_http_sdk_header(self) -> None:
         """Update the live HTTP client header, if initialized."""
@@ -114,41 +123,52 @@ class PrefactorCoreClient:
 
     @property
     def sdk_header_entries(self) -> tuple[str, ...]:
-        """Return the currently registered upstream SDK header entries."""
-        return self._sdk_header_entries
+        """Return the currently registered client-scoped SDK header entries."""
+        return tuple(self._sdk_header_entry_counts.keys())
 
     def set_sdk_header_entries(self, entries: Iterable[str | None]) -> None:
-        """Replace the upstream SDK header entries for future requests."""
-        self._sdk_header_entries = self._normalize_sdk_header_entries(entries)
+        """Replace all client-scoped SDK header registrations."""
+        self._sdk_header_entry_counts = self._build_sdk_header_entry_counts(
+            self._normalize_sdk_header_entries(entries)
+        )
         self._sync_http_sdk_header()
 
     def add_sdk_header_entry(self, sdk_header_entry: str) -> bool:
-        """Add an upstream SDK header entry if it is not already present."""
+        """Acquire a client-scoped SDK header registration."""
         normalized_entry = self._normalize_sdk_header_entries([sdk_header_entry])
         if not normalized_entry:
             return False
-        if normalized_entry[0] in self._sdk_header_entries:
-            return False
-        self._sdk_header_entries = (*self._sdk_header_entries, normalized_entry[0])
+        entry = normalized_entry[0]
+        self._sdk_header_entry_counts[entry] = (
+            self._sdk_header_entry_counts.get(entry, 0) + 1
+        )
         self._sync_http_sdk_header()
         return True
 
     def remove_sdk_header_entry(self, sdk_header_entry: str) -> bool:
-        """Remove an upstream SDK header entry if it is present."""
+        """Release a client-scoped SDK header registration if present."""
         normalized_entry = self._normalize_sdk_header_entries([sdk_header_entry])
         if not normalized_entry:
             return False
-        if normalized_entry[0] not in self._sdk_header_entries:
+        entry = normalized_entry[0]
+        count = self._sdk_header_entry_counts.get(entry)
+        if count is None:
             return False
-        self._sdk_header_entries = tuple(
-            entry for entry in self._sdk_header_entries if entry != normalized_entry[0]
-        )
+        if count == 1:
+            del self._sdk_header_entry_counts[entry]
+        else:
+            self._sdk_header_entry_counts[entry] = count - 1
         self._sync_http_sdk_header()
         return True
 
     def set_sdk_header_entry(self, sdk_header_entry: str | None) -> None:
         """Compatibility shim for replacing the upstream SDK header entry."""
         self.set_sdk_header_entries([sdk_header_entry])
+
+    async def flush(self) -> None:
+        """Wait for all currently queued operations to finish sending."""
+        if self._executor is not None:
+            await self._executor.drain()
 
     async def __aenter__(self) -> "PrefactorCoreClient":
         """Enter async context manager."""

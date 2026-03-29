@@ -93,7 +93,7 @@ class TestPrefactorCoreSdkHeader:
     async def test_add_and_remove_sdk_header_entries_update_initialized_http_client(
         self,
     ):
-        """Adding and removing entries keeps the live HTTP client in sync."""
+        """Repeated registrations keep the live HTTP client in sync."""
         client = PrefactorCoreClient(create_config())
 
         with (
@@ -110,7 +110,7 @@ class TestPrefactorCoreSdkHeader:
 
             assert client.add_sdk_header_entry("prefactor-langchain@0.2.4") is True
             assert client.add_sdk_header_entry("prefactor-another@1.0.0") is True
-            assert client.add_sdk_header_entry("prefactor-langchain@0.2.4") is False
+            assert client.add_sdk_header_entry("prefactor-langchain@0.2.4") is True
             assert client.sdk_header_entries == (
                 "prefactor-langchain@0.2.4",
                 "prefactor-another@1.0.0",
@@ -123,11 +123,53 @@ class TestPrefactorCoreSdkHeader:
             )
 
             assert client.remove_sdk_header_entry("prefactor-langchain@0.2.4") is True
+            assert client.sdk_header_entries == (
+                "prefactor-langchain@0.2.4",
+                "prefactor-another@1.0.0",
+            )
+            assert client._http._sdk_header == (
+                "prefactor-langchain@0.2.4 "
+                "prefactor-another@1.0.0 "
+                f"{CORE_SDK_HEADER_ENTRY}"
+            )
+
+            assert client.remove_sdk_header_entry("prefactor-langchain@0.2.4") is True
             assert client.remove_sdk_header_entry("prefactor-missing@9.9.9") is False
             assert client.sdk_header_entries == ("prefactor-another@1.0.0",)
             assert client._http._sdk_header == (
                 f"prefactor-another@1.0.0 {CORE_SDK_HEADER_ENTRY}"
             )
+            await client.close()
+
+    async def test_set_sdk_header_entries_replaces_existing_registrations(self):
+        """Setting entries replaces prior reference-counted registrations."""
+        client = PrefactorCoreClient(create_config())
+
+        with (
+            patch(
+                "prefactor_http.client.PrefactorHttpClient.__aenter__",
+                AsyncMock(return_value=None),
+            ),
+            patch(
+                "prefactor_http.client.PrefactorHttpClient.__aexit__",
+                AsyncMock(return_value=None),
+            ),
+        ):
+            await client.initialize()
+
+            assert client.add_sdk_header_entry("prefactor-langchain@0.2.4") is True
+            assert client.add_sdk_header_entry("prefactor-langchain@0.2.4") is True
+            client.set_sdk_header_entries(
+                ["prefactor-another@1.0.0", "prefactor-another@1.0.0"]
+            )
+
+            assert client.sdk_header_entries == ("prefactor-another@1.0.0",)
+            assert client._http is not None
+            assert client._http._sdk_header == (
+                f"prefactor-another@1.0.0 {CORE_SDK_HEADER_ENTRY}"
+            )
+            assert client.remove_sdk_header_entry("prefactor-another@1.0.0") is True
+            assert client.sdk_header_entries == ()
             await client.close()
 
 

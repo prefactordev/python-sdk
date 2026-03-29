@@ -194,23 +194,74 @@ class TestPrefactorMiddleware:
 
     def test_configuration_mode_close_restores_client_sdk_header(self):
         """Closing middleware should unregister only the entry it added."""
+        order: list[str] = []
         client = Mock()
         client._initialized = True
         client.add_sdk_header_entry.return_value = True
+        client.flush = AsyncMock(side_effect=lambda: order.append("flush"))
+        client.close = AsyncMock(side_effect=lambda: order.append("close"))
+        client.remove_sdk_header_entry.side_effect = lambda entry: order.append(
+            f"remove:{entry}"
+        )
 
         middleware = PrefactorMiddleware(client=client)
         instance = Mock()
-        instance.finish = AsyncMock()
+        instance.finish = AsyncMock(side_effect=lambda: order.append("finish"))
         middleware._instance = instance
         middleware._owns_instance = True
 
         asyncio.run(middleware.close())
 
         instance.finish.assert_awaited_once()
+        client.flush.assert_awaited_once()
         client.remove_sdk_header_entry.assert_called_once_with(
             LANGCHAIN_SDK_HEADER_ENTRY
         )
+        assert order == [
+            "finish",
+            "flush",
+            f"remove:{LANGCHAIN_SDK_HEADER_ENTRY}",
+        ]
         client.close.assert_not_called()
+
+    def test_factory_mode_close_flushes_before_removing_header_and_closing_client(self):
+        """Factory-backed middleware should flush before header removal and close."""
+        order: list[str] = []
+        middleware = PrefactorMiddleware.from_config(
+            api_url="http://test",
+            api_token="test-token",
+        )
+
+        assert middleware._client is not None
+        middleware._client.flush = AsyncMock(side_effect=lambda: order.append("flush"))
+        middleware._client.close = AsyncMock(side_effect=lambda: order.append("close"))
+        middleware._client.remove_sdk_header_entry = Mock(
+            side_effect=lambda entry: order.append(f"remove:{entry}")
+        )
+        instance = Mock()
+        instance.finish = AsyncMock(side_effect=lambda: order.append("finish"))
+        middleware._instance = instance
+        middleware._owns_instance = True
+
+        asyncio.run(middleware.close())
+
+        assert order == [
+            "finish",
+            "flush",
+            f"remove:{LANGCHAIN_SDK_HEADER_ENTRY}",
+            "close",
+        ]
+
+    def test_instance_mode_close_removes_only_registered_entry(self):
+        """Instance-backed middleware should not unregister an entry it did not add."""
+        mock_instance = Mock()
+        mock_instance.add_sdk_header_entry.return_value = False
+
+        middleware = PrefactorMiddleware(instance=mock_instance)
+
+        asyncio.run(middleware.close())
+
+        mock_instance.remove_sdk_header_entry.assert_not_called()
 
     def test_pre_configured_instance_with_client_raises(self):
         """Providing both client and instance should raise ValueError."""
