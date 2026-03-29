@@ -200,7 +200,7 @@ When bumping a package version:
 
 ### Project Structure
 
-```
+```text
 python-sdk/
 ├── packages/
 │   ├── core/           # Core tracing and span lifecycle

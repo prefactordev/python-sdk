@@ -318,7 +318,7 @@ class TestAuthorizationHeader:
 
         client = PrefactorHttpClient(
             config,
-            sdk_header="prefactor-langchain@0.2.4 prefactor-core@0.2.2",
+            sdk_header="test-sdk@0.0.0",
         )
         await client._ensure_session()
 
@@ -336,9 +336,7 @@ class TestAuthorizationHeader:
 
                 call_args = mock_request.call_args
                 headers = call_args[1].get("headers", {})
-                assert headers.get("X-Prefactor-SDK") == (
-                    "prefactor-langchain@0.2.4 prefactor-core@0.2.2"
-                )
+                assert headers.get("X-Prefactor-SDK") == "test-sdk@0.0.0"
         finally:
             await client.close()
 

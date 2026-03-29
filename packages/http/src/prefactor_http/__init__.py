@@ -26,6 +26,8 @@ Example:
     >>> asyncio.run(main())
 """
 
+from __future__ import annotations
+
 from prefactor_http._version import __version__
 from prefactor_http.client import PrefactorHttpClient
 from prefactor_http.config import HttpClientConfig

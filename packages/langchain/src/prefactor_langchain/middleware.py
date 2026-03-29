@@ -7,7 +7,7 @@ import hashlib
 import json
 import logging
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any, AsyncContextManager, Callable
+from typing import TYPE_CHECKING, Any, AsyncContextManager, Callable, cast
 
 from langchain.agents.middleware import AgentMiddleware
 from prefactor_core import (
@@ -115,11 +115,12 @@ class PrefactorMiddleware(AgentMiddleware):
         self, owner: PrefactorCoreClient | AgentInstanceHandle
     ) -> None:
         """Attach the LangChain SDK header entry to the underlying core client."""
-        client = (
-            owner
-            if isinstance(owner, PrefactorCoreClient) or hasattr(owner, "_initialized")
-            else owner._client
-        )
+        if isinstance(owner, PrefactorCoreClient) or hasattr(owner, "_initialized"):
+            client = cast(PrefactorCoreClient, owner)
+        elif isinstance(owner, AgentInstanceHandle) or hasattr(owner, "_client"):
+            client = cast(AgentInstanceHandle, owner)._client
+        else:
+            client = cast(PrefactorCoreClient, owner)
         client._set_sdk_header_entry(LANGCHAIN_SDK_HEADER_ENTRY)
 
     def __init__(

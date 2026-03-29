@@ -3,6 +3,8 @@
 This module exports the main classes and functions for the prefactor-core SDK.
 """
 
+from __future__ import annotations
+
 from ._version import __version__
 from .client import PrefactorCoreClient
 from .config import PrefactorCoreConfig, QueueConfig
