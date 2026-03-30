@@ -26,6 +26,9 @@ Example:
     >>> asyncio.run(main())
 """
 
+from __future__ import annotations
+
+from prefactor_http._version import __version__
 from prefactor_http.client import PrefactorHttpClient
 from prefactor_http.config import HttpClientConfig
 from prefactor_http.exceptions import (
@@ -54,8 +57,6 @@ from prefactor_http.models.bulk import (
     BulkResponse,
 )
 from prefactor_http.models.types import AgentStatus, FinishStatus
-
-__version__ = "0.1.0"
 
 __all__ = [
     # Main client
@@ -89,4 +90,5 @@ __all__ = [
     "BulkRequest",
     "BulkResponse",
     "BulkOutput",
+    "__version__",
 ]

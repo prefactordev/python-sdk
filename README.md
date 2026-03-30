@@ -177,14 +177,36 @@ To run hooks manually:
 lefthook run pre-commit
 ```
 
+### Versioning
+
+Package versions are defined in each package's `src/<package>/_version.py` file.
+That file is the single source of truth for both runtime `__version__` and build
+metadata.
+
+- `packages/http/src/prefactor_http/_version.py`
+- `packages/core/src/prefactor_core/_version.py`
+- `packages/langchain/src/prefactor_langchain/_version.py`
+- `packages/livekit/src/prefactor_livekit/_version.py`
+
+Each package `pyproject.toml` uses Hatch dynamic versioning and reads the version
+directly from that `_version.py` file. We do not resolve versions from installed
+metadata or parse `pyproject.toml` at import time.
+
+When bumping a package version:
+
+1. Update `__version__` in that package's `_version.py`.
+2. Update any dependent package constraints if the new version requires it.
+3. Run `mise run test` before committing.
+
 ### Project Structure
 
-```
+```text
 python-sdk/
 ├── packages/
 │   ├── core/           # Core tracing and span lifecycle
 │   ├── http/           # HTTP client for the Prefactor API
-│   └── langchain/      # LangChain instrumentation
+│   ├── langchain/      # LangChain instrumentation
+│   └── livekit/        # LiveKit instrumentation
 ├── mise.toml           # mise configuration
 ├── lefthook.yml        # Git hooks configuration
 └── pyproject.toml      # Python project configuration (workspace root)

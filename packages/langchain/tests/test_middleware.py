@@ -5,11 +5,17 @@ from __future__ import annotations
 import asyncio
 from types import SimpleNamespace
 from typing import cast
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock, patch
 
+import prefactor_langchain
 from prefactor_core import AgentInstanceHandle, PrefactorCoreConfig, SchemaRegistry
+from prefactor_core.client import CORE_SDK_HEADER_ENTRY, PrefactorCoreClient
 from prefactor_http.config import HttpClientConfig
-from prefactor_langchain.middleware import PrefactorMiddleware
+from prefactor_langchain._version import PACKAGE_VERSION
+from prefactor_langchain.middleware import (
+    LANGCHAIN_SDK_HEADER_ENTRY,
+    PrefactorMiddleware,
+)
 from prefactor_langchain.schemas import (
     LANGCHAIN_AGENT_SCHEMA,
     LANGCHAIN_LLM_SCHEMA,
@@ -44,8 +50,9 @@ class RecordingSpanContext:
 class RecordingInstance:
     """Minimal AgentInstanceHandle stand-in for middleware tests."""
 
-    def __init__(self) -> None:
+    def __init__(self, client: PrefactorCoreClient | None = None) -> None:
         self.calls: list[dict[str, object]] = []
+        self._client = client or Mock()
 
     def span(self, schema_name: str, parent_span_id=None, payload=None):
         call = {
@@ -75,6 +82,9 @@ class TestPrefactorMiddleware:
         assert middleware._instance is None
         assert middleware._owns_client is True
         assert middleware._owns_instance is True  # Will lazily create
+        assert middleware._client._build_http_sdk_header() == (
+            f"{LANGCHAIN_SDK_HEADER_ENTRY} {CORE_SDK_HEADER_ENTRY}"
+        )
 
     def test_factory_pattern_with_agent_name(self):
         """Test factory pattern with agent name."""
@@ -122,6 +132,7 @@ class TestPrefactorMiddleware:
         """Test configuration mode with pre-created (mocked) client."""
         client = Mock()
         client._initialized = True
+        client._set_sdk_header_entry = Mock()
 
         middleware = PrefactorMiddleware(
             client=client,
@@ -134,10 +145,13 @@ class TestPrefactorMiddleware:
         assert middleware._agent_name == "Config Agent"
         assert middleware._owns_client is False  # Caller created the client
         assert middleware._owns_instance is True  # Will lazily create
+        client._set_sdk_header_entry.assert_called_once_with(LANGCHAIN_SDK_HEADER_ENTRY)
 
     def test_pre_configured_instance(self):
         """Test using a pre-configured AgentInstanceHandle."""
-        mock_instance = Mock()
+        mock_instance = SimpleNamespace()
+        mock_instance._client = Mock()
+        mock_instance._client._set_sdk_header_entry = Mock()
 
         middleware = PrefactorMiddleware(instance=mock_instance)
 
@@ -145,6 +159,46 @@ class TestPrefactorMiddleware:
         assert middleware._client is None
         assert middleware._owns_instance is False  # Caller owns it
         assert middleware._owns_client is False
+        mock_instance._client._set_sdk_header_entry.assert_called_once_with(
+            LANGCHAIN_SDK_HEADER_ENTRY
+        )
+
+    def test_configuration_mode_close_finishes_instance_without_closing_client(self):
+        """Closing middleware should finish its instance without closing the client."""
+        client = Mock()
+        client._initialized = True
+        client._set_sdk_header_entry = Mock()
+        client.close = AsyncMock()
+
+        middleware = PrefactorMiddleware(client=client)
+        instance = Mock()
+        instance.finish = AsyncMock()
+        middleware._instance = instance
+        middleware._owns_instance = True
+
+        asyncio.run(middleware.close())
+
+        instance.finish.assert_awaited_once()
+        client.close.assert_not_called()
+
+    def test_factory_mode_close_closes_owned_client(self):
+        """Factory-backed middleware should close its owned client."""
+        middleware = PrefactorMiddleware.from_config(
+            api_url="http://test",
+            api_token="test-token",
+        )
+
+        assert middleware._client is not None
+        instance = Mock()
+        instance.finish = AsyncMock()
+        middleware._instance = instance
+        middleware._owns_instance = True
+
+        with patch.object(middleware._client, "close", AsyncMock()) as mock_close:
+            asyncio.run(middleware.close())
+
+        instance.finish.assert_awaited_once()
+        mock_close.assert_awaited_once()
 
     def test_pre_configured_instance_with_client_raises(self):
         """Providing both client and instance should raise ValueError."""
@@ -278,6 +332,7 @@ class TestToolSchemaRuntimeBehavior:
             http_config=HttpClientConfig(api_url="http://test", api_token="token"),
             schema_registry=SchemaRegistry(),
         )
+        client._set_sdk_header_entry = Mock()
 
         middleware = PrefactorMiddleware(
             client=client,
@@ -314,7 +369,16 @@ class TestToolSchemaRuntimeBehavior:
 
     def test_instance_mode_uses_tool_specific_span_type(self):
         """instance= mode should resolve the configured tool span type at runtime."""
-        instance = RecordingInstance()
+        instance = RecordingInstance(
+            PrefactorCoreClient(
+                PrefactorCoreConfig(
+                    http_config=HttpClientConfig(
+                        api_url="http://test",
+                        api_token="token",
+                    )
+                )
+            )
+        )
         middleware = PrefactorMiddleware(
             instance=instance,
             tool_schemas={
@@ -337,6 +401,9 @@ class TestToolSchemaRuntimeBehavior:
             "tool_name": "send_email",
             "inputs": {"to": "dev@example.com"},
         }
+        assert instance._client._build_http_sdk_header() == (
+            f"{LANGCHAIN_SDK_HEADER_ENTRY} {CORE_SDK_HEADER_ENTRY}"
+        )
 
     def test_tool_specific_spans_preserve_empty_argument_objects(self):
         """Tool-specific spans should emit empty args as an empty inputs object."""
@@ -475,6 +542,14 @@ class TestSpanSerialization:
         span_dict = span.to_dict()
         assert span_dict["error"]["error_type"] == "ValueError"
         assert span_dict["error"]["message"] == "Test error message"
+
+
+class TestVersionHelpers:
+    """Tests for package version exports."""
+
+    def test_package_version_matches_public_export(self):
+        """Test that the package version export matches the internal constant."""
+        assert prefactor_langchain.__version__ == PACKAGE_VERSION
 
 
 class TestSchemaConstants:

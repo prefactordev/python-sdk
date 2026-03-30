@@ -14,6 +14,8 @@ from typing import TYPE_CHECKING, Any
 
 from prefactor_http.client import PrefactorHttpClient
 
+from ._version import PACKAGE_NAME as CORE_PACKAGE_NAME
+from ._version import PACKAGE_VERSION as CORE_PACKAGE_VERSION
 from .config import PrefactorCoreConfig
 from .context_stack import SpanContextStack
 from .exceptions import (
@@ -31,6 +33,7 @@ if TYPE_CHECKING:
     from .managers.agent_instance import AgentInstanceHandle
 
 logger = logging.getLogger(__name__)
+CORE_SDK_HEADER_ENTRY = f"{CORE_PACKAGE_NAME}@{CORE_PACKAGE_VERSION}"
 
 
 class PrefactorCoreClient:
@@ -61,6 +64,7 @@ class PrefactorCoreClient:
         self,
         config: PrefactorCoreConfig,
         queue: Queue[Operation] | None = None,
+        sdk_header_entry: str | None = None,
     ) -> None:
         """Initialize the client.
 
@@ -68,14 +72,28 @@ class PrefactorCoreClient:
             config: Configuration for the client.
             queue: Optional custom queue implementation. If not provided,
                 an InMemoryQueue is used.
+            sdk_header_entry: Optional upstream SDK header entry to prepend.
         """
         self._config = config
         self._queue = queue or InMemoryQueue()
+        self._sdk_header_entry = sdk_header_entry.strip() if sdk_header_entry else None
         self._http: PrefactorHttpClient | None = None
         self._executor: TaskExecutor | None = None
         self._instance_manager: AgentInstanceManager | None = None
         self._span_manager: SpanManager | None = None
         self._initialized = False
+
+    def _build_http_sdk_header(self) -> str:
+        """Build the effective SDK header for HTTP requests."""
+        if self._sdk_header_entry:
+            return f"{self._sdk_header_entry} {CORE_SDK_HEADER_ENTRY}"
+        return CORE_SDK_HEADER_ENTRY
+
+    def _set_sdk_header_entry(self, sdk_header_entry: str | None) -> None:
+        """Set the upstream SDK header entry for this client lifetime."""
+        self._sdk_header_entry = sdk_header_entry.strip() if sdk_header_entry else None
+        if self._http is not None:
+            self._http._sdk_header = self._build_http_sdk_header()
 
     async def __aenter__(self) -> "PrefactorCoreClient":
         """Enter async context manager."""
@@ -101,7 +119,10 @@ class PrefactorCoreClient:
             raise ClientAlreadyInitializedError("Client is already initialized")
 
         # Initialize HTTP client
-        self._http = PrefactorHttpClient(self._config.http_config)
+        self._http = PrefactorHttpClient(
+            self._config.http_config,
+            sdk_header=self._build_http_sdk_header(),
+        )
         await self._http.__aenter__()
 
         # Initialize executor

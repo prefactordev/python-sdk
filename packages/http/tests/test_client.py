@@ -12,6 +12,7 @@ from prefactor_http import (
     PrefactorRetryExhaustedError,
     PrefactorValidationError,
 )
+from prefactor_http._version import PACKAGE_NAME, PACKAGE_VERSION
 
 
 @pytest.fixture
@@ -292,3 +293,58 @@ class TestAuthorizationHeader:
             call_args = mock_request.call_args
             headers = call_args[1].get("headers", {})
             assert headers.get("Authorization") == f"Bearer {config.api_token}"
+
+    @pytest.mark.asyncio
+    async def test_sdk_header_set(self, client):
+        """Test that the default SDK header is set correctly."""
+
+        with patch.object(client._session, "request") as mock_request:
+            mock_response = AsyncMock()
+            mock_response.status = 200
+            mock_response.json = AsyncMock(return_value={"success": True})
+            mock_request.return_value.__aenter__ = AsyncMock(return_value=mock_response)
+            mock_request.return_value.__aexit__ = AsyncMock(return_value=None)
+
+            await client.request(method="POST", path="/api/v1/test")
+
+            call_args = mock_request.call_args
+            headers = call_args[1].get("headers", {})
+            assert headers.get("X-Prefactor-SDK") == f"{PACKAGE_NAME}@{PACKAGE_VERSION}"
+
+    @pytest.mark.asyncio
+    async def test_sdk_header_override_set(self, config):
+        """Test that a custom SDK header override is used when provided."""
+
+        client = PrefactorHttpClient(
+            config,
+            sdk_header="test-sdk@0.0.0",
+        )
+        await client._ensure_session()
+
+        try:
+            with patch.object(client._session, "request") as mock_request:
+                mock_response = AsyncMock()
+                mock_response.status = 200
+                mock_response.json = AsyncMock(return_value={"success": True})
+                mock_request.return_value.__aenter__ = AsyncMock(
+                    return_value=mock_response
+                )
+                mock_request.return_value.__aexit__ = AsyncMock(return_value=None)
+
+                await client.request(method="POST", path="/api/v1/test")
+
+                call_args = mock_request.call_args
+                headers = call_args[1].get("headers", {})
+                assert headers.get("X-Prefactor-SDK") == "test-sdk@0.0.0"
+        finally:
+            await client.close()
+
+
+class TestVersionHelpers:
+    """Tests for package version exports."""
+
+    def test_package_version_matches_public_export(self):
+        """Test that the package version export matches the internal constant."""
+        import prefactor_http
+
+        assert prefactor_http.__version__ == PACKAGE_VERSION

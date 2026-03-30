@@ -1,6 +1,6 @@
 [project]
 name = "prefactor-http"
-version = "0.1.1"
+dynamic = ["version"]
 description = "HTTP client library for Prefactor API"
 readme = "README.md"
 license = { text = "MIT" }
@@ -16,6 +16,9 @@ dependencies = [
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "src/prefactor_http/_version.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/prefactor_http"]

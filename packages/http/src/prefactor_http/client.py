@@ -1,9 +1,12 @@
 """HTTP client for Prefactor API."""
 
+from __future__ import annotations
+
 from typing import TYPE_CHECKING, Any
 
 import aiohttp
 
+from prefactor_http._version import PACKAGE_NAME, PACKAGE_VERSION
 from prefactor_http.config import HttpClientConfig
 from prefactor_http.exceptions import (
     PrefactorApiError,
@@ -21,6 +24,26 @@ if TYPE_CHECKING:
     from prefactor_http.endpoints.bulk import BulkClient
 
 
+def _format_sdk_header_entry(package_name: str, package_version: str) -> str:
+    """Format a single SDK header entry."""
+    return f"{package_name}@{package_version}"
+
+
+def _build_sdk_header(
+    package_name: str,
+    package_version: str,
+    upstream_entry: str | None = None,
+) -> str:
+    """Build the effective SDK header value."""
+    base_entry = _format_sdk_header_entry(package_name, package_version)
+    if upstream_entry is None or not upstream_entry.strip():
+        return base_entry
+    return f"{upstream_entry.strip()} {base_entry}"
+
+
+DEFAULT_SDK_HEADER = _build_sdk_header(PACKAGE_NAME, PACKAGE_VERSION)
+
+
 class PrefactorHttpClient:
     """Main HTTP client for interacting with the Prefactor API.
 
@@ -33,15 +56,17 @@ class PrefactorHttpClient:
             span = await client.agent_spans.create(...)
     """
 
-    def __init__(self, config: HttpClientConfig):
+    def __init__(self, config: HttpClientConfig, sdk_header: str | None = None):
         """Initialize the HTTP client.
 
         Args:
             config: HTTP client configuration.
+            sdk_header: Effective SDK header value for outbound requests.
         """
         self.config = config
         self._session: aiohttp.ClientSession | None = None
         self._retry_handler = RetryHandler(config)
+        self._sdk_header = sdk_header or DEFAULT_SDK_HEADER
         # Import here to avoid circular import during __init__.py loading
         self._bulk: BulkClient | None = None
         self._agent_instances: AgentInstanceClient | None = None
@@ -203,6 +228,7 @@ class PrefactorHttpClient:
             "Authorization": f"Bearer {self.config.api_token}",
             "Content-Type": "application/json",
             "Accept": "application/json",
+            "X-Prefactor-SDK": self._sdk_header,
         }
 
         if idempotency_key:

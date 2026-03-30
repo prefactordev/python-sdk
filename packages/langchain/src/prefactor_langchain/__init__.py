@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from prefactor_langchain._version import __version__
 from prefactor_langchain.metadata_extractor import (
     extract_error_info,
     extract_token_usage,
@@ -25,8 +26,6 @@ from prefactor_langchain.spans import (
     ToolSpan,
 )
 
-__version__ = "0.2.4"
-
 __all__ = [
     # Middleware
     "PrefactorMiddleware",
@@ -48,4 +47,5 @@ __all__ = [
     "ToolSpan",
     "TokenUsage",
     "ErrorInfo",
+    "__version__",
 ]

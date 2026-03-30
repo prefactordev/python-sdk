@@ -7,7 +7,7 @@ import hashlib
 import json
 import logging
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any, AsyncContextManager, Callable
+from typing import TYPE_CHECKING, Any, AsyncContextManager, Callable, cast
 
 from langchain.agents.middleware import AgentMiddleware
 from prefactor_core import (
@@ -22,11 +22,14 @@ from prefactor_http.config import HttpClientConfig
 if TYPE_CHECKING:
     pass
 
+from ._version import PACKAGE_NAME as LANGCHAIN_PACKAGE_NAME
+from ._version import PACKAGE_VERSION as LANGCHAIN_PACKAGE_VERSION
 from .metadata_extractor import extract_token_usage
 from .schemas import LangChainToolSchemaConfig, register_langchain_schemas
 from .spans import AgentSpan, LLMSpan, ToolSpan
 
 logger = logging.getLogger("prefactor_langchain.middleware")
+LANGCHAIN_SDK_HEADER_ENTRY = f"{LANGCHAIN_PACKAGE_NAME}@{LANGCHAIN_PACKAGE_VERSION}"
 
 
 class PrefactorMiddleware(AgentMiddleware):
@@ -108,6 +111,18 @@ class PrefactorMiddleware(AgentMiddleware):
         await middleware.close()  # Closes both
     """
 
+    def _set_sdk_header_entry(
+        self, owner: PrefactorCoreClient | AgentInstanceHandle
+    ) -> None:
+        """Attach the LangChain SDK header entry to the underlying core client."""
+        if isinstance(owner, PrefactorCoreClient) or hasattr(owner, "_initialized"):
+            client = cast(PrefactorCoreClient, owner)
+        elif isinstance(owner, AgentInstanceHandle) or hasattr(owner, "_client"):
+            client = cast(AgentInstanceHandle, owner)._client
+        else:
+            client = cast(PrefactorCoreClient, owner)
+        client._set_sdk_header_entry(LANGCHAIN_SDK_HEADER_ENTRY)
+
     def __init__(
         self,
         client: PrefactorCoreClient | None = None,
@@ -141,6 +156,7 @@ class PrefactorMiddleware(AgentMiddleware):
             raise ValueError("Provide either 'client' or 'instance', not both.")
 
         if instance is not None:
+            self._set_sdk_header_entry(instance)
             self._client = None
             self._agent_id = agent_id
             self._agent_name = agent_name
@@ -173,6 +189,7 @@ class PrefactorMiddleware(AgentMiddleware):
             )
             raise ValueError(msg)
 
+        self._set_sdk_header_entry(client)
         self._client = client
         self._agent_id = agent_id
         self._agent_name = agent_name
@@ -250,7 +267,9 @@ class PrefactorMiddleware(AgentMiddleware):
             http_config=http_config,
             schema_registry=registry,
         )
-        client = PrefactorCoreClient(config)
+        client = PrefactorCoreClient(
+            config, sdk_header_entry=LANGCHAIN_SDK_HEADER_ENTRY
+        )
 
         middleware = cls.__new__(cls)
         middleware._client = client
@@ -353,9 +372,8 @@ class PrefactorMiddleware(AgentMiddleware):
     async def close(self) -> None:
         """Close the middleware and cleanup resources.
 
-        Awaits all in-flight span-emit tasks first so that every span has
-        been handed to the queue, then closes the agent instance (if we
-        created it) and finally the client (which drains and stops the queue).
+        Awaits all in-flight span-emit tasks first, then closes the agent
+        instance (if we created it) and finally the client.
         """
         # Drain any fire-and-forget span tasks scheduled by sync hooks.
         if self._pending_emit_futures:
