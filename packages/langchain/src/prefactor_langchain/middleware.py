@@ -396,8 +396,11 @@ class PrefactorMiddleware(AgentMiddleware):
                 if captured_error is None:
                     captured_error = result
                     continue
-                if isinstance(result, PrefactorTelemetryFailureError) and not isinstance(
-                    captured_error, PrefactorTelemetryFailureError
+                if isinstance(
+                    result, PrefactorTelemetryFailureError
+                ) and not isinstance(
+                    captured_error,
+                    PrefactorTelemetryFailureError,
                 ):
                     captured_error = result
 

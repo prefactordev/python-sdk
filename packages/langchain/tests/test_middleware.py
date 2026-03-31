@@ -229,11 +229,11 @@ class TestPrefactorMiddleware:
             middleware._owns_instance = True
             assert middleware._client is not None
             client = middleware._client
-            client.close = AsyncMock()
-            with pytest.raises(PrefactorTelemetryFailureError):
-                await middleware.close()
+            with patch.object(client, "close", AsyncMock()) as mock_close:
+                with pytest.raises(PrefactorTelemetryFailureError):
+                    await middleware.close()
             instance.finish.assert_awaited_once()
-            client.close.assert_awaited_once()
+            mock_close.assert_awaited_once()
 
         asyncio.run(_run())
 
