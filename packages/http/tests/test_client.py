@@ -306,21 +306,23 @@ class TestHTTPClientRequest:
             assert "html" in (exc_info.value.body_snippet or "")
 
     @pytest.mark.asyncio
-    async def test_malformed_error_body_raises_contract_error(self, client):
-        """Invalid JSON on an error response should preserve body context."""
+    async def test_malformed_503_body_retries_then_exhausts(self, client):
+        """Malformed 5xx responses should still use the retry policy."""
 
         with patch.object(client._session, "request") as mock_request:
             mock_response = AsyncMock()
-            mock_response.status = 500
+            mock_response.status = 503
             mock_response.text = AsyncMock(return_value="<html>server error</html>")
             mock_request.return_value.__aenter__ = AsyncMock(return_value=mock_response)
             mock_request.return_value.__aexit__ = AsyncMock(return_value=None)
 
-            with pytest.raises(PrefactorResponseContractError) as exc_info:
+            with pytest.raises(PrefactorRetryExhaustedError) as exc_info:
                 await client.request(method="POST", path="/api/v1/test")
 
-            assert exc_info.value.status_code == 500
-            assert "server error" in (exc_info.value.body_snippet or "")
+            assert mock_request.call_count == 2
+            assert isinstance(exc_info.value.last_error, PrefactorResponseContractError)
+            assert exc_info.value.last_error.status_code == 503
+            assert "server error" in (exc_info.value.last_error.body_snippet or "")
 
 
 class TestAuthorizationHeader:

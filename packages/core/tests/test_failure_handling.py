@@ -14,6 +14,7 @@ from prefactor_core.exceptions import PrefactorTelemetryFailureError
 from prefactor_http.config import HttpClientConfig
 from prefactor_http.exceptions import (
     PrefactorAuthError,
+    PrefactorResponseContractError,
     PrefactorRetryExhaustedError,
 )
 
@@ -200,3 +201,80 @@ async def test_transient_retry_exhaustion_does_not_latch_permanent_failure():
         await instance.finish()
         await asyncio.sleep(0.05)
         await client.close()
+
+
+@pytest.mark.asyncio
+async def test_malformed_503_retry_exhaustion_does_not_latch_permanent_failure():
+    """Malformed 5xx responses should still be treated as transient."""
+    retry_error = PrefactorRetryExhaustedError(
+        "server exhausted",
+        last_error=PrefactorResponseContractError(
+            "invalid JSON",
+            status_code=503,
+            body_snippet="<html>temporary outage</html>",
+        ),
+    )
+    stub_http = _StubHttpClient(
+        agent_instances=_StubAgentInstances(start_side_effect=retry_error)
+    )
+
+    with patch("prefactor_core.client.PrefactorHttpClient", return_value=stub_http):
+        client = PrefactorCoreClient(_make_client_config())
+        await client.initialize()
+        instance = await client.create_agent_instance(
+            agent_id="agent-1",
+            agent_version={"name": "v1"},
+            agent_schema_version={"span_schemas": {}},
+        )
+
+        await instance.start()
+        await asyncio.sleep(0.05)
+
+        await instance.finish()
+        await asyncio.sleep(0.05)
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_async_context_preserves_user_exception_when_telemetry_failed():
+    """Context manager exit should not replace the caller's own exception."""
+    stub_http = _StubHttpClient(
+        agent_instances=_StubAgentInstances(
+            start_side_effect=PrefactorAuthError("bad token", "unauthorized", 401)
+        )
+    )
+
+    with patch("prefactor_core.client.PrefactorHttpClient", return_value=stub_http):
+        with pytest.raises(ValueError, match="user boom"):
+            async with PrefactorCoreClient(_make_client_config()) as client:
+                instance = await client.create_agent_instance(
+                    agent_id="agent-1",
+                    agent_version={"name": "v1"},
+                    agent_schema_version={"span_schemas": {}},
+                )
+
+                await instance.start()
+                await asyncio.sleep(0.05)
+                raise ValueError("user boom")
+
+
+@pytest.mark.asyncio
+async def test_async_context_raises_latched_failure_when_body_succeeds():
+    """Context manager exit should still surface unobserved telemetry failure."""
+    stub_http = _StubHttpClient(
+        agent_instances=_StubAgentInstances(
+            start_side_effect=PrefactorAuthError("bad token", "unauthorized", 401)
+        )
+    )
+
+    with patch("prefactor_core.client.PrefactorHttpClient", return_value=stub_http):
+        with pytest.raises(PrefactorTelemetryFailureError):
+            async with PrefactorCoreClient(_make_client_config()) as client:
+                instance = await client.create_agent_instance(
+                    agent_id="agent-1",
+                    agent_version={"name": "v1"},
+                    agent_schema_version={"span_schemas": {}},
+                )
+
+                await instance.start()
+                await asyncio.sleep(0.05)

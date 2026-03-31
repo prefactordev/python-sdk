@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
@@ -81,6 +82,39 @@ class FailingRecordingInstance(RecordingInstance):
             cause=RuntimeError("boom"),
             operation_type="FINISH_AGENT_INSTANCE",
         )
+
+
+class FailingStartRecordingSpanContext(RecordingSpanContext):
+    """Span context that raises when started."""
+
+    async def start(self, payload: dict[str, object]) -> None:
+        await super().start(payload)
+        raise PrefactorTelemetryFailureError(
+            "telemetry failed",
+            cause=RuntimeError("boom"),
+            operation_type="CREATE_SPAN",
+        )
+
+
+class FailingSpanRecordingInstance(RecordingInstance):
+    """Instance stand-in that fails when creating spans of a given schema."""
+
+    def __init__(self, failing_schema: str) -> None:
+        super().__init__()
+        self._failing_schema = failing_schema
+
+    def span(self, schema_name: str, parent_span_id=None, payload=None):
+        call = {
+            "schema_name": schema_name,
+            "parent_span_id": parent_span_id,
+            "payload": payload,
+        }
+        self.calls.append(call)
+        if schema_name == self._failing_schema:
+            return FailingStartRecordingSpanContext(
+                call, span_id=f"span-{len(self.calls)}"
+            )
+        return RecordingSpanContext(call, span_id=f"span-{len(self.calls)}")
 
 
 class FakeSession:
@@ -183,6 +217,53 @@ class TestPrefactorLiveKitSession:
 
         with pytest.raises(PrefactorTelemetryFailureError):
             await wrapper.close()
+
+    async def test_drain_pending_tasks_completes_after_queued_telemetry_failure(
+        self,
+    ) -> None:
+        instance = FailingSpanRecordingInstance("livekit:user_turn")
+        wrapper = PrefactorLiveKitSession(instance=instance)
+        session = FakeSession()
+        await wrapper.attach(session)
+
+        event = SimpleNamespace(
+            transcript="hello world",
+            is_final=True,
+            speaker_id="user-1",
+            language="en",
+            created_at=123.0,
+        )
+        session.emit("user_input_transcribed", event)
+        session.emit("user_input_transcribed", event)
+
+        await asyncio.wait_for(wrapper._drain_pending_tasks(), timeout=0.2)
+
+        assert wrapper._event_queue is not None
+        assert wrapper._event_queue.qsize() == 0
+        assert wrapper._event_worker_task is not None
+        assert not wrapper._event_worker_task.done()
+
+    async def test_close_raises_latched_telemetry_failure_after_draining(self) -> None:
+        instance = FailingSpanRecordingInstance("livekit:user_turn")
+        wrapper = PrefactorLiveKitSession(instance=instance)
+        session = FakeSession()
+        await wrapper.attach(session)
+
+        event = SimpleNamespace(
+            transcript="hello world",
+            is_final=True,
+            speaker_id="user-1",
+            language="en",
+            created_at=123.0,
+        )
+        session.emit("user_input_transcribed", event)
+        session.emit("user_input_transcribed", event)
+
+        with pytest.raises(PrefactorTelemetryFailureError):
+            await asyncio.wait_for(wrapper.close(), timeout=0.2)
+
+        assert wrapper._event_queue is None
+        assert wrapper._event_worker_task is None
 
     async def test_final_transcript_creates_user_turn_span(self) -> None:
         instance = RecordingInstance()

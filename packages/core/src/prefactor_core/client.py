@@ -106,7 +106,11 @@ class PrefactorCoreClient:
 
     async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         """Exit async context manager."""
-        await self.close()
+        try:
+            await self.close()
+        except PrefactorTelemetryFailureError:
+            if exc_type is None:
+                raise
 
     async def initialize(self) -> None:
         """Initialize the client and start processing.
