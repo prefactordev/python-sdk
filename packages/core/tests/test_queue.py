@@ -203,7 +203,7 @@ class TestTaskExecutor:
         assert attempts == ["item1"]
 
     async def test_positional_constructor_remains_compatible(self):
-        """Positional num_workers/max_retries arguments should keep their old meaning."""
+        """Positional num_workers/max_retries args should keep their old meaning."""
         queue = InMemoryQueue()
 
         async def handler(_item):

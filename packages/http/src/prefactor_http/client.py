@@ -253,9 +253,7 @@ class PrefactorHttpClient:
                 response_data = json.loads(response_text)
             except json.JSONDecodeError as exc:
                 snippet = self._truncate_body(response_text)
-                message = (
-                    f"Expected JSON response from {path}, received invalid JSON"
-                )
+                message = f"Expected JSON response from {path}, received invalid JSON"
                 if snippet:
                     message = f"{message}: {snippet}"
                 raise PrefactorResponseContractError(
