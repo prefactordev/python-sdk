@@ -160,10 +160,6 @@ class PrefactorCoreClient:
         if not self._initialized:
             return
 
-        should_raise_failure = (
-            self._telemetry_failure is not None and not self._telemetry_failure_observed
-        )
-
         # Stop executor
         if self._executor:
             await self._executor.stop()
@@ -174,7 +170,7 @@ class PrefactorCoreClient:
 
         self._initialized = False
 
-        if should_raise_failure:
+        if self._telemetry_failure is not None and not self._telemetry_failure_observed:
             self._telemetry_failure_observed = True
             raise self._telemetry_failure
 
