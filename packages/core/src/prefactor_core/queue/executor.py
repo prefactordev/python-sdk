@@ -40,6 +40,7 @@ class TaskExecutor:
         self,
         queue: Queue[Any],
         handler: Callable[[Any], Awaitable[None]],
+        is_retryable: Callable[[Exception], bool] | None = None,
         num_workers: int = 3,
         max_retries: int = 3,
     ) -> None:
@@ -53,6 +54,7 @@ class TaskExecutor:
         """
         self._queue = queue
         self._handler = handler
+        self._is_retryable = is_retryable or (lambda exc: True)
         self._num_workers = num_workers
         self._max_retries = max_retries
         self._workers: list[Task] = []
@@ -162,13 +164,17 @@ class TaskExecutor:
         """
         last_error: Exception | None = None
 
-        for attempt in range(self._max_retries):
+        total_attempts = self._max_retries + 1
+
+        for attempt in range(total_attempts):
             try:
                 await self._handler(item)
                 return
             except Exception as e:
                 last_error = e
-                if attempt < self._max_retries - 1:
+                if not self._is_retryable(e):
+                    raise
+                if attempt < total_attempts - 1:
                     delay = 2**attempt  # 1s, 2s, 4s
                     logger.warning(
                         f"Attempt {attempt + 1} failed, retrying in {delay}s: {e}"

@@ -183,3 +183,21 @@ class TestTaskExecutor:
 
         # Should have attempted 3 times
         assert attempts.count("item1") == 3
+
+    async def test_zero_retries_still_attempts_once(self):
+        """max_retries=0 should still execute the handler once."""
+        queue = InMemoryQueue()
+        attempts = []
+
+        async def failing_handler(item):
+            attempts.append(item)
+            raise Exception("boom")
+
+        executor = TaskExecutor(queue, failing_handler, num_workers=1, max_retries=0)
+        executor.start()
+
+        await queue.put("item1")
+        await asyncio.sleep(0.1)
+        await executor.stop()
+
+        assert attempts == ["item1"]

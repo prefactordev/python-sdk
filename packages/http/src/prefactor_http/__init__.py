@@ -37,6 +37,7 @@ from prefactor_http.exceptions import (
     PrefactorClientError,
     PrefactorHttpError,
     PrefactorNotFoundError,
+    PrefactorResponseContractError,
     PrefactorRetryExhaustedError,
     PrefactorValidationError,
 )
@@ -69,6 +70,7 @@ __all__ = [
     "PrefactorAuthError",
     "PrefactorClientError",
     "PrefactorNotFoundError",
+    "PrefactorResponseContractError",
     "PrefactorRetryExhaustedError",
     "PrefactorValidationError",
     # Type definitions

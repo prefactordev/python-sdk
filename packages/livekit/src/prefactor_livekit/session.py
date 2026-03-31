@@ -14,6 +14,7 @@ from prefactor_core import (
     AgentInstanceHandle,
     PrefactorCoreClient,
     PrefactorCoreConfig,
+    PrefactorTelemetryFailureError,
     SchemaRegistry,
     SpanContext,
 )
@@ -474,6 +475,8 @@ class PrefactorLiveKitSession:
                     if coro is None:
                         return
                     await coro
+                except PrefactorTelemetryFailureError:
+                    raise
                 except Exception:
                     logger.exception("Error processing prefactor-livekit event")
                 finally:
