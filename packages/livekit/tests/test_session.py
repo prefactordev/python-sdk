@@ -75,6 +75,16 @@ class RecordingInstance:
         self.finish_calls += 1
         self.finished = True
 
+class FailingRecordingInstance(RecordingInstance):
+    """Instance stand-in that raises on finish."""
+
+    async def finish(self) -> None:
+        raise PrefactorTelemetryFailureError(
+            "telemetry failed",
+            cause=RuntimeError("boom"),
+            operation_type="FINISH_AGENT_INSTANCE",
+        )
+
 
 class RecordingClient:
     """Minimal PrefactorCoreClient stand-in for wrapper lifecycle tests."""
@@ -200,14 +210,7 @@ class TestPrefactorLiveKitSession:
         session.start.assert_awaited_once()
 
     async def test_close_surfaces_telemetry_failure_from_instance_finish(self) -> None:
-        instance = RecordingInstance()
-        instance.finish = AsyncMock(
-            side_effect=PrefactorTelemetryFailureError(
-                "telemetry failed",
-                cause=RuntimeError("boom"),
-                operation_type="FINISH_AGENT_INSTANCE",
-            )
-        )
+        instance = FailingRecordingInstance()
         wrapper = PrefactorLiveKitSession(instance=instance)
         wrapper._owns_instance = True
 
