@@ -1,6 +1,7 @@
 """Tests for Prefactor HTTP Client and idempotency functionality."""
 
 import asyncio
+import json
 import uuid
 from unittest.mock import AsyncMock, patch
 
@@ -15,6 +16,15 @@ from prefactor_http import (
     PrefactorValidationError,
 )
 from prefactor_http._version import PACKAGE_NAME, PACKAGE_VERSION
+
+
+def _mock_json_response(status: int, payload: dict) -> AsyncMock:
+    """Create a mocked response with matching ``json()`` and ``text()`` bodies."""
+    response = AsyncMock()
+    response.status = status
+    response.json = AsyncMock(return_value=payload)
+    response.text = AsyncMock(return_value=json.dumps(payload))
+    return response
 
 
 @pytest.fixture
@@ -50,9 +60,7 @@ class TestIdempotencyKey:
         # Mock the session.request method
         with patch.object(client._session, "request") as mock_request:
             # Setup mock response
-            mock_response = AsyncMock()
-            mock_response.status = 200
-            mock_response.json = AsyncMock(return_value={"success": True})
+            mock_response = _mock_json_response(200, {"success": True})
             mock_request.return_value.__aenter__ = AsyncMock(return_value=mock_response)
             mock_request.return_value.__aexit__ = AsyncMock(return_value=None)
 
@@ -74,9 +82,7 @@ class TestIdempotencyKey:
         """Test that idempotency key header is not present when not provided."""
 
         with patch.object(client._session, "request") as mock_request:
-            mock_response = AsyncMock()
-            mock_response.status = 200
-            mock_response.json = AsyncMock(return_value={"success": True})
+            mock_response = _mock_json_response(200, {"success": True})
             mock_request.return_value.__aenter__ = AsyncMock(return_value=mock_response)
             mock_request.return_value.__aexit__ = AsyncMock(return_value=None)
 
@@ -112,9 +118,7 @@ class TestIdempotencyKey:
         # Create a mock async context manager class
         class MockResponseContext:
             def __init__(self, response_data):
-                self._response = AsyncMock()
-                self._response.status = 200
-                self._response.json = AsyncMock(return_value=response_data)
+                self._response = _mock_json_response(200, response_data)
 
             async def __aenter__(self):
                 return self._response
@@ -182,9 +186,7 @@ class TestHTTPClientRequest:
         expected_response = {"status": "success", "details": {"id": "123"}}
 
         with patch.object(client._session, "request") as mock_request:
-            mock_response = AsyncMock()
-            mock_response.status = 200
-            mock_response.json = AsyncMock(return_value=expected_response)
+            mock_response = _mock_json_response(200, expected_response)
             mock_request.return_value.__aenter__ = AsyncMock(return_value=mock_response)
             mock_request.return_value.__aexit__ = AsyncMock(return_value=None)
 
@@ -199,10 +201,8 @@ class TestHTTPClientRequest:
         """Test that 404 error raises PrefactorNotFoundError."""
 
         with patch.object(client._session, "request") as mock_request:
-            mock_response = AsyncMock()
-            mock_response.status = 404
-            mock_response.json = AsyncMock(
-                return_value={"code": "not_found", "message": "Resource not found"}
+            mock_response = _mock_json_response(
+                404, {"code": "not_found", "message": "Resource not found"}
             )
             mock_request.return_value.__aenter__ = AsyncMock(return_value=mock_response)
             mock_request.return_value.__aexit__ = AsyncMock(return_value=None)
@@ -220,10 +220,8 @@ class TestHTTPClientRequest:
         """Test that 401 error raises PrefactorAuthError."""
 
         with patch.object(client._session, "request") as mock_request:
-            mock_response = AsyncMock()
-            mock_response.status = 401
-            mock_response.json = AsyncMock(
-                return_value={"code": "unauthorized", "message": "Invalid credentials"}
+            mock_response = _mock_json_response(
+                401, {"code": "unauthorized", "message": "Invalid credentials"}
             )
             mock_request.return_value.__aenter__ = AsyncMock(return_value=mock_response)
             mock_request.return_value.__aexit__ = AsyncMock(return_value=None)
@@ -238,17 +236,16 @@ class TestHTTPClientRequest:
         """Test that 422 error raises PrefactorValidationError with details."""
 
         with patch.object(client._session, "request") as mock_request:
-            mock_response = AsyncMock()
-            mock_response.status = 422
-            mock_response.json = AsyncMock(
-                return_value={
+            mock_response = _mock_json_response(
+                422,
+                {
                     "code": "validation_error",
                     "message": "Invalid input",
                     "errors": {
                         "agent_id": ["Required field"],
                         "schema_name": ["Invalid schema"],
                     },
-                }
+                },
             )
             mock_request.return_value.__aenter__ = AsyncMock(return_value=mock_response)
             mock_request.return_value.__aexit__ = AsyncMock(return_value=None)
@@ -333,9 +330,7 @@ class TestAuthorizationHeader:
         """Test that Authorization header is set correctly."""
 
         with patch.object(client._session, "request") as mock_request:
-            mock_response = AsyncMock()
-            mock_response.status = 200
-            mock_response.json = AsyncMock(return_value={"success": True})
+            mock_response = _mock_json_response(200, {"success": True})
             mock_request.return_value.__aenter__ = AsyncMock(return_value=mock_response)
             mock_request.return_value.__aexit__ = AsyncMock(return_value=None)
 
@@ -350,9 +345,7 @@ class TestAuthorizationHeader:
         """Test that the default SDK header is set correctly."""
 
         with patch.object(client._session, "request") as mock_request:
-            mock_response = AsyncMock()
-            mock_response.status = 200
-            mock_response.json = AsyncMock(return_value={"success": True})
+            mock_response = _mock_json_response(200, {"success": True})
             mock_request.return_value.__aenter__ = AsyncMock(return_value=mock_response)
             mock_request.return_value.__aexit__ = AsyncMock(return_value=None)
 
@@ -374,9 +367,7 @@ class TestAuthorizationHeader:
 
         try:
             with patch.object(client._session, "request") as mock_request:
-                mock_response = AsyncMock()
-                mock_response.status = 200
-                mock_response.json = AsyncMock(return_value={"success": True})
+                mock_response = _mock_json_response(200, {"success": True})
                 mock_request.return_value.__aenter__ = AsyncMock(
                     return_value=mock_response
                 )

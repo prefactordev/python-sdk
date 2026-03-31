@@ -201,3 +201,16 @@ class TestTaskExecutor:
         await executor.stop()
 
         assert attempts == ["item1"]
+
+    async def test_positional_constructor_remains_compatible(self):
+        """Positional num_workers/max_retries arguments should keep their old meaning."""
+        queue = InMemoryQueue()
+
+        async def handler(_item):
+            return None
+
+        executor = TaskExecutor(queue, handler, 1, 0)
+
+        assert executor._num_workers == 1
+        assert executor._max_retries == 0
+        assert callable(executor._is_retryable)

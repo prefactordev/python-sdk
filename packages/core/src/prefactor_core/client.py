@@ -251,6 +251,9 @@ class PrefactorCoreClient:
         """
         if not self._http:
             return
+        if self._telemetry_failure is not None:
+            self._increment_dropped_operations()
+            return
 
         try:
             if operation.type == OperationType.REGISTER_AGENT_INSTANCE:

@@ -259,6 +259,8 @@ class SpanManager:
                 ``"cancelled"`` (default: ``"complete"``). The span must be
                 ``active`` for this to succeed; use ``cancel_unstarted()``
                 to cancel a span that was never started.
+            idempotency_key: Optional key to make repeated finish requests
+                duplicate-safe. When omitted, a new key is generated.
 
         Raises:
             KeyError: If the span ID is not known.

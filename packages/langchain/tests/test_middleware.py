@@ -207,7 +207,7 @@ class TestPrefactorMiddleware:
         mock_close.assert_awaited_once()
 
     def test_close_raises_telemetry_failure_from_pending_emit_tasks(self):
-        """close() should not swallow latched telemetry failures from emit tasks."""
+        """close() should finish owned resources before re-raising emit failures."""
         middleware = PrefactorMiddleware.from_config(
             api_url="http://test",
             api_token="test-token",
@@ -223,8 +223,17 @@ class TestPrefactorMiddleware:
 
         async def _run():
             middleware._pending_emit_futures = [asyncio.create_task(_fail())]
+            instance = Mock()
+            instance.finish = AsyncMock()
+            middleware._instance = instance
+            middleware._owns_instance = True
+            assert middleware._client is not None
+            client = middleware._client
+            client.close = AsyncMock()
             with pytest.raises(PrefactorTelemetryFailureError):
                 await middleware.close()
+            instance.finish.assert_awaited_once()
+            client.close.assert_awaited_once()
 
         asyncio.run(_run())
 

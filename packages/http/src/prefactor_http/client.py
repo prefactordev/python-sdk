@@ -249,32 +249,21 @@ class PrefactorHttpClient:
             headers=headers,
         ) as response:
             response_text = await response.text()
-            if not isinstance(response_text, str):
-                try:
-                    response_data = await response.json()
-                except Exception as exc:
-                    raise PrefactorResponseContractError(
-                        f"Expected JSON response from {path}",
-                        status_code=response.status,
-                        cause=exc,
-                    ) from exc
-                response_text = json.dumps(response_data)
-            else:
-                try:
-                    response_data = json.loads(response_text)
-                except json.JSONDecodeError as exc:
-                    snippet = self._truncate_body(response_text)
-                    message = (
-                        f"Expected JSON response from {path}, received invalid JSON"
-                    )
-                    if snippet:
-                        message = f"{message}: {snippet}"
-                    raise PrefactorResponseContractError(
-                        message,
-                        status_code=response.status,
-                        body_snippet=snippet or None,
-                        cause=exc,
-                    ) from exc
+            try:
+                response_data = json.loads(response_text)
+            except json.JSONDecodeError as exc:
+                snippet = self._truncate_body(response_text)
+                message = (
+                    f"Expected JSON response from {path}, received invalid JSON"
+                )
+                if snippet:
+                    message = f"{message}: {snippet}"
+                raise PrefactorResponseContractError(
+                    message,
+                    status_code=response.status,
+                    body_snippet=snippet or None,
+                    cause=exc,
+                ) from exc
 
             if not isinstance(response_data, dict):
                 raise PrefactorResponseContractError(
