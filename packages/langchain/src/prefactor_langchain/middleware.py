@@ -14,6 +14,7 @@ from prefactor_core import (
     AgentInstanceHandle,
     PrefactorCoreClient,
     PrefactorCoreConfig,
+    PrefactorTelemetryFailureError,
     SchemaRegistry,
     SpanContext,
 )
@@ -30,6 +31,12 @@ from .spans import AgentSpan, LLMSpan, ToolSpan
 
 logger = logging.getLogger("prefactor_langchain.middleware")
 LANGCHAIN_SDK_HEADER_ENTRY = f"{LANGCHAIN_PACKAGE_NAME}@{LANGCHAIN_PACKAGE_VERSION}"
+
+
+def _raise_if_telemetry_failure(error: BaseException) -> None:
+    """Re-raise latched core telemetry failures through provider hooks."""
+    if isinstance(error, PrefactorTelemetryFailureError):
+        raise error
 
 
 class PrefactorMiddleware(AgentMiddleware):
@@ -377,8 +384,13 @@ class PrefactorMiddleware(AgentMiddleware):
         """
         # Drain any fire-and-forget span tasks scheduled by sync hooks.
         if self._pending_emit_futures:
-            await asyncio.gather(*self._pending_emit_futures, return_exceptions=True)
+            results = await asyncio.gather(
+                *self._pending_emit_futures, return_exceptions=True
+            )
             self._pending_emit_futures.clear()
+            for result in results:
+                if isinstance(result, PrefactorTelemetryFailureError):
+                    raise result
 
         if self._instance is not None and self._owns_instance:
             await self._instance.finish()
@@ -707,6 +719,7 @@ class PrefactorMiddleware(AgentMiddleware):
             return None
 
         except Exception as e:
+            _raise_if_telemetry_failure(e)
             logger.error("Error in before_agent: %s", e, exc_info=True)
             return None
 
@@ -766,6 +779,7 @@ class PrefactorMiddleware(AgentMiddleware):
             logger.debug("Finished agent span %s", span_id)
 
         except Exception as e:
+            _raise_if_telemetry_failure(e)
             logger.error("Error in after_agent: %s", e, exc_info=True)
 
         return None
@@ -827,6 +841,7 @@ class PrefactorMiddleware(AgentMiddleware):
             logger.debug("Created agent span %s (async)", self._agent_span_id)
 
         except Exception as e:
+            _raise_if_telemetry_failure(e)
             logger.error("Error in abefore_agent: %s", e, exc_info=True)
 
         return None
@@ -864,6 +879,7 @@ class PrefactorMiddleware(AgentMiddleware):
             self._agent_span_id = None
 
         except Exception as e:
+            _raise_if_telemetry_failure(e)
             logger.error("Error in aafter_agent: %s", e, exc_info=True)
 
         return None

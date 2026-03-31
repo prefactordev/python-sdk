@@ -83,3 +83,17 @@ class TestSpanManagerIdempotencyKeys:
         assert key is not None
         assert len(key) <= 64
         uuid.UUID(key)
+
+    async def test_child_spans_remap_temp_parent_id_to_api_id(
+        self, manager, http_client
+    ):
+        """Children prepared before parent start should use the backend parent ID."""
+        parent_temp_id = manager.prepare(instance_id="inst-1", schema_name="agent:root")
+        child_temp_id = manager.prepare(instance_id="inst-1", schema_name="agent:child")
+
+        parent_api_id = await manager.start(parent_temp_id)
+        await manager.start(child_temp_id)
+
+        child_call_kwargs = http_client.agent_spans.create.call_args.kwargs
+        assert parent_api_id == "api-span-id"
+        assert child_call_kwargs["parent_span_id"] == parent_api_id

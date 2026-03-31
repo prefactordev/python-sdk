@@ -96,11 +96,19 @@ class AgentInstanceManager:
         Args:
             instance_id: The ID of the instance to start.
         """
+        await self.start_with_idempotency_key(instance_id, generate_idempotency_key())
+
+    async def start_with_idempotency_key(
+        self,
+        instance_id: str,
+        idempotency_key: str,
+    ) -> None:
+        """Queue a start operation using a stable idempotency key."""
         operation = Operation(
             type=OperationType.START_AGENT_INSTANCE,
             payload={
                 "instance_id": instance_id,
-                "idempotency_key": generate_idempotency_key(),
+                "idempotency_key": idempotency_key,
             },
             timestamp=datetime.now(timezone.utc),
         )
@@ -115,11 +123,19 @@ class AgentInstanceManager:
         Args:
             instance_id: The ID of the instance to finish.
         """
+        await self.finish_with_idempotency_key(instance_id, generate_idempotency_key())
+
+    async def finish_with_idempotency_key(
+        self,
+        instance_id: str,
+        idempotency_key: str,
+    ) -> None:
+        """Queue a finish operation using a stable idempotency key."""
         operation = Operation(
             type=OperationType.FINISH_AGENT_INSTANCE,
             payload={
                 "instance_id": instance_id,
-                "idempotency_key": generate_idempotency_key(),
+                "idempotency_key": idempotency_key,
             },
             timestamp=datetime.now(timezone.utc),
         )
@@ -159,8 +175,8 @@ class AgentInstanceHandle:
         """
         self._instance_id = instance_id
         self._client = client
-        self._started = False
-        self._finished = False
+        self._start_idempotency_key = generate_idempotency_key()
+        self._finish_idempotency_key = generate_idempotency_key()
 
     @property
     def id(self) -> str:
@@ -176,26 +192,24 @@ class AgentInstanceHandle:
 
         This queues a start operation for the instance.
         """
-        if self._started:
-            return
-
         manager = self._client.instance_manager
         assert manager is not None
-        await manager.start(self._instance_id)
-        self._started = True
+        await manager.start_with_idempotency_key(
+            self._instance_id,
+            self._start_idempotency_key,
+        )
 
     async def finish(self) -> None:
         """Mark the instance as finished.
 
         This queues a finish operation for the instance.
         """
-        if self._finished:
-            return
-
         manager = self._client.instance_manager
         assert manager is not None
-        await manager.finish(self._instance_id)
-        self._finished = True
+        await manager.finish_with_idempotency_key(
+            self._instance_id,
+            self._finish_idempotency_key,
+        )
 
     async def create_span(
         self,
@@ -215,6 +229,7 @@ class AgentInstanceHandle:
         Returns:
             The span ID.
         """
+        self._client._raise_if_telemetry_failed()
         return await self._client.create_span(
             instance_id=self._instance_id,
             schema_name=schema_name,

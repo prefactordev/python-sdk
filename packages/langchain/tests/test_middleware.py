@@ -8,7 +8,13 @@ from typing import cast
 from unittest.mock import AsyncMock, Mock, patch
 
 import prefactor_langchain
-from prefactor_core import AgentInstanceHandle, PrefactorCoreConfig, SchemaRegistry
+import pytest
+from prefactor_core import (
+    AgentInstanceHandle,
+    PrefactorCoreConfig,
+    PrefactorTelemetryFailureError,
+    SchemaRegistry,
+)
 from prefactor_core.client import CORE_SDK_HEADER_ENTRY, PrefactorCoreClient
 from prefactor_http.config import HttpClientConfig
 from prefactor_langchain._version import PACKAGE_VERSION
@@ -199,6 +205,28 @@ class TestPrefactorMiddleware:
 
         instance.finish.assert_awaited_once()
         mock_close.assert_awaited_once()
+
+    def test_close_raises_telemetry_failure_from_pending_emit_tasks(self):
+        """close() should not swallow latched telemetry failures from emit tasks."""
+        middleware = PrefactorMiddleware.from_config(
+            api_url="http://test",
+            api_token="test-token",
+        )
+        error = PrefactorTelemetryFailureError(
+            "telemetry failed",
+            cause=RuntimeError("boom"),
+            operation_type="FINISH_SPAN",
+        )
+
+        async def _fail():
+            raise error
+
+        async def _run():
+            middleware._pending_emit_futures = [asyncio.create_task(_fail())]
+            with pytest.raises(PrefactorTelemetryFailureError):
+                await middleware.close()
+
+        asyncio.run(_run())
 
     def test_pre_configured_instance_with_client_raises(self):
         """Providing both client and instance should raise ValueError."""

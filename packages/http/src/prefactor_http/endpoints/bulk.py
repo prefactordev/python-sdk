@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from pydantic import ValidationError
+
+from prefactor_http.exceptions import PrefactorResponseContractError
+
 if TYPE_CHECKING:
     from prefactor_http.client import PrefactorHttpClient
 
@@ -112,4 +116,10 @@ class BulkClient:
             json_data=request.model_dump(by_alias=True),
         )
 
-        return BulkResponse.model_validate(response)
+        try:
+            return BulkResponse.model_validate(response)
+        except ValidationError as exc:
+            raise PrefactorResponseContractError(
+                "Invalid response payload for bulk.execute",
+                cause=exc,
+            ) from exc

@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, Mock
 
 import prefactor_livekit
 import pytest
+from prefactor_core import PrefactorTelemetryFailureError
 from prefactor_livekit import LiveKitToolSchemaConfig, PrefactorLiveKitSession
 from prefactor_livekit._version import PACKAGE_VERSION
 
@@ -163,6 +164,21 @@ class TestPrefactorLiveKitSession:
 
         assert result == "started"
         session.start.assert_awaited_once()
+
+    async def test_close_surfaces_telemetry_failure_from_instance_finish(self) -> None:
+        instance = RecordingInstance()
+        instance.finish = AsyncMock(
+            side_effect=PrefactorTelemetryFailureError(
+                "telemetry failed",
+                cause=RuntimeError("boom"),
+                operation_type="FINISH_AGENT_INSTANCE",
+            )
+        )
+        wrapper = PrefactorLiveKitSession(instance=instance)
+        wrapper._owns_instance = True
+
+        with pytest.raises(PrefactorTelemetryFailureError):
+            await wrapper.close()
 
     async def test_final_transcript_creates_user_turn_span(self) -> None:
         instance = RecordingInstance()

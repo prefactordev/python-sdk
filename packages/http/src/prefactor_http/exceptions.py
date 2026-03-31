@@ -1,6 +1,11 @@
 """Exceptions for Prefactor HTTP Client."""
 
+from __future__ import annotations
+
+import asyncio
 from typing import Optional
+
+import aiohttp
 
 
 class PrefactorHttpError(Exception):
@@ -79,3 +84,44 @@ class PrefactorClientError(PrefactorHttpError):
     """Client-side error (not related to API)."""
 
     pass
+
+
+class PrefactorResponseContractError(PrefactorHttpError):
+    """Backend response violated the SDK's expected response contract."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int | None = None,
+        body_snippet: str | None = None,
+        cause: Exception | None = None,
+    ) -> None:
+        self.status_code = status_code
+        self.body_snippet = body_snippet
+        self.cause = cause
+        super().__init__(message)
+
+
+def is_transient_http_error(error: Exception) -> bool:
+    """Return True when the error is safe to retry later."""
+    if isinstance(error, PrefactorRetryExhaustedError) and error.last_error is not None:
+        return is_transient_http_error(error.last_error)
+    if isinstance(error, (aiohttp.ClientError, asyncio.TimeoutError)):
+        return True
+    if isinstance(error, PrefactorResponseContractError):
+        return False
+    if isinstance(error, PrefactorApiError):
+        return error.status_code == 429 or error.status_code >= 500
+    return False
+
+
+def is_permanent_http_error(error: Exception) -> bool:
+    """Return True when retrying the same operation should stop immediately."""
+    if isinstance(error, PrefactorRetryExhaustedError) and error.last_error is not None:
+        return is_permanent_http_error(error.last_error)
+    if isinstance(error, PrefactorResponseContractError):
+        return True
+    if isinstance(error, PrefactorApiError):
+        return 400 <= error.status_code < 500 and error.status_code != 429
+    return False

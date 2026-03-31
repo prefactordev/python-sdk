@@ -1,5 +1,6 @@
 """Tests for Prefactor HTTP Client and idempotency functionality."""
 
+import asyncio
 import uuid
 from unittest.mock import AsyncMock, patch
 
@@ -9,6 +10,7 @@ from prefactor_http import (
     PrefactorAuthError,
     PrefactorHttpClient,
     PrefactorNotFoundError,
+    PrefactorResponseContractError,
     PrefactorRetryExhaustedError,
     PrefactorValidationError,
 )
@@ -272,6 +274,53 @@ class TestHTTPClientRequest:
             # Should have been called initial + max_retries times
             assert mock_request.call_count == 2  # 1 + max_retries (1)
             assert "failed after" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_timeout_error_triggers_retry_then_exhausted(self, client):
+        """Timeout errors should be treated as transient and retried."""
+
+        with patch.object(client._session, "request") as mock_request:
+            mock_request.side_effect = asyncio.TimeoutError("timed out")
+
+            with pytest.raises(PrefactorRetryExhaustedError) as exc_info:
+                await client.request(method="POST", path="/api/v1/test")
+
+            assert mock_request.call_count == 2
+            assert isinstance(exc_info.value.last_error, asyncio.TimeoutError)
+
+    @pytest.mark.asyncio
+    async def test_malformed_success_body_raises_contract_error(self, client):
+        """Invalid JSON on a successful response should raise a contract error."""
+
+        with patch.object(client._session, "request") as mock_request:
+            mock_response = AsyncMock()
+            mock_response.status = 200
+            mock_response.text = AsyncMock(return_value="<html>ok</html>")
+            mock_request.return_value.__aenter__ = AsyncMock(return_value=mock_response)
+            mock_request.return_value.__aexit__ = AsyncMock(return_value=None)
+
+            with pytest.raises(PrefactorResponseContractError) as exc_info:
+                await client.request(method="POST", path="/api/v1/test")
+
+            assert exc_info.value.status_code == 200
+            assert "html" in (exc_info.value.body_snippet or "")
+
+    @pytest.mark.asyncio
+    async def test_malformed_error_body_raises_contract_error(self, client):
+        """Invalid JSON on an error response should preserve body context."""
+
+        with patch.object(client._session, "request") as mock_request:
+            mock_response = AsyncMock()
+            mock_response.status = 500
+            mock_response.text = AsyncMock(return_value="<html>server error</html>")
+            mock_request.return_value.__aenter__ = AsyncMock(return_value=mock_response)
+            mock_request.return_value.__aexit__ = AsyncMock(return_value=None)
+
+            with pytest.raises(PrefactorResponseContractError) as exc_info:
+                await client.request(method="POST", path="/api/v1/test")
+
+            assert exc_info.value.status_code == 500
+            assert "server error" in (exc_info.value.body_snippet or "")
 
 
 class TestAuthorizationHeader:

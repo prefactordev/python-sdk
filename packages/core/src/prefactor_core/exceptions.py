@@ -1,5 +1,7 @@
 """Custom exceptions for prefactor-core."""
 
+from __future__ import annotations
+
 
 class PrefactorCoreError(Exception):
     """Base exception for all prefactor-core errors."""
@@ -39,6 +41,23 @@ class SpanNotFoundError(PrefactorCoreError):
     pass
 
 
+class PrefactorTelemetryFailureError(PrefactorCoreError):
+    """Raised when telemetry enters a permanent failure state."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        cause: Exception,
+        operation_type: str | None = None,
+        dropped_operations: int = 0,
+    ) -> None:
+        super().__init__(message)
+        self.cause = cause
+        self.operation_type = operation_type
+        self.dropped_operations = dropped_operations
+
+
 __all__ = [
     "PrefactorCoreError",
     "ClientNotInitializedError",
@@ -46,4 +65,5 @@ __all__ = [
     "OperationError",
     "InstanceNotFoundError",
     "SpanNotFoundError",
+    "PrefactorTelemetryFailureError",
 ]
