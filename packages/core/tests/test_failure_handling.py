@@ -148,6 +148,33 @@ async def test_close_raises_latched_failure_when_not_previously_observed():
 
 
 @pytest.mark.asyncio
+async def test_close_raises_permanent_failure_first_latched_during_shutdown():
+    """close() should surface permanent failures discovered while draining shutdown."""
+    stub_http = _StubHttpClient(
+        agent_instances=_StubAgentInstances(
+            finish_side_effect=PrefactorAuthError("bad token", "unauthorized", 401)
+        )
+    )
+
+    with patch("prefactor_core.client.PrefactorHttpClient", return_value=stub_http):
+        client = PrefactorCoreClient(_make_client_config())
+        await client.initialize()
+        instance = await client.create_agent_instance(
+            agent_id="agent-1",
+            agent_version={"name": "v1"},
+            agent_schema_version={"span_schemas": {}},
+        )
+
+        await instance.finish()
+
+        with pytest.raises(PrefactorTelemetryFailureError) as exc_info:
+            await client.close()
+
+        assert exc_info.value.operation_type == "FINISH_AGENT_INSTANCE"
+        assert isinstance(exc_info.value.cause, PrefactorAuthError)
+
+
+@pytest.mark.asyncio
 async def test_transient_retry_exhaustion_does_not_latch_permanent_failure():
     """Transient failures should not poison the client permanently."""
     retry_error = PrefactorRetryExhaustedError(
