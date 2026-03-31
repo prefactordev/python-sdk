@@ -181,9 +181,7 @@ class PrefactorLiveKitSession:
         wrapper._telemetry_failure = None
         return wrapper
 
-    def _record_telemetry_failure(
-        self, error: PrefactorTelemetryFailureError
-    ) -> None:
+    def _record_telemetry_failure(self, error: PrefactorTelemetryFailureError) -> None:
         """Latch the first telemetry failure observed by the wrapper."""
         if self._telemetry_failure is None:
             self._telemetry_failure = error
