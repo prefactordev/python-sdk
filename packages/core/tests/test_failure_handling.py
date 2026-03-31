@@ -92,6 +92,17 @@ def _make_client_config(max_retries: int = 0) -> PrefactorCoreConfig:
     )
 
 
+async def _wait_until(
+    predicate, *, timeout: float = 1.0, interval: float = 0.01
+) -> None:
+    deadline = asyncio.get_running_loop().time() + timeout
+    while asyncio.get_running_loop().time() < deadline:
+        if predicate():
+            return
+        await asyncio.sleep(interval)
+    raise AssertionError("Timed out waiting for expected condition")
+
+
 @pytest.mark.asyncio
 async def test_permanent_worker_failure_latches_and_rejects_future_operations():
     """Permanent failures should latch and reject later queued operations."""
@@ -111,7 +122,7 @@ async def test_permanent_worker_failure_latches_and_rejects_future_operations():
         )
 
         await instance.start()
-        await asyncio.sleep(0.05)
+        await _wait_until(lambda: client._telemetry_failure is not None)
 
         with pytest.raises(PrefactorTelemetryFailureError) as exc_info:
             await instance.finish()
@@ -142,7 +153,7 @@ async def test_close_raises_latched_failure_when_not_previously_observed():
         )
 
         await instance.start()
-        await asyncio.sleep(0.05)
+        await _wait_until(lambda: client._telemetry_failure is not None)
 
         with pytest.raises(PrefactorTelemetryFailureError):
             await client.close()
@@ -196,10 +207,10 @@ async def test_transient_retry_exhaustion_does_not_latch_permanent_failure():
         )
 
         await instance.start()
-        await asyncio.sleep(0.05)
+        await _wait_until(lambda: stub_http.agent_instances.start_calls == 1)
 
         await instance.finish()
-        await asyncio.sleep(0.05)
+        await _wait_until(lambda: stub_http.agent_instances.finish_calls == 1)
         await client.close()
 
 
@@ -228,10 +239,10 @@ async def test_malformed_503_retry_exhaustion_does_not_latch_permanent_failure()
         )
 
         await instance.start()
-        await asyncio.sleep(0.05)
+        await _wait_until(lambda: stub_http.agent_instances.start_calls == 1)
 
         await instance.finish()
-        await asyncio.sleep(0.05)
+        await _wait_until(lambda: stub_http.agent_instances.finish_calls == 1)
         await client.close()
 
 
@@ -254,7 +265,7 @@ async def test_async_context_preserves_user_exception_when_telemetry_failed():
                 )
 
                 await instance.start()
-                await asyncio.sleep(0.05)
+                await _wait_until(lambda: client._telemetry_failure is not None)
                 raise ValueError("user boom")
 
 
@@ -277,4 +288,35 @@ async def test_async_context_raises_latched_failure_when_body_succeeds():
                 )
 
                 await instance.start()
-                await asyncio.sleep(0.05)
+                await _wait_until(lambda: client._telemetry_failure is not None)
+
+
+@pytest.mark.asyncio
+async def test_latched_failure_drops_already_queued_backlog():
+    """Queued work should be dropped once a permanent telemetry failure is latched."""
+    stub_http = _StubHttpClient(
+        agent_instances=_StubAgentInstances(
+            start_side_effect=PrefactorAuthError("bad token", "unauthorized", 401)
+        )
+    )
+
+    with patch("prefactor_core.client.PrefactorHttpClient", return_value=stub_http):
+        client = PrefactorCoreClient(_make_client_config())
+        await client.initialize()
+        instance = await client.create_agent_instance(
+            agent_id="agent-1",
+            agent_version={"name": "v1"},
+            agent_schema_version={"span_schemas": {}},
+        )
+
+        await instance.start()
+        await instance.finish()
+        await _wait_until(lambda: client._telemetry_failure is not None)
+
+        assert stub_http.agent_instances.start_calls == 1
+        assert stub_http.agent_instances.finish_calls == 0
+
+        with pytest.raises(PrefactorTelemetryFailureError) as exc_info:
+            await client.close()
+
+        assert exc_info.value.dropped_operations == 1

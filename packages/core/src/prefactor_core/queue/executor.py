@@ -40,9 +40,10 @@ class TaskExecutor:
         self,
         queue: Queue[Any],
         handler: Callable[[Any], Awaitable[None]],
-        is_retryable: Callable[[Exception], bool] | None = None,
         num_workers: int = 3,
         max_retries: int = 3,
+        *,
+        is_retryable: Callable[[Exception], bool] | None = None,
     ) -> None:
         """Initialize the task executor.
 
@@ -51,6 +52,8 @@ class TaskExecutor:
             handler: Async function to process each item.
             num_workers: Number of concurrent worker tasks.
             max_retries: Maximum retry attempts per item.
+            is_retryable: Optional predicate that decides whether a
+                handler failure should be retried.
         """
         self._queue = queue
         self._handler = handler

@@ -382,6 +382,8 @@ class PrefactorMiddleware(AgentMiddleware):
         Awaits all in-flight span-emit tasks first, then closes the agent
         instance (if we created it) and finally the client.
         """
+        captured_error: Exception | None = None
+
         # Drain any fire-and-forget span tasks scheduled by sync hooks.
         if self._pending_emit_futures:
             results = await asyncio.gather(
@@ -389,18 +391,38 @@ class PrefactorMiddleware(AgentMiddleware):
             )
             self._pending_emit_futures.clear()
             for result in results:
-                if isinstance(result, PrefactorTelemetryFailureError):
-                    raise result
+                if not isinstance(result, Exception):
+                    continue
+                if captured_error is None:
+                    captured_error = result
+                    continue
+                if isinstance(result, PrefactorTelemetryFailureError) and not isinstance(
+                    captured_error, PrefactorTelemetryFailureError
+                ):
+                    captured_error = result
 
         if self._instance is not None and self._owns_instance:
-            await self._instance.finish()
-            self._instance = None
-            self._owns_instance = False
+            try:
+                await self._instance.finish()
+            except Exception as exc:
+                if captured_error is None:
+                    captured_error = exc
+            finally:
+                self._instance = None
+                self._owns_instance = False
 
         if self._client is not None and self._owns_client:
-            await self._client.close()
-            self._client = None
-            self._owns_client = False
+            try:
+                await self._client.close()
+            except Exception as exc:
+                if captured_error is None:
+                    captured_error = exc
+            finally:
+                self._client = None
+                self._owns_client = False
+
+        if captured_error is not None:
+            raise captured_error
 
     def _get_name_from_request(self, request: Any) -> str:
         """Extract model name from request for use as the span name.
