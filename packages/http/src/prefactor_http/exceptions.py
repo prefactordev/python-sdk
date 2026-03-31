@@ -103,6 +103,13 @@ class PrefactorResponseContractError(PrefactorHttpError):
         super().__init__(message)
 
 
+def _is_retryable_contract_status(status_code: int | None) -> bool:
+    """Return True when a malformed response should still be retried."""
+    if status_code is None:
+        return False
+    return status_code == 429 or status_code >= 500
+
+
 def is_transient_http_error(error: Exception) -> bool:
     """Return True when the error is safe to retry later."""
     if isinstance(error, PrefactorRetryExhaustedError) and error.last_error is not None:
@@ -110,7 +117,7 @@ def is_transient_http_error(error: Exception) -> bool:
     if isinstance(error, (aiohttp.ClientError, asyncio.TimeoutError)):
         return True
     if isinstance(error, PrefactorResponseContractError):
-        return False
+        return _is_retryable_contract_status(error.status_code)
     if isinstance(error, PrefactorApiError):
         return error.status_code == 429 or error.status_code >= 500
     return False
@@ -121,7 +128,7 @@ def is_permanent_http_error(error: Exception) -> bool:
     if isinstance(error, PrefactorRetryExhaustedError) and error.last_error is not None:
         return is_permanent_http_error(error.last_error)
     if isinstance(error, PrefactorResponseContractError):
-        return True
+        return not _is_retryable_contract_status(error.status_code)
     if isinstance(error, PrefactorApiError):
         return 400 <= error.status_code < 500 and error.status_code != 429
     return False
