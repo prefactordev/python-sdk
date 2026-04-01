@@ -5,6 +5,9 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
 
+from pydantic import ValidationError
+
+from prefactor_http.exceptions import PrefactorResponseContractError
 from prefactor_http.models.agent_span import (
     AgentSpan,
     CreateAgentSpanRequest,
@@ -47,6 +50,17 @@ class AgentSpanClient:
             http_client: The main HTTP client instance.
         """
         self._client = http_client
+
+    def _parse_response(self, response: dict, operation: str) -> AgentSpan:
+        """Parse a typed API response and wrap schema mismatches."""
+        try:
+            api_response = ApiResponse[AgentSpan](**response)
+        except ValidationError as exc:
+            raise PrefactorResponseContractError(
+                f"Invalid response payload for {operation}",
+                cause=exc,
+            ) from exc
+        return api_response.details
 
     async def create(
         self,
@@ -109,8 +123,7 @@ class AgentSpanClient:
             json_data=body,
         )
 
-        api_response = ApiResponse[AgentSpan](**response)
-        return api_response.details
+        return self._parse_response(response, "agent_spans.create")
 
     async def finish(
         self,
@@ -154,5 +167,4 @@ class AgentSpanClient:
             json_data=finish_request.model_dump(exclude_none=True),
         )
 
-        api_response = ApiResponse[AgentSpan](**response)
-        return api_response.details
+        return self._parse_response(response, "agent_spans.finish")

@@ -13,6 +13,7 @@ from prefactor_core import (
     AgentInstanceHandle,
     PrefactorCoreClient,
     PrefactorCoreConfig,
+    PrefactorTelemetryFailureError,
     SchemaRegistry,
     SpanContext,
 )
@@ -89,6 +90,7 @@ class PrefactorLiveKitSession:
         }
         self._usage_summary: dict[str, Any] = {}
         self._closed = False
+        self._telemetry_failure: PrefactorTelemetryFailureError | None = None
 
     @classmethod
     def from_config(
@@ -142,7 +144,18 @@ class PrefactorLiveKitSession:
         }
         wrapper._usage_summary = {}
         wrapper._closed = False
+        wrapper._telemetry_failure = None
         return wrapper
+
+    def _record_telemetry_failure(self, error: PrefactorTelemetryFailureError) -> None:
+        """Latch the first telemetry failure observed by the wrapper."""
+        if self._telemetry_failure is None:
+            self._telemetry_failure = error
+
+    def _raise_if_telemetry_failed(self) -> None:
+        """Raise the latched telemetry failure once cleanup is complete."""
+        if self._telemetry_failure is not None:
+            raise self._telemetry_failure
 
     def _register_tool_schemas(
         self,
@@ -233,20 +246,38 @@ class PrefactorLiveKitSession:
 
     async def close(self) -> None:
         """Flush pending tasks and release wrapper-owned resources."""
-
-        await self._drain_pending_tasks()
-        await self._detach_session(final_status="completed")
-        await self._shutdown_event_worker()
+        try:
+            await self._drain_pending_tasks()
+        except PrefactorTelemetryFailureError as exc:
+            self._record_telemetry_failure(exc)
+        try:
+            await self._detach_session(final_status="completed")
+        except PrefactorTelemetryFailureError as exc:
+            self._record_telemetry_failure(exc)
+        try:
+            await self._shutdown_event_worker()
+        except PrefactorTelemetryFailureError as exc:
+            self._record_telemetry_failure(exc)
 
         if self._instance is not None and self._owns_instance:
-            await self._instance.finish()
-            self._instance = None
-            self._owns_instance = False
+            try:
+                await self._instance.finish()
+            except PrefactorTelemetryFailureError as exc:
+                self._record_telemetry_failure(exc)
+            finally:
+                self._instance = None
+                self._owns_instance = False
 
         if self._client is not None and self._owns_client:
-            await self._client.close()
-            self._client = None
-            self._owns_client = False
+            try:
+                await self._client.close()
+            except PrefactorTelemetryFailureError as exc:
+                self._record_telemetry_failure(exc)
+            finally:
+                self._client = None
+                self._owns_client = False
+
+        self._raise_if_telemetry_failed()
 
     def _bind_session_events(self, session: Any) -> None:
         self._bound_handlers = {
@@ -341,11 +372,14 @@ class PrefactorLiveKitSession:
 
     def _schedule(self, coro: Any) -> None:
         loop = self._loop
-        if loop is None or loop.is_closed():
+        if loop is None or loop.is_closed() or self._telemetry_failure is not None:
             coro.close()
             return
 
         def _spawn() -> None:
+            if self._telemetry_failure is not None:
+                coro.close()
+                return
             self._ensure_event_worker()
             assert self._event_queue is not None
             self._event_queue.put_nowait(coro)
@@ -376,6 +410,8 @@ class PrefactorLiveKitSession:
                 if coro is None:
                     return
                 await coro
+            except PrefactorTelemetryFailureError as exc:
+                self._record_telemetry_failure(exc)
             except Exception:
                 logger.exception("Error processing prefactor-livekit event")
             finally:

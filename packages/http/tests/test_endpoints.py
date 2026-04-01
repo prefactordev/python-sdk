@@ -2,7 +2,11 @@
 
 import pytest
 from aioresponses import aioresponses
-from prefactor_http import HttpClientConfig, PrefactorHttpClient
+from prefactor_http import (
+    HttpClientConfig,
+    PrefactorHttpClient,
+    PrefactorResponseContractError,
+)
 from yarl import URL
 
 NOW = "2024-01-01T00:00:00Z"
@@ -141,6 +145,23 @@ class TestAgentInstanceEndpoints:
                 m, "POST", "https://api.test.com/api/v1/agent_instance/inst-1/finish"
             )
             assert "status" not in body
+
+    @pytest.mark.asyncio
+    async def test_register_invalid_response_shape_raises_contract_error(self, config):
+        """register() should wrap response model validation failures."""
+        with aioresponses() as m:
+            m.post(
+                "https://api.test.com/api/v1/agent_instance/register",
+                payload={"status": "success", "details": {"id": "inst-1"}},
+            )
+
+            async with PrefactorHttpClient(config) as client:
+                with pytest.raises(PrefactorResponseContractError):
+                    await client.agent_instances.register(
+                        agent_id="agent-1",
+                        agent_version={"name": "v1"},
+                        agent_schema_version={"span_schemas": {}},
+                    )
 
 
 class TestAgentSpanEndpoints:

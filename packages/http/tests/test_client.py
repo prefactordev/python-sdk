@@ -1,5 +1,7 @@
 """Tests for Prefactor HTTP Client and idempotency functionality."""
 
+import asyncio
+import json
 import uuid
 from unittest.mock import AsyncMock, patch
 
@@ -9,10 +11,20 @@ from prefactor_http import (
     PrefactorAuthError,
     PrefactorHttpClient,
     PrefactorNotFoundError,
+    PrefactorResponseContractError,
     PrefactorRetryExhaustedError,
     PrefactorValidationError,
 )
 from prefactor_http._version import PACKAGE_NAME, PACKAGE_VERSION
+
+
+def _mock_json_response(status: int, payload: dict) -> AsyncMock:
+    """Create a mocked response with matching ``json()`` and ``text()`` bodies."""
+    response = AsyncMock()
+    response.status = status
+    response.json = AsyncMock(return_value=payload)
+    response.text = AsyncMock(return_value=json.dumps(payload))
+    return response
 
 
 @pytest.fixture
@@ -48,9 +60,7 @@ class TestIdempotencyKey:
         # Mock the session.request method
         with patch.object(client._session, "request") as mock_request:
             # Setup mock response
-            mock_response = AsyncMock()
-            mock_response.status = 200
-            mock_response.json = AsyncMock(return_value={"success": True})
+            mock_response = _mock_json_response(200, {"success": True})
             mock_request.return_value.__aenter__ = AsyncMock(return_value=mock_response)
             mock_request.return_value.__aexit__ = AsyncMock(return_value=None)
 
@@ -72,9 +82,7 @@ class TestIdempotencyKey:
         """Test that idempotency key header is not present when not provided."""
 
         with patch.object(client._session, "request") as mock_request:
-            mock_response = AsyncMock()
-            mock_response.status = 200
-            mock_response.json = AsyncMock(return_value={"success": True})
+            mock_response = _mock_json_response(200, {"success": True})
             mock_request.return_value.__aenter__ = AsyncMock(return_value=mock_response)
             mock_request.return_value.__aexit__ = AsyncMock(return_value=None)
 
@@ -110,9 +118,7 @@ class TestIdempotencyKey:
         # Create a mock async context manager class
         class MockResponseContext:
             def __init__(self, response_data):
-                self._response = AsyncMock()
-                self._response.status = 200
-                self._response.json = AsyncMock(return_value=response_data)
+                self._response = _mock_json_response(200, response_data)
 
             async def __aenter__(self):
                 return self._response
@@ -180,9 +186,7 @@ class TestHTTPClientRequest:
         expected_response = {"status": "success", "details": {"id": "123"}}
 
         with patch.object(client._session, "request") as mock_request:
-            mock_response = AsyncMock()
-            mock_response.status = 200
-            mock_response.json = AsyncMock(return_value=expected_response)
+            mock_response = _mock_json_response(200, expected_response)
             mock_request.return_value.__aenter__ = AsyncMock(return_value=mock_response)
             mock_request.return_value.__aexit__ = AsyncMock(return_value=None)
 
@@ -197,10 +201,8 @@ class TestHTTPClientRequest:
         """Test that 404 error raises PrefactorNotFoundError."""
 
         with patch.object(client._session, "request") as mock_request:
-            mock_response = AsyncMock()
-            mock_response.status = 404
-            mock_response.json = AsyncMock(
-                return_value={"code": "not_found", "message": "Resource not found"}
+            mock_response = _mock_json_response(
+                404, {"code": "not_found", "message": "Resource not found"}
             )
             mock_request.return_value.__aenter__ = AsyncMock(return_value=mock_response)
             mock_request.return_value.__aexit__ = AsyncMock(return_value=None)
@@ -218,10 +220,8 @@ class TestHTTPClientRequest:
         """Test that 401 error raises PrefactorAuthError."""
 
         with patch.object(client._session, "request") as mock_request:
-            mock_response = AsyncMock()
-            mock_response.status = 401
-            mock_response.json = AsyncMock(
-                return_value={"code": "unauthorized", "message": "Invalid credentials"}
+            mock_response = _mock_json_response(
+                401, {"code": "unauthorized", "message": "Invalid credentials"}
             )
             mock_request.return_value.__aenter__ = AsyncMock(return_value=mock_response)
             mock_request.return_value.__aexit__ = AsyncMock(return_value=None)
@@ -236,17 +236,16 @@ class TestHTTPClientRequest:
         """Test that 422 error raises PrefactorValidationError with details."""
 
         with patch.object(client._session, "request") as mock_request:
-            mock_response = AsyncMock()
-            mock_response.status = 422
-            mock_response.json = AsyncMock(
-                return_value={
+            mock_response = _mock_json_response(
+                422,
+                {
                     "code": "validation_error",
                     "message": "Invalid input",
                     "errors": {
                         "agent_id": ["Required field"],
                         "schema_name": ["Invalid schema"],
                     },
-                }
+                },
             )
             mock_request.return_value.__aenter__ = AsyncMock(return_value=mock_response)
             mock_request.return_value.__aexit__ = AsyncMock(return_value=None)
@@ -273,6 +272,55 @@ class TestHTTPClientRequest:
             assert mock_request.call_count == 2  # 1 + max_retries (1)
             assert "failed after" in str(exc_info.value)
 
+    @pytest.mark.asyncio
+    async def test_timeout_error_triggers_retry_then_exhausted(self, client):
+        """Timeout errors should be treated as transient and retried."""
+
+        with patch.object(client._session, "request") as mock_request:
+            mock_request.side_effect = asyncio.TimeoutError("timed out")
+
+            with pytest.raises(PrefactorRetryExhaustedError) as exc_info:
+                await client.request(method="POST", path="/api/v1/test")
+
+            assert mock_request.call_count == 2
+            assert isinstance(exc_info.value.last_error, asyncio.TimeoutError)
+
+    @pytest.mark.asyncio
+    async def test_malformed_success_body_raises_contract_error(self, client):
+        """Invalid JSON on a successful response should raise a contract error."""
+
+        with patch.object(client._session, "request") as mock_request:
+            mock_response = AsyncMock()
+            mock_response.status = 200
+            mock_response.text = AsyncMock(return_value="<html>ok</html>")
+            mock_request.return_value.__aenter__ = AsyncMock(return_value=mock_response)
+            mock_request.return_value.__aexit__ = AsyncMock(return_value=None)
+
+            with pytest.raises(PrefactorResponseContractError) as exc_info:
+                await client.request(method="POST", path="/api/v1/test")
+
+            assert exc_info.value.status_code == 200
+            assert "html" in (exc_info.value.body_snippet or "")
+
+    @pytest.mark.asyncio
+    async def test_malformed_503_body_retries_then_exhausts(self, client):
+        """Malformed 5xx responses should still use the retry policy."""
+
+        with patch.object(client._session, "request") as mock_request:
+            mock_response = AsyncMock()
+            mock_response.status = 503
+            mock_response.text = AsyncMock(return_value="<html>server error</html>")
+            mock_request.return_value.__aenter__ = AsyncMock(return_value=mock_response)
+            mock_request.return_value.__aexit__ = AsyncMock(return_value=None)
+
+            with pytest.raises(PrefactorRetryExhaustedError) as exc_info:
+                await client.request(method="POST", path="/api/v1/test")
+
+            assert mock_request.call_count == 2
+            assert isinstance(exc_info.value.last_error, PrefactorResponseContractError)
+            assert exc_info.value.last_error.status_code == 503
+            assert "server error" in (exc_info.value.last_error.body_snippet or "")
+
 
 class TestAuthorizationHeader:
     """Tests for authorization header."""
@@ -282,9 +330,7 @@ class TestAuthorizationHeader:
         """Test that Authorization header is set correctly."""
 
         with patch.object(client._session, "request") as mock_request:
-            mock_response = AsyncMock()
-            mock_response.status = 200
-            mock_response.json = AsyncMock(return_value={"success": True})
+            mock_response = _mock_json_response(200, {"success": True})
             mock_request.return_value.__aenter__ = AsyncMock(return_value=mock_response)
             mock_request.return_value.__aexit__ = AsyncMock(return_value=None)
 
@@ -299,9 +345,7 @@ class TestAuthorizationHeader:
         """Test that the default SDK header is set correctly."""
 
         with patch.object(client._session, "request") as mock_request:
-            mock_response = AsyncMock()
-            mock_response.status = 200
-            mock_response.json = AsyncMock(return_value={"success": True})
+            mock_response = _mock_json_response(200, {"success": True})
             mock_request.return_value.__aenter__ = AsyncMock(return_value=mock_response)
             mock_request.return_value.__aexit__ = AsyncMock(return_value=None)
 
@@ -323,9 +367,7 @@ class TestAuthorizationHeader:
 
         try:
             with patch.object(client._session, "request") as mock_request:
-                mock_response = AsyncMock()
-                mock_response.status = 200
-                mock_response.json = AsyncMock(return_value={"success": True})
+                mock_response = _mock_json_response(200, {"success": True})
                 mock_request.return_value.__aenter__ = AsyncMock(
                     return_value=mock_response
                 )
