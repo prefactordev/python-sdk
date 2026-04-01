@@ -70,6 +70,50 @@ class RecordingInstance:
         return RecordingSpanContext(call)
 
 
+class FailingSpanContext(RecordingSpanContext):
+    """Async context manager that raises while emitting a span."""
+
+    def __init__(self, call: dict[str, object], error: Exception) -> None:
+        super().__init__(call)
+        self._error = error
+
+    async def complete(self, result_payload: dict[str, object]) -> None:
+        await super().complete(result_payload)
+        raise self._error
+
+
+class FailingRecordingInstance(RecordingInstance):
+    """Recording instance that fails when completing a span."""
+
+    def __init__(
+        self,
+        error: Exception,
+        client: PrefactorCoreClient | None = None,
+    ) -> None:
+        super().__init__(client)
+        self._error = error
+        self.finish = AsyncMock()
+
+    def span(self, schema_name: str, parent_span_id=None, payload=None):
+        call = {
+            "schema_name": schema_name,
+            "parent_span_id": parent_span_id,
+            "payload": payload,
+        }
+        self.calls.append(call)
+        return FailingSpanContext(call, self._error)
+
+
+async def _wait_for_condition(timeout: float, predicate) -> None:
+    """Poll until a test condition becomes true or fail on timeout."""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while not predicate():
+        if loop.time() >= deadline:
+            pytest.fail("Timed out waiting for condition")
+        await asyncio.sleep(0)
+
+
 class TestPrefactorMiddleware:
     """Test PrefactorMiddleware."""
 
@@ -234,6 +278,124 @@ class TestPrefactorMiddleware:
                     await middleware.close()
             instance.finish.assert_awaited_once()
             mock_close.assert_awaited_once()
+
+        asyncio.run(_run())
+
+    def test_close_raises_completed_emit_failure_after_cleanup(self):
+        """close() should surface completed background emit failures once."""
+        middleware = PrefactorMiddleware.from_config(
+            api_url="http://test",
+            api_token="test-token",
+        )
+        emit_error = RuntimeError("emit failed before close")
+
+        async def _run():
+            middleware._loop = asyncio.get_running_loop()
+            assert middleware._client is not None
+            instance = FailingRecordingInstance(emit_error, middleware._client)
+            instance.finish = AsyncMock()
+            middleware._instance = cast(AgentInstanceHandle, instance)
+            middleware._owns_instance = True
+
+            middleware._emit_child_span(
+                SimpleNamespace(
+                    type="langchain:llm",
+                    status="completed",
+                    model_name="gpt-4",
+                    provider=None,
+                    inputs={"messages": [{"role": "user", "content": "hello"}]},
+                    temperature=None,
+                    outputs={"content": "world"},
+                    token_usage=None,
+                    error=None,
+                )
+            )
+
+            await _wait_for_condition(
+                1.0,
+                lambda: (
+                    not middleware._pending_emit_futures
+                    and middleware._pending_emit_error is emit_error
+                ),
+            )
+
+            client = middleware._client
+            assert client is not None
+            with patch.object(client, "close", AsyncMock()) as mock_close:
+                with pytest.raises(RuntimeError, match="emit failed before close"):
+                    await middleware.close()
+
+            instance.finish.assert_awaited_once()
+            mock_close.assert_awaited_once()
+            assert middleware._pending_emit_error is None
+
+        asyncio.run(_run())
+
+    def test_close_prefers_instance_finish_telemetry_failure(self):
+        """Telemetry failures from instance.finish() should override prior errors."""
+        middleware = PrefactorMiddleware.from_config(
+            api_url="http://test",
+            api_token="test-token",
+        )
+        middleware._pending_emit_error = RuntimeError("background emit failed")
+        telemetry_error = PrefactorTelemetryFailureError(
+            "telemetry failed",
+            cause=RuntimeError("boom"),
+            operation_type="FINISH_SPAN",
+        )
+
+        async def _run():
+            instance = Mock()
+            instance.finish = AsyncMock(side_effect=telemetry_error)
+            middleware._instance = instance
+            middleware._owns_instance = True
+
+            assert middleware._client is not None
+            client = middleware._client
+            with patch.object(client, "close", AsyncMock()) as mock_close:
+                with pytest.raises(PrefactorTelemetryFailureError) as exc_info:
+                    await middleware.close()
+
+            assert exc_info.value is telemetry_error
+            instance.finish.assert_awaited_once()
+            mock_close.assert_awaited_once()
+            assert middleware._pending_emit_error is None
+
+        asyncio.run(_run())
+
+    def test_close_prefers_client_close_telemetry_failure(self):
+        """Telemetry failures from client.close() should override prior errors."""
+        middleware = PrefactorMiddleware.from_config(
+            api_url="http://test",
+            api_token="test-token",
+        )
+        middleware._pending_emit_error = RuntimeError("background emit failed")
+        telemetry_error = PrefactorTelemetryFailureError(
+            "telemetry failed",
+            cause=RuntimeError("boom"),
+            operation_type="FINISH_SPAN",
+        )
+
+        async def _run():
+            instance = Mock()
+            instance.finish = AsyncMock()
+            middleware._instance = instance
+            middleware._owns_instance = True
+
+            assert middleware._client is not None
+            client = middleware._client
+            with patch.object(
+                client,
+                "close",
+                AsyncMock(side_effect=telemetry_error),
+            ) as mock_close:
+                with pytest.raises(PrefactorTelemetryFailureError) as exc_info:
+                    await middleware.close()
+
+            assert exc_info.value is telemetry_error
+            instance.finish.assert_awaited_once()
+            mock_close.assert_awaited_once()
+            assert middleware._pending_emit_error is None
 
         asyncio.run(_run())
 

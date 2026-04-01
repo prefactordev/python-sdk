@@ -176,6 +176,7 @@ class PrefactorMiddleware(AgentMiddleware):
             self._current_parent_span_id: str | None = None
             self._loop: asyncio.AbstractEventLoop | None = None
             self._pending_emit_futures: list[asyncio.Task[None]] = []
+            self._pending_emit_error: Exception | None = None
             self._tool_span_types = (
                 self._register_tool_schemas(None, tool_schemas) if tool_schemas else {}
             )
@@ -211,10 +212,30 @@ class PrefactorMiddleware(AgentMiddleware):
         self._current_parent_span_id: str | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._pending_emit_futures: list[asyncio.Task[None]] = []
+        self._pending_emit_error: Exception | None = None
         self._tool_span_types = {}
 
         if tool_schemas:
             self._tool_span_types = self._register_tool_schemas(client, tool_schemas)
+
+    def _prefer_shutdown_error(
+        self,
+        current: Exception | None,
+        new_error: Exception,
+    ) -> Exception:
+        """Choose which shutdown error to preserve.
+
+        Prefers ``PrefactorTelemetryFailureError`` over non-telemetry errors and
+        otherwise keeps the first observed exception.
+        """
+        if current is None:
+            return new_error
+        if isinstance(new_error, PrefactorTelemetryFailureError) and not isinstance(
+            current,
+            PrefactorTelemetryFailureError,
+        ):
+            return new_error
+        return current
 
     @classmethod
     def from_config(
@@ -291,6 +312,7 @@ class PrefactorMiddleware(AgentMiddleware):
         middleware._current_parent_span_id = None
         middleware._loop = None
         middleware._pending_emit_futures = []
+        middleware._pending_emit_error = None
         middleware._tool_span_types = tool_span_types
         logger.debug("PrefactorMiddleware created via from_config()")
         return middleware
@@ -383,6 +405,13 @@ class PrefactorMiddleware(AgentMiddleware):
         instance (if we created it) and finally the client.
         """
         captured_error: Exception | None = None
+        pending_emit_error = self._pending_emit_error
+        self._pending_emit_error = None
+        if pending_emit_error is not None:
+            captured_error = self._prefer_shutdown_error(
+                captured_error,
+                pending_emit_error,
+            )
 
         # Drain any fire-and-forget span tasks scheduled by sync hooks.
         if self._pending_emit_futures:
@@ -393,23 +422,24 @@ class PrefactorMiddleware(AgentMiddleware):
             for result in results:
                 if not isinstance(result, Exception):
                     continue
-                if captured_error is None:
-                    captured_error = result
-                    continue
-                if isinstance(
-                    result, PrefactorTelemetryFailureError
-                ) and not isinstance(
+                captured_error = self._prefer_shutdown_error(
                     captured_error,
-                    PrefactorTelemetryFailureError,
-                ):
-                    captured_error = result
+                    result,
+                )
+
+        pending_emit_error = self._pending_emit_error
+        self._pending_emit_error = None
+        if pending_emit_error is not None:
+            captured_error = self._prefer_shutdown_error(
+                captured_error,
+                pending_emit_error,
+            )
 
         if self._instance is not None and self._owns_instance:
             try:
                 await self._instance.finish()
             except Exception as exc:
-                if captured_error is None:
-                    captured_error = exc
+                captured_error = self._prefer_shutdown_error(captured_error, exc)
             finally:
                 self._instance = None
                 self._owns_instance = False
@@ -418,8 +448,7 @@ class PrefactorMiddleware(AgentMiddleware):
             try:
                 await self._client.close()
             except Exception as exc:
-                if captured_error is None:
-                    captured_error = exc
+                captured_error = self._prefer_shutdown_error(captured_error, exc)
             finally:
                 self._client = None
                 self._owns_client = False
@@ -701,10 +730,26 @@ class PrefactorMiddleware(AgentMiddleware):
                 else:
                     await ctx.complete(result)
 
+        def _on_emit_done(task: asyncio.Task[None]) -> None:
+            try:
+                pending.remove(task)
+            except ValueError:
+                pass
+
+            if task.cancelled():
+                return
+
+            error = task.exception()
+            if error is not None:
+                self._pending_emit_error = self._prefer_shutdown_error(
+                    self._pending_emit_error,
+                    cast(Exception, error),
+                )
+
         def _schedule() -> None:
             task = loop.create_task(_emit())
             pending.append(task)
-            task.add_done_callback(pending.remove)
+            task.add_done_callback(_on_emit_done)
 
         loop.call_soon_threadsafe(_schedule)
 
