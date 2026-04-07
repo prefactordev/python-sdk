@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
@@ -58,6 +59,7 @@ class RecordingInstance:
     def __init__(self) -> None:
         self.calls: list[dict[str, object]] = []
         self.finished = False
+        self.finish_calls = 0
 
     def span(self, schema_name: str, parent_span_id=None, payload=None):
         call = {
@@ -69,7 +71,17 @@ class RecordingInstance:
         return RecordingSpanContext(call, span_id=f"span-{len(self.calls)}")
 
     async def finish(self) -> None:
+        self.finish_calls += 1
         self.finished = True
+
+
+class RecordingClient:
+    """Minimal PrefactorCoreClient stand-in for wrapper lifecycle tests."""
+
+    def __init__(self) -> None:
+        self._initialized = True
+        self._config = SimpleNamespace(schema_registry=None)
+        self.close = AsyncMock()
 
 
 class FakeSession:
@@ -90,6 +102,27 @@ class FakeSession:
     def emit(self, event: str, payload) -> None:
         for callback in list(self.handlers.get(event, [])):
             callback(payload)
+
+
+def build_owned_wrapper() -> tuple[
+    PrefactorLiveKitSession,
+    RecordingInstance,
+    RecordingClient,
+]:
+    """Create a wrapper that owns a fake instance/client for shutdown tests."""
+
+    wrapper = PrefactorLiveKitSession.from_config(
+        api_url="http://test",
+        api_token="test-token",
+        agent_id="owned-agent",
+    )
+    instance = RecordingInstance()
+    client = RecordingClient()
+    wrapper._instance = instance
+    wrapper._client = client
+    wrapper._owns_instance = True
+    wrapper._owns_client = True
+    return wrapper, instance, client
 
 
 @pytest.mark.asyncio
@@ -532,6 +565,67 @@ class TestPrefactorLiveKitSession:
             instance.calls[0]["result_payload"]["metadata"]["close_reason"] == "error"
         )
 
+    async def test_close_event_finalizes_owned_instance_and_client(self) -> None:
+        wrapper, instance, client = build_owned_wrapper()
+        session = FakeSession()
+        await wrapper.attach(session)
+
+        session.emit(
+            "close",
+            SimpleNamespace(reason=SimpleNamespace(value="user_initiated"), error=None),
+        )
+        await asyncio.wait_for(wrapper._drain_pending_tasks(), timeout=1.0)
+
+        assert instance.calls[0]["status"] == "completed"
+        assert instance.finish_calls == 1
+        client.close.assert_awaited_once()
+        assert wrapper._instance is None
+        assert wrapper._client is None
+        assert wrapper._event_queue is None
+        assert wrapper._event_worker_task is None
+
+    async def test_close_after_internal_close_is_idempotent(self) -> None:
+        wrapper, instance, client = build_owned_wrapper()
+        session = FakeSession()
+        await wrapper.attach(session)
+
+        session.emit(
+            "close",
+            SimpleNamespace(reason=SimpleNamespace(value="user_initiated"), error=None),
+        )
+        await asyncio.wait_for(wrapper._drain_pending_tasks(), timeout=1.0)
+
+        await wrapper.close()
+
+        assert instance.finish_calls == 1
+        client.close.assert_awaited_once()
+
+    async def test_error_close_finalizes_owned_resources(self) -> None:
+        wrapper, instance, client = build_owned_wrapper()
+        session = FakeSession()
+        await wrapper.attach(session)
+
+        session.emit(
+            "error",
+            SimpleNamespace(
+                error=RuntimeError("boom"),
+                source=SimpleNamespace(),
+                created_at=2.0,
+            ),
+        )
+        session.emit(
+            "close",
+            SimpleNamespace(
+                reason=SimpleNamespace(value="error"),
+                error=RuntimeError("boom"),
+            ),
+        )
+        await asyncio.wait_for(wrapper._drain_pending_tasks(), timeout=1.0)
+
+        assert instance.calls[0]["status"] == "failed"
+        assert instance.finish_calls == 1
+        client.close.assert_awaited_once()
+
     async def test_user_initiated_close_completes_session(self) -> None:
         instance = RecordingInstance()
         wrapper = PrefactorLiveKitSession(instance=instance)
@@ -569,6 +663,48 @@ class TestPrefactorLiveKitSession:
             instance.calls[0]["result_payload"]["metadata"]["close_reason"]
             == "job_shutdown"
         )
+
+    async def test_post_close_events_are_ignored_and_do_not_restart_worker(
+        self,
+    ) -> None:
+        instance = RecordingInstance()
+        wrapper = PrefactorLiveKitSession(instance=instance)
+        session = FakeSession()
+        await wrapper.attach(session)
+
+        session.emit(
+            "close",
+            SimpleNamespace(reason=SimpleNamespace(value="user_initiated"), error=None),
+        )
+        await asyncio.wait_for(wrapper._drain_pending_tasks(), timeout=1.0)
+        call_count = len(instance.calls)
+
+        session.emit(
+            "agent_state_changed",
+            SimpleNamespace(old_state="idle", new_state="thinking", created_at=10.0),
+        )
+        await asyncio.sleep(0)
+
+        assert len(instance.calls) == call_count
+        assert wrapper._event_queue is None
+        assert wrapper._event_worker_task is None
+
+    async def test_preconfigured_instance_does_not_finish_external_resources(
+        self,
+    ) -> None:
+        instance = RecordingInstance()
+        wrapper = PrefactorLiveKitSession(instance=instance)
+        session = FakeSession()
+        await wrapper.attach(session)
+
+        session.emit(
+            "close",
+            SimpleNamespace(reason=SimpleNamespace(value="user_initiated"), error=None),
+        )
+        await asyncio.wait_for(wrapper._drain_pending_tasks(), timeout=1.0)
+
+        assert instance.finish_calls == 0
+        assert wrapper._instance is instance
 
     async def test_session_usage_updates_root_span_result(self) -> None:
         instance = RecordingInstance()

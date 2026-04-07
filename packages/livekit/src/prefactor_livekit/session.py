@@ -112,6 +112,10 @@ class PrefactorLiveKitSession:
         }
         self._usage_summary: dict[str, Any] = {}
         self._closed = False
+        self._resources_finalized = False
+        self._terminal_shutdown_requested = False
+        self._event_worker_stopping = False
+        self._event_worker_stopped = False
 
     @classmethod
     def from_config(
@@ -168,6 +172,10 @@ class PrefactorLiveKitSession:
         }
         wrapper._usage_summary = {}
         wrapper._closed = False
+        wrapper._resources_finalized = False
+        wrapper._terminal_shutdown_requested = False
+        wrapper._event_worker_stopping = False
+        wrapper._event_worker_stopped = False
         return wrapper
 
     def _register_tool_schemas(
@@ -260,19 +268,9 @@ class PrefactorLiveKitSession:
     async def close(self) -> None:
         """Flush pending tasks and release wrapper-owned resources."""
 
+        self._terminal_shutdown_requested = True
         await self._drain_pending_tasks()
-        await self._detach_session(final_status="completed")
-        await self._shutdown_event_worker()
-
-        if self._instance is not None and self._owns_instance:
-            await self._instance.finish()
-            self._instance = None
-            self._owns_instance = False
-
-        if self._client is not None and self._owns_client:
-            await self._client.close()
-            self._client = None
-            self._owns_client = False
+        await self._finalize_terminal_shutdown(final_status="completed")
 
     def _bind_session_events(self, session: Any) -> None:
         self._bound_handlers = {
@@ -387,15 +385,61 @@ class PrefactorLiveKitSession:
         self._session_span_context = None
         self._session_span_id = None
 
-    def _schedule(self, coro: Any) -> None:
+    async def _finalize_owned_resources(self) -> None:
+        if self._resources_finalized:
+            return
+
+        self._resources_finalized = True
+
+        if self._instance is not None and self._owns_instance:
+            await self._instance.finish()
+            self._instance = None
+            self._owns_instance = False
+
+        if self._client is not None and self._owns_client:
+            await self._client.close()
+            self._client = None
+            self._owns_client = False
+
+    async def _finalize_terminal_shutdown(
+        self,
+        *,
+        final_status: str,
+        close_reason: str | None = None,
+        error: dict[str, Any] | None = None,
+    ) -> None:
+        await self._detach_session(
+            final_status=final_status,
+            close_reason=close_reason,
+            error=error,
+        )
+        await self._finalize_owned_resources()
+        await self._shutdown_event_worker()
+
+    def _schedule(self, coro: Any, *, allow_during_shutdown: bool = False) -> None:
         loop = self._loop
-        if loop is None or loop.is_closed():
+        if (
+            loop is None
+            or loop.is_closed()
+            or self._event_worker_stopping
+            or self._event_worker_stopped
+            or (self._terminal_shutdown_requested and not allow_during_shutdown)
+        ):
             coro.close()
             return
 
         def _spawn() -> None:
+            if (
+                self._event_worker_stopping
+                or self._event_worker_stopped
+                or (self._terminal_shutdown_requested and not allow_during_shutdown)
+            ):
+                coro.close()
+                return
             self._ensure_event_worker()
-            assert self._event_queue is not None
+            if self._event_queue is None:
+                coro.close()
+                return
             self._event_queue.put_nowait(coro)
 
         try:
@@ -409,7 +453,11 @@ class PrefactorLiveKitSession:
             loop.call_soon_threadsafe(_spawn)
 
     def _ensure_event_worker(self) -> None:
-        if self._loop is None:
+        if (
+            self._loop is None
+            or self._event_worker_stopping
+            or self._event_worker_stopped
+        ):
             return
         if self._event_queue is None:
             self._event_queue = asyncio.Queue()
@@ -417,17 +465,26 @@ class PrefactorLiveKitSession:
             self._event_worker_task = self._loop.create_task(self._event_worker())
 
     async def _event_worker(self) -> None:
-        assert self._event_queue is not None
-        while True:
-            coro = await self._event_queue.get()
-            try:
-                if coro is None:
-                    return
-                await coro
-            except Exception:
-                logger.exception("Error processing prefactor-livekit event")
-            finally:
-                self._event_queue.task_done()
+        queue = self._event_queue
+        assert queue is not None
+        try:
+            while True:
+                coro = await queue.get()
+                try:
+                    if coro is None:
+                        return
+                    await coro
+                except Exception:
+                    logger.exception("Error processing prefactor-livekit event")
+                finally:
+                    queue.task_done()
+        finally:
+            if self._event_queue is queue:
+                self._event_queue = None
+            if self._event_worker_task is asyncio.current_task():
+                self._event_worker_task = None
+            self._event_worker_stopped = True
+            self._event_worker_stopping = False
 
     async def _drain_pending_tasks(self) -> None:
         if self._event_queue is None:
@@ -437,11 +494,26 @@ class PrefactorLiveKitSession:
     async def _shutdown_event_worker(self) -> None:
         if self._event_queue is None or self._event_worker_task is None:
             return
-        await self._event_queue.join()
-        self._event_queue.put_nowait(None)
-        await self._event_worker_task
-        self._event_worker_task = None
-        self._event_queue = None
+
+        queue = self._event_queue
+        task = self._event_worker_task
+        current_task = asyncio.current_task()
+
+        if self._event_worker_stopping:
+            if current_task is task:
+                return
+            await task
+            return
+
+        self._event_worker_stopping = True
+
+        if current_task is task:
+            queue.put_nowait(None)
+            return
+
+        await queue.join()
+        queue.put_nowait(None)
+        await task
 
     def _next_turn_index(self) -> int:
         self._turn_index += 1
@@ -1136,31 +1208,38 @@ class PrefactorLiveKitSession:
         )
         error = getattr(event, "error", None)
 
+        if self._terminal_shutdown_requested:
+            return
+        self._terminal_shutdown_requested = True
+
         if reason == "error":
             error_dict = self._safe_error_dict(error) if error is not None else None
             self._schedule(
-                self._detach_session(
+                self._finalize_terminal_shutdown(
                     final_status="failed",
                     close_reason=reason,
                     error=error_dict,
-                )
+                ),
+                allow_during_shutdown=True,
             )
             return
 
         if reason in {"job_shutdown", "participant_disconnected", "user_initiated"}:
             self._schedule(
-                self._detach_session(
+                self._finalize_terminal_shutdown(
                     final_status="completed",
                     close_reason=reason,
-                )
+                ),
+                allow_during_shutdown=True,
             )
             return
 
         self._schedule(
-            self._detach_session(
+            self._finalize_terminal_shutdown(
                 final_status="completed",
                 close_reason=reason if isinstance(reason, str) else None,
-            )
+            ),
+            allow_during_shutdown=True,
         )
 
 
