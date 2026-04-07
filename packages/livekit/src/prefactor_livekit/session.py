@@ -7,6 +7,7 @@ import hashlib
 import json
 import logging
 from collections.abc import Mapping
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from prefactor_core import (
@@ -24,6 +25,25 @@ if TYPE_CHECKING:
     from livekit.agents import Agent, AgentSession
 
 logger = logging.getLogger("prefactor_livekit.session")
+
+
+@dataclass
+class _OpenTurnState:
+    """In-flight story span tracked across multiple LiveKit events."""
+
+    schema_name: str
+    turn_index: int
+    span_cm: Any
+    span_context: SpanContext
+    payload: dict[str, Any]
+    story: dict[str, Any]
+    result: dict[str, Any] = field(default_factory=dict)
+    auto_finish_on_message: bool = False
+    finished: bool = False
+
+    @property
+    def span_id(self) -> str:
+        return self.span_context.id
 
 
 class PrefactorLiveKitSession:
@@ -78,7 +98,10 @@ class PrefactorLiveKitSession:
         self._session_span_context: SpanContext | None = None
         self._session_span_id: str | None = None
 
-        self._pending_assistant_turn: dict[str, Any] | None = None
+        self._active_user_turn: _OpenTurnState | None = None
+        self._active_assistant_turn: _OpenTurnState | None = None
+        self._conversation_turns: list[dict[str, Any]] = []
+        self._turn_index = 0
 
         self._partial_transcripts: list[dict[str, Any]] = []
         self._conversation_summary: dict[str, Any] = {
@@ -132,7 +155,10 @@ class PrefactorLiveKitSession:
         wrapper._session_span_cm = None
         wrapper._session_span_context = None
         wrapper._session_span_id = None
-        wrapper._pending_assistant_turn = None
+        wrapper._active_user_turn = None
+        wrapper._active_assistant_turn = None
+        wrapper._conversation_turns = []
+        wrapper._turn_index = 0
         wrapper._partial_transcripts = []
         wrapper._conversation_summary = {
             "items_seen": 0,
@@ -298,32 +324,54 @@ class PrefactorLiveKitSession:
         await self._session_span_context.start(payload)
         self._session_span_id = self._session_span_context.id
 
-    async def _detach_session(self, final_status: str) -> None:
+    async def _detach_session(
+        self,
+        final_status: str,
+        *,
+        close_reason: str | None = None,
+        error: dict[str, Any] | None = None,
+    ) -> None:
         if self._closed:
             return
 
         self._closed = True
         self._unbind_session_events()
-        await self._flush_pending_assistant_turn(status=final_status)
-        await self._finish_session_span(status=final_status)
+        await self._finish_active_assistant_turn(
+            status="failed" if final_status == "failed" else "cancelled",
+            error=error,
+        )
+        await self._finish_active_user_turn(
+            status="failed" if final_status == "failed" else "cancelled",
+            error=error,
+        )
+        await self._finish_session_span(
+            status=final_status,
+            error=error,
+            close_reason=close_reason,
+        )
         self._session = None
 
     async def _finish_session_span(
         self,
         status: str,
         error: dict[str, Any] | None = None,
+        close_reason: str | None = None,
     ) -> None:
         if self._session_span_context is None or self._session_span_cm is None:
             return
 
+        conversation = {
+            **self._conversation_summary,
+            "partial_transcripts": list(self._partial_transcripts),
+            "turns": list(self._conversation_turns),
+        }
         result: dict[str, Any] = {
             "status": status,
             "usage": self._usage_summary or {},
-            "conversation": {
-                **self._conversation_summary,
-                "partial_transcripts": list(self._partial_transcripts),
-            },
+            "conversation": conversation,
         }
+        if close_reason is not None:
+            result["metadata"] = {"close_reason": close_reason}
         if error is not None:
             result["error"] = error
 
@@ -395,74 +443,9 @@ class PrefactorLiveKitSession:
         self._event_worker_task = None
         self._event_queue = None
 
-    async def _emit_span(
-        self,
-        schema_name: str,
-        params: dict[str, Any],
-        result: dict[str, Any],
-        *,
-        failed: bool = False,
-    ) -> None:
-        instance = self._instance
-        if instance is None:
-            return
-        async with instance.span(
-            schema_name,
-            parent_span_id=self._session_span_id,
-        ) as ctx:
-            await ctx.start(params)
-            if failed:
-                await ctx.fail(result)
-            else:
-                await ctx.complete(result)
-
-    async def _emit_assistant_turn(
-        self,
-        payload: dict[str, Any],
-        *,
-        status: str,
-        outputs: dict[str, Any] | None = None,
-        error: dict[str, Any] | None = None,
-    ) -> None:
-        result: dict[str, Any] = {"status": status}
-        if outputs is not None:
-            result["outputs"] = outputs
-        if error is not None:
-            result["error"] = error
-        await self._emit_span(
-            "livekit:assistant_turn",
-            payload,
-            result,
-            failed=status == "failed",
-        )
-
-    def _assistant_payload_from_event(self, event: Any) -> dict[str, Any]:
-        return {
-            "name": "assistant_turn",
-            "source": getattr(event, "source", "unknown"),
-            "user_initiated": getattr(event, "user_initiated", False),
-            "created_at": getattr(event, "created_at", None),
-            "metadata": {},
-        }
-
-    async def _flush_pending_assistant_turn(
-        self,
-        *,
-        status: str,
-        outputs: dict[str, Any] | None = None,
-        error: dict[str, Any] | None = None,
-    ) -> None:
-        if self._pending_assistant_turn is None:
-            return
-
-        payload = self._pending_assistant_turn
-        self._pending_assistant_turn = None
-        await self._emit_assistant_turn(
-            payload,
-            status=status,
-            outputs=outputs,
-            error=error,
-        )
+    def _next_turn_index(self) -> int:
+        self._turn_index += 1
+        return self._turn_index
 
     def _safe_model_dump(self, value: Any) -> Any:
         if hasattr(value, "model_dump"):
@@ -497,6 +480,281 @@ class PrefactorLiveKitSession:
     def _resolve_tool_schema_name(self, tool_name: str) -> str:
         return self._tool_span_types.get(tool_name, "livekit:tool")
 
+    async def _open_turn_span(
+        self,
+        schema_name: str,
+        payload: dict[str, Any],
+        story: dict[str, Any],
+        *,
+        parent_span_id: str | None = None,
+        auto_finish_on_message: bool = False,
+    ) -> _OpenTurnState:
+        instance = await self._ensure_initialized()
+        span_cm = instance.span(
+            schema_name,
+            parent_span_id=parent_span_id or self._session_span_id,
+        )
+        span_context = await span_cm.__aenter__()
+        await span_context.start(payload)
+        return _OpenTurnState(
+            schema_name=schema_name,
+            turn_index=int(payload["turn_index"]),
+            span_cm=span_cm,
+            span_context=span_context,
+            payload=payload,
+            story=story,
+            auto_finish_on_message=auto_finish_on_message,
+        )
+
+    async def _emit_span(
+        self,
+        schema_name: str,
+        params: dict[str, Any],
+        result: dict[str, Any],
+        *,
+        parent_span_id: str | None = None,
+        failed: bool = False,
+    ) -> None:
+        instance = self._instance
+        if instance is None:
+            return
+        async with instance.span(
+            schema_name,
+            parent_span_id=parent_span_id or self._session_span_id,
+        ) as ctx:
+            await ctx.start(params)
+            if failed:
+                await ctx.fail(result)
+            else:
+                await ctx.complete(result)
+
+    def _build_turn_story(
+        self,
+        *,
+        turn_index: int,
+        role: str,
+        created_at: float | None,
+        started_at: float | None,
+        source: str | None = None,
+        user_initiated: bool | None = None,
+    ) -> dict[str, Any]:
+        story: dict[str, Any] = {
+            "turn_index": turn_index,
+            "role": role,
+            "status": "active",
+            "created_at": created_at,
+            "started_at": started_at,
+            "metrics": {},
+        }
+        if source is not None:
+            story["source"] = source
+        if user_initiated is not None:
+            story["user_initiated"] = user_initiated
+        return story
+
+    def _turn_result_metrics(self, turn: _OpenTurnState) -> dict[str, Any]:
+        return turn.result.setdefault("metrics", {})
+
+    def _turn_story_metrics(self, turn_story: dict[str, Any]) -> dict[str, Any]:
+        metrics = turn_story.get("metrics")
+        if not isinstance(metrics, dict):
+            metrics = {}
+            turn_story["metrics"] = metrics
+        return metrics
+
+    def _current_assistant_parent_span_id(self) -> str | None:
+        if self._active_assistant_turn is not None:
+            return self._active_assistant_turn.span_id
+        return self._session_span_id
+
+    async def _finish_turn(
+        self,
+        turn: _OpenTurnState,
+        *,
+        status: str,
+        finished_at: float | None = None,
+        error: dict[str, Any] | None = None,
+    ) -> None:
+        if turn.finished:
+            return
+
+        result = dict(turn.result)
+        result["status"] = status
+        if finished_at is not None:
+            result.setdefault("finished_at", finished_at)
+            turn.story["finished_at"] = finished_at
+        if error is not None:
+            result["error"] = error
+            turn.story["error"] = error
+        turn.story["status"] = status
+
+        if status == "failed":
+            await turn.span_context.fail(result)
+        else:
+            await turn.span_context.complete(result)
+        await turn.span_cm.__aexit__(None, None, None)
+        turn.finished = True
+
+    async def _finish_active_user_turn(
+        self,
+        *,
+        status: str,
+        finished_at: float | None = None,
+        error: dict[str, Any] | None = None,
+    ) -> None:
+        if self._active_user_turn is None:
+            return
+        turn = self._active_user_turn
+        self._active_user_turn = None
+        await self._finish_turn(
+            turn,
+            status=status,
+            finished_at=finished_at,
+            error=error,
+        )
+
+    async def _finish_active_assistant_turn(
+        self,
+        *,
+        status: str,
+        finished_at: float | None = None,
+        error: dict[str, Any] | None = None,
+    ) -> None:
+        if self._active_assistant_turn is None:
+            return
+        turn = self._active_assistant_turn
+        self._active_assistant_turn = None
+        await self._finish_turn(
+            turn,
+            status=status,
+            finished_at=finished_at,
+            error=error,
+        )
+
+    async def _start_user_turn(self, event: Any) -> None:
+        created_at = getattr(event, "created_at", None)
+        if self._active_user_turn is not None:
+            await self._finish_active_user_turn(
+                status="cancelled", finished_at=created_at
+            )
+
+        turn_index = self._next_turn_index()
+        payload = {
+            "name": "user_turn",
+            "turn_index": turn_index,
+            "created_at": created_at,
+            "started_at": created_at,
+            "metadata": {},
+        }
+        story = self._build_turn_story(
+            turn_index=turn_index,
+            role="user",
+            created_at=created_at,
+            started_at=created_at,
+        )
+        self._conversation_turns.append(story)
+        self._active_user_turn = await self._open_turn_span(
+            "livekit:user_turn",
+            payload,
+            story,
+        )
+
+    async def _start_assistant_turn(
+        self,
+        *,
+        source: str,
+        created_at: float | None,
+        user_initiated: bool,
+        auto_finish_on_message: bool,
+    ) -> _OpenTurnState:
+        if self._active_assistant_turn is not None:
+            fallback_status = (
+                "completed"
+                if self._active_assistant_turn.result.get("outputs")
+                else "cancelled"
+            )
+            await self._finish_active_assistant_turn(
+                status=fallback_status,
+                finished_at=created_at,
+            )
+
+        turn_index = self._next_turn_index()
+        payload = {
+            "name": "assistant_turn",
+            "turn_index": turn_index,
+            "source": source,
+            "user_initiated": user_initiated,
+            "created_at": created_at,
+            "started_at": created_at,
+            "metadata": {},
+        }
+        story = self._build_turn_story(
+            turn_index=turn_index,
+            role="assistant",
+            created_at=created_at,
+            started_at=created_at,
+            source=source,
+            user_initiated=user_initiated,
+        )
+        self._conversation_turns.append(story)
+        turn = await self._open_turn_span(
+            "livekit:assistant_turn",
+            payload,
+            story,
+            auto_finish_on_message=auto_finish_on_message,
+        )
+        self._active_assistant_turn = turn
+        return turn
+
+    def _assistant_turn_result_from_item(
+        self, item_dict: dict[str, Any]
+    ) -> dict[str, Any]:
+        outputs = {"message": item_dict}
+        metrics = item_dict.get("metrics")
+        result: dict[str, Any] = {"outputs": outputs}
+        if isinstance(metrics, dict):
+            turn_metrics: dict[str, Any] = {}
+            if metrics.get("started_speaking_at") is not None:
+                turn_metrics["started_speaking_at"] = metrics["started_speaking_at"]
+            if metrics.get("stopped_speaking_at") is not None:
+                turn_metrics["stopped_speaking_at"] = metrics["stopped_speaking_at"]
+            if metrics.get("llm_node_ttft") is not None:
+                turn_metrics["llm_node_ttft"] = metrics["llm_node_ttft"]
+            if metrics.get("tts_node_ttfb") is not None:
+                turn_metrics["tts_node_ttfb"] = metrics["tts_node_ttfb"]
+            if metrics.get("e2e_latency") is not None:
+                turn_metrics["e2e_latency"] = metrics["e2e_latency"]
+            if turn_metrics:
+                result["metrics"] = turn_metrics
+        return result
+
+    def _record_user_metric(self, metric_type: str, payload: dict[str, Any]) -> None:
+        target_turn = self._active_user_turn
+        if target_turn is None:
+            return
+        metrics = self._turn_result_metrics(target_turn)
+        story_metrics = self._turn_story_metrics(target_turn.story)
+        metrics[metric_type] = payload
+        story_metrics[metric_type] = payload
+
+    def _record_assistant_metric(
+        self, metric_type: str, payload: dict[str, Any]
+    ) -> None:
+        target_turn = self._active_assistant_turn
+        if target_turn is None:
+            return
+        metrics = self._turn_result_metrics(target_turn)
+        story_metrics = self._turn_story_metrics(target_turn.story)
+        metrics.setdefault(metric_type, []).append(payload)
+        story_metrics.setdefault(metric_type, []).append(payload)
+
+    def _metrics_payload(self, metrics: Any) -> tuple[dict[str, Any], dict[str, Any]]:
+        payload = self._safe_model_dump(metrics)
+        metadata = payload.pop("metadata", None) or {}
+        if not isinstance(metadata, dict):
+            metadata = self._safe_model_dump(metadata)
+        return payload, metadata
+
     def _on_user_input_transcribed(self, event: Any) -> None:
         if not getattr(event, "is_final", False):
             self._partial_transcripts.append(
@@ -507,17 +765,73 @@ class PrefactorLiveKitSession:
             )
             return
 
-        params = {
-            "name": "user_turn",
-            "transcript": getattr(event, "transcript", ""),
-            "speaker_id": getattr(event, "speaker_id", None),
-            "language": getattr(event, "language", None),
-            "is_final": True,
-            "created_at": getattr(event, "created_at", None),
-            "metadata": {},
-        }
-        result = {"status": "completed", "metadata": {}}
-        self._schedule(self._emit_span("livekit:user_turn", params, result))
+        self._schedule(self._handle_final_user_transcript(event))
+
+    async def _handle_final_user_transcript(self, event: Any) -> None:
+        created_at = getattr(event, "created_at", None)
+        transcript = getattr(event, "transcript", "")
+        language = getattr(event, "language", None)
+        speaker_id = getattr(event, "speaker_id", None)
+
+        if self._active_user_turn is None:
+            turn_index = self._next_turn_index()
+            payload = {
+                "name": "user_turn",
+                "turn_index": turn_index,
+                "created_at": created_at,
+                "started_at": created_at,
+                "metadata": {},
+            }
+            story = self._build_turn_story(
+                turn_index=turn_index,
+                role="user",
+                created_at=created_at,
+                started_at=created_at,
+            )
+            story.update(
+                {
+                    "transcript": transcript,
+                    "language": language,
+                    "speaker_id": speaker_id,
+                    "finished_at": created_at,
+                    "is_final": True,
+                    "status": "completed",
+                }
+            )
+            self._conversation_turns.append(story)
+            result = {
+                "status": "completed",
+                "transcript": transcript,
+                "speaker_id": speaker_id,
+                "language": language,
+                "is_final": True,
+                "finished_at": created_at,
+                "metadata": {},
+            }
+            await self._emit_span("livekit:user_turn", payload, result)
+            self._conversation_summary["user_messages"] += 1
+            return
+
+        turn = self._active_user_turn
+        turn.result.update(
+            {
+                "transcript": transcript,
+                "speaker_id": speaker_id,
+                "language": language,
+                "is_final": True,
+                "metadata": {},
+            }
+        )
+        turn.story.update(
+            {
+                "transcript": transcript,
+                "speaker_id": speaker_id,
+                "language": language,
+                "is_final": True,
+            }
+        )
+        self._conversation_summary["user_messages"] += 1
+        await self._finish_active_user_turn(status="completed", finished_at=created_at)
 
     def _on_conversation_item_added(self, event: Any) -> None:
         item = getattr(event, "item", None)
@@ -525,93 +839,192 @@ class PrefactorLiveKitSession:
         self._conversation_summary["items_seen"] += 1
         role = item_dict.get("role")
         if role == "assistant":
-            self._conversation_summary["assistant_messages"] += 1
-            outputs = {"message": item_dict}
-            payload = self._pending_assistant_turn or {
-                "name": "assistant_turn",
-                "source": "conversation_item_added",
-                "user_initiated": False,
-                "created_at": getattr(event, "created_at", None),
-                "metadata": {},
-            }
-            self._pending_assistant_turn = None
-            self._schedule(
-                self._emit_assistant_turn(
-                    payload,
-                    status="completed",
-                    outputs=outputs,
-                )
+            self._schedule(self._handle_assistant_item_added(event, item_dict))
+
+    async def _handle_assistant_item_added(
+        self,
+        event: Any,
+        item_dict: dict[str, Any],
+    ) -> None:
+        if self._active_assistant_turn is None:
+            await self._start_assistant_turn(
+                source="conversation_item_added",
+                created_at=getattr(event, "created_at", None),
+                user_initiated=False,
+                auto_finish_on_message=True,
             )
-        elif role == "user":
-            self._conversation_summary["user_messages"] += 1
+
+        turn = self._active_assistant_turn
+        assert turn is not None
+        turn_result = self._assistant_turn_result_from_item(item_dict)
+        turn.result["outputs"] = turn_result["outputs"]
+        if "metrics" in turn_result:
+            self._turn_result_metrics(turn).update(turn_result["metrics"])
+            self._turn_story_metrics(turn.story).update(turn_result["metrics"])
+        turn.story["outputs"] = turn_result["outputs"]
+        self._conversation_summary["assistant_messages"] += 1
+
+        if turn.auto_finish_on_message:
+            await self._finish_active_assistant_turn(
+                status="completed",
+                finished_at=item_dict.get("created_at")
+                or getattr(event, "created_at", None),
+            )
 
     def _on_function_tools_executed(self, event: Any) -> None:
         zipped = event.zipped() if hasattr(event, "zipped") else []
         for function_call, function_output in zipped:
             self._conversation_summary["function_calls"] += 1
-            tool_name = getattr(function_call, "name", "unknown")
-            params = {
-                "name": tool_name,
-                "tool_name": tool_name,
-                "call_id": getattr(function_call, "call_id", None),
-                "group_id": getattr(function_call, "group_id", None),
-                "inputs": self._parse_arguments(
-                    getattr(function_call, "arguments", {})
-                ),
-                "created_at": getattr(function_call, "created_at", None),
-                "metadata": getattr(function_call, "extra", {}),
-            }
-            is_error = getattr(function_output, "is_error", False)
-            result = {
-                "status": "failed" if is_error else "completed",
-                "outputs": {
-                    "output": getattr(function_output, "output", None),
-                    "name": getattr(function_output, "name", None),
-                },
-                "is_error": is_error,
-            }
             self._schedule(
-                self._emit_span(
-                    self._resolve_tool_schema_name(tool_name),
-                    params,
-                    result,
-                    failed=is_error,
-                )
+                self._emit_function_tool_span(function_call, function_output)
             )
 
-    def _metrics_to_span(
-        self, metrics: Any
-    ) -> tuple[str, dict[str, Any], dict[str, Any]]:
-        payload = self._safe_model_dump(metrics)
-        metadata = payload.pop("metadata", None) or {}
-        if metrics.type in {"llm_metrics", "realtime_model_metrics"}:
-            schema_name = "livekit:llm"
-        elif metrics.type == "stt_metrics":
-            schema_name = "livekit:stt"
-        elif metrics.type == "tts_metrics":
-            schema_name = "livekit:tts"
-        else:
-            schema_name = "livekit:state"
-
+    async def _emit_function_tool_span(
+        self,
+        function_call: Any,
+        function_output: Any,
+    ) -> None:
+        tool_name = getattr(function_call, "name", "unknown")
         params = {
-            "name": metrics.type,
-            "label": payload.get("label"),
-            "request_id": payload.get("request_id"),
-            "model_name": metadata.get("model_name"),
-            "provider": metadata.get("model_provider"),
-            "timestamp": payload.get("timestamp"),
-            "event_type": metrics.type,
-            "metadata": metadata,
+            "name": tool_name,
+            "tool_name": tool_name,
+            "call_id": getattr(function_call, "call_id", None),
+            "group_id": getattr(function_call, "group_id", None),
+            "inputs": self._parse_arguments(getattr(function_call, "arguments", {})),
+            "created_at": getattr(function_call, "created_at", None),
+            "metadata": getattr(function_call, "extra", {}),
         }
-        result = {"status": "completed", "metrics": payload}
-        return schema_name, params, result
+        if self._active_assistant_turn is not None:
+            params["turn_index"] = self._active_assistant_turn.turn_index
+
+        is_error = getattr(function_output, "is_error", False)
+        result = {
+            "status": "failed" if is_error else "completed",
+            "outputs": {
+                "output": getattr(function_output, "output", None),
+                "name": getattr(function_output, "name", None),
+            },
+            "is_error": is_error,
+        }
+        await self._emit_span(
+            self._resolve_tool_schema_name(tool_name),
+            params,
+            result,
+            parent_span_id=self._current_assistant_parent_span_id(),
+            failed=is_error,
+        )
+
+        if self._active_assistant_turn is not None:
+            tool_story = {
+                "tool_name": tool_name,
+                "call_id": getattr(function_call, "call_id", None),
+                "created_at": getattr(function_call, "created_at", None),
+                "inputs": params["inputs"],
+                "is_error": is_error,
+            }
+            self._active_assistant_turn.story.setdefault("tool_calls", []).append(
+                tool_story
+            )
 
     def _on_metrics_collected(self, event: Any) -> None:
         metrics = getattr(event, "metrics", None)
         if metrics is None:
             return
-        schema_name, params, result = self._metrics_to_span(metrics)
-        self._schedule(self._emit_span(schema_name, params, result))
+        self._schedule(self._handle_metrics_collected(metrics))
+
+    async def _handle_metrics_collected(self, metrics: Any) -> None:
+        payload, metadata = self._metrics_payload(metrics)
+        metric_type = getattr(metrics, "type", None)
+
+        if metric_type in {"llm_metrics", "realtime_model_metrics"}:
+            if self._active_assistant_turn is None:
+                await self._start_assistant_turn(
+                    source="llm_metrics",
+                    created_at=payload.get("timestamp"),
+                    user_initiated=True,
+                    auto_finish_on_message=True,
+                )
+            turn = self._active_assistant_turn
+            assert turn is not None
+            llm_summary = {
+                "request_id": payload.get("request_id"),
+                "timestamp": payload.get("timestamp"),
+                "label": payload.get("label"),
+                "model_name": metadata.get("model_name"),
+                "provider": metadata.get("model_provider"),
+                "metrics": payload,
+            }
+            self._record_assistant_metric("llm", llm_summary)
+            params = {
+                "name": metric_type,
+                "turn_index": turn.turn_index,
+                "label": payload.get("label"),
+                "request_id": payload.get("request_id"),
+                "model_name": metadata.get("model_name"),
+                "provider": metadata.get("model_provider"),
+                "timestamp": payload.get("timestamp"),
+                "metadata": metadata,
+            }
+            result = {"status": "completed", "metrics": payload}
+            await self._emit_span(
+                "livekit:llm",
+                params,
+                result,
+                parent_span_id=turn.span_id,
+            )
+            return
+
+        if metric_type == "stt_metrics":
+            self._record_user_metric(
+                "stt",
+                {
+                    "request_id": payload.get("request_id"),
+                    "timestamp": payload.get("timestamp"),
+                    "label": payload.get("label"),
+                    "model_name": metadata.get("model_name"),
+                    "provider": metadata.get("model_provider"),
+                    "metrics": payload,
+                },
+            )
+            return
+
+        if metric_type == "tts_metrics":
+            self._record_assistant_metric(
+                "tts",
+                {
+                    "request_id": payload.get("request_id"),
+                    "timestamp": payload.get("timestamp"),
+                    "label": payload.get("label"),
+                    "model_name": metadata.get("model_name"),
+                    "provider": metadata.get("model_provider"),
+                    "metrics": payload,
+                },
+            )
+            return
+
+        if metric_type == "eou_metrics":
+            self._record_user_metric(
+                "eou",
+                {
+                    "timestamp": payload.get("timestamp"),
+                    "metrics": payload,
+                },
+            )
+            return
+
+        if metric_type == "interruption_metrics":
+            if self._active_assistant_turn is not None:
+                interruption_summary = {
+                    "timestamp": payload.get("timestamp"),
+                    "metrics": payload,
+                }
+                self._record_assistant_metric("interruptions", interruption_summary)
+                self._active_assistant_turn.result["interrupted"] = True
+                self._active_assistant_turn.story["interrupted"] = True
+                await self._finish_active_assistant_turn(
+                    status="completed",
+                    finished_at=payload.get("timestamp"),
+                )
 
     def _on_session_usage_updated(self, event: Any) -> None:
         usage = getattr(event, "usage", None)
@@ -627,35 +1040,68 @@ class PrefactorLiveKitSession:
             self._session_span_context.set_result({"usage": self._usage_summary})
 
     def _on_agent_state_changed(self, event: Any) -> None:
-        params = {
-            "name": "agent_state_changed",
-            "actor": "agent",
-            "old_state": getattr(event, "old_state", None),
-            "new_state": getattr(event, "new_state", None),
-            "event_type": "agent_state_changed",
-            "created_at": getattr(event, "created_at", None),
-            "metadata": {},
-        }
-        self._schedule(
-            self._emit_span("livekit:state", params, {"status": "completed"})
-        )
+        self._schedule(self._handle_agent_state_changed(event))
+
+    async def _handle_agent_state_changed(self, event: Any) -> None:
+        old_state = getattr(event, "old_state", None)
+        new_state = getattr(event, "new_state", None)
+        created_at = getattr(event, "created_at", None)
+
+        if old_state == "speaking" and new_state == "listening":
+            await self._finish_active_assistant_turn(
+                status="completed",
+                finished_at=created_at,
+            )
 
     def _on_user_state_changed(self, event: Any) -> None:
-        params = {
-            "name": "user_state_changed",
-            "actor": "user",
-            "old_state": getattr(event, "old_state", None),
-            "new_state": getattr(event, "new_state", None),
-            "event_type": "user_state_changed",
-            "created_at": getattr(event, "created_at", None),
-            "metadata": {},
-        }
-        self._schedule(
-            self._emit_span("livekit:state", params, {"status": "completed"})
-        )
+        self._schedule(self._handle_user_state_changed(event))
+
+    async def _handle_user_state_changed(self, event: Any) -> None:
+        old_state = getattr(event, "old_state", None)
+        new_state = getattr(event, "new_state", None)
+
+        if old_state == "listening" and new_state == "speaking":
+            await self._start_user_turn(event)
 
     def _on_speech_created(self, event: Any) -> None:
-        self._pending_assistant_turn = self._assistant_payload_from_event(event)
+        self._schedule(self._handle_speech_created(event))
+
+    async def _handle_speech_created(self, event: Any) -> None:
+        created_at = getattr(event, "created_at", None)
+        source = getattr(event, "source", "unknown")
+        user_initiated = getattr(event, "user_initiated", False)
+
+        if (
+            self._active_assistant_turn is not None
+            and self._active_assistant_turn.payload.get("source") == "llm_metrics"
+            and not self._active_assistant_turn.result.get("outputs")
+        ):
+            turn = self._active_assistant_turn
+            turn.payload.update(
+                {
+                    "source": source,
+                    "user_initiated": user_initiated,
+                    "created_at": created_at,
+                    "started_at": created_at,
+                }
+            )
+            turn.story.update(
+                {
+                    "source": source,
+                    "user_initiated": user_initiated,
+                    "created_at": created_at,
+                    "started_at": created_at,
+                }
+            )
+            turn.auto_finish_on_message = False
+            return
+
+        await self._start_assistant_turn(
+            source=source,
+            created_at=created_at,
+            user_initiated=user_initiated,
+            auto_finish_on_message=False,
+        )
 
     def _on_error(self, event: Any) -> None:
         error = getattr(event, "error", None)
@@ -678,8 +1124,9 @@ class PrefactorLiveKitSession:
             )
         )
         self._schedule(
-            self._flush_pending_assistant_turn(status="failed", error=error_dict)
+            self._finish_active_assistant_turn(status="failed", error=error_dict)
         )
+        self._schedule(self._finish_active_user_turn(status="failed", error=error_dict))
 
     def _on_close(self, event: Any) -> None:
         reason = getattr(
@@ -691,16 +1138,30 @@ class PrefactorLiveKitSession:
 
         if reason == "error":
             error_dict = self._safe_error_dict(error) if error is not None else None
-            if error_dict is not None:
-                self._schedule(self._finish_session_span("failed", error=error_dict))
-            self._schedule(self._detach_session(final_status="failed"))
+            self._schedule(
+                self._detach_session(
+                    final_status="failed",
+                    close_reason=reason,
+                    error=error_dict,
+                )
+            )
             return
 
         if reason in {"job_shutdown", "participant_disconnected", "user_initiated"}:
-            self._schedule(self._detach_session(final_status="cancelled"))
+            self._schedule(
+                self._detach_session(
+                    final_status="completed",
+                    close_reason=reason,
+                )
+            )
             return
 
-        self._schedule(self._detach_session(final_status="completed"))
+        self._schedule(
+            self._detach_session(
+                final_status="completed",
+                close_reason=reason if isinstance(reason, str) else None,
+            )
+        )
 
 
 __all__ = ["PrefactorLiveKitSession"]

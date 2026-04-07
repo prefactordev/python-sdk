@@ -18,6 +18,7 @@ class RecordingSpanContext:
         self._call = call
         self._id = span_id
         self._result_payload: dict[str, object] = {}
+        self._call["span_id"] = span_id
 
     async def __aenter__(self) -> "RecordingSpanContext":
         return self
@@ -183,7 +184,8 @@ class TestPrefactorLiveKitSession:
         await wrapper._drain_pending_tasks()
 
         assert instance.calls[-1]["schema_name"] == "livekit:user_turn"
-        assert instance.calls[-1]["start_payload"]["transcript"] == "hello world"
+        assert instance.calls[-1]["result_payload"]["transcript"] == "hello world"
+        assert instance.calls[-1]["result_payload"]["language"] == "en"
 
     async def test_tool_execution_emits_one_span_per_function_call(self) -> None:
         instance = RecordingInstance()
@@ -198,6 +200,16 @@ class TestPrefactorLiveKitSession:
         )
         session = FakeSession()
         await wrapper.attach(session)
+        session.emit(
+            "speech_created",
+            SimpleNamespace(
+                source="generate_reply",
+                user_initiated=True,
+                created_at=1.0,
+            ),
+        )
+        await wrapper._drain_pending_tasks()
+        assistant_turn_call = instance.calls[-1]
 
         event = SimpleNamespace(
             zipped=lambda: [
@@ -224,12 +236,23 @@ class TestPrefactorLiveKitSession:
 
         assert instance.calls[-1]["schema_name"] == "livekit:tool:calculate"
         assert instance.calls[-1]["start_payload"]["inputs"] == {"x": 1}
+        assert instance.calls[-1]["parent_span_id"] == assistant_turn_call["span_id"]
 
     async def test_metrics_emit_expected_span_types(self) -> None:
         instance = RecordingInstance()
         wrapper = PrefactorLiveKitSession(instance=instance)
         session = FakeSession()
         await wrapper.attach(session)
+        session.emit(
+            "speech_created",
+            SimpleNamespace(
+                source="generate_reply",
+                user_initiated=True,
+                created_at=40.0,
+            ),
+        )
+        await wrapper._drain_pending_tasks()
+        assistant_turn_call = instance.calls[-1]
 
         metrics = SimpleNamespace(
             type="llm_metrics",
@@ -257,8 +280,9 @@ class TestPrefactorLiveKitSession:
 
         assert instance.calls[-1]["schema_name"] == "livekit:llm"
         assert instance.calls[-1]["start_payload"]["provider"] == "openai"
+        assert instance.calls[-1]["parent_span_id"] == assistant_turn_call["span_id"]
 
-    async def test_state_changes_emit_state_spans(self) -> None:
+    async def test_state_changes_do_not_emit_state_spans(self) -> None:
         instance = RecordingInstance()
         wrapper = PrefactorLiveKitSession(instance=instance)
         session = FakeSession()
@@ -270,8 +294,7 @@ class TestPrefactorLiveKitSession:
         )
         await wrapper._drain_pending_tasks()
 
-        assert instance.calls[-1]["schema_name"] == "livekit:state"
-        assert instance.calls[-1]["start_payload"]["actor"] == "agent"
+        assert [call["schema_name"] for call in instance.calls] == ["livekit:session"]
 
     async def test_speech_created_then_assistant_message_closes_assistant_turn(
         self,
@@ -287,7 +310,9 @@ class TestPrefactorLiveKitSession:
                 source="generate_reply", user_initiated=True, created_at=1.0
             ),
         )
-        assert wrapper._pending_assistant_turn is not None
+        await wrapper._drain_pending_tasks()
+
+        assert wrapper._active_assistant_turn is not None
 
         session.emit(
             "conversation_item_added",
@@ -300,13 +325,182 @@ class TestPrefactorLiveKitSession:
             ),
         )
         await wrapper._drain_pending_tasks()
+        assert wrapper._active_assistant_turn is not None
 
-        assert wrapper._pending_assistant_turn is None
+        session.emit(
+            "agent_state_changed",
+            SimpleNamespace(
+                old_state="speaking",
+                new_state="listening",
+                created_at=2.0,
+            ),
+        )
+        await wrapper._drain_pending_tasks()
+
+        assert wrapper._active_assistant_turn is None
         assert instance.calls[-1]["schema_name"] == "livekit:assistant_turn"
         assert (
             instance.calls[-1]["result_payload"]["outputs"]["message"]["role"]
             == "assistant"
         )
+        assert instance.calls[-1]["result_payload"]["finished_at"] == 2.0
+
+    async def test_text_only_assistant_turn_finishes_on_message(self) -> None:
+        instance = RecordingInstance()
+        wrapper = PrefactorLiveKitSession(instance=instance)
+        session = FakeSession()
+        await wrapper.attach(session)
+
+        metrics = SimpleNamespace(
+            type="llm_metrics",
+            label="openai",
+            request_id="req-1",
+            timestamp=42.0,
+            metadata=SimpleNamespace(
+                model_name="gpt-4.1-mini",
+                model_provider="openai",
+            ),
+            model_dump=lambda: {
+                "type": "llm_metrics",
+                "label": "openai",
+                "request_id": "req-1",
+                "timestamp": 42.0,
+                "metadata": {
+                    "model_name": "gpt-4.1-mini",
+                    "model_provider": "openai",
+                },
+            },
+        )
+        session.emit("metrics_collected", SimpleNamespace(metrics=metrics))
+        await wrapper._drain_pending_tasks()
+
+        session.emit(
+            "conversation_item_added",
+            SimpleNamespace(
+                item=SimpleNamespace(
+                    type="message",
+                    role="assistant",
+                    content="hello there",
+                    created_at=43.0,
+                ),
+                created_at=43.0,
+            ),
+        )
+        await wrapper._drain_pending_tasks()
+
+        assistant_turn_call = next(
+            call
+            for call in reversed(instance.calls)
+            if call["schema_name"] == "livekit:assistant_turn"
+        )
+        assert assistant_turn_call["schema_name"] == "livekit:assistant_turn"
+        assert (
+            assistant_turn_call["result_payload"]["outputs"]["message"]["role"]
+            == "assistant"
+        )
+        assert assistant_turn_call["result_payload"]["status"] == "completed"
+
+    async def test_user_turn_captures_story_metrics_without_standalone_stt_span(
+        self,
+    ) -> None:
+        instance = RecordingInstance()
+        wrapper = PrefactorLiveKitSession(instance=instance)
+        session = FakeSession()
+        await wrapper.attach(session)
+
+        session.emit(
+            "user_state_changed",
+            SimpleNamespace(
+                old_state="listening",
+                new_state="speaking",
+                created_at=10.0,
+            ),
+        )
+        await wrapper._drain_pending_tasks()
+
+        stt_metrics = SimpleNamespace(
+            type="stt_metrics",
+            label="stt",
+            request_id="stt-1",
+            timestamp=11.0,
+            metadata=SimpleNamespace(
+                model_name="nova",
+                model_provider="deepgram",
+            ),
+            model_dump=lambda: {
+                "type": "stt_metrics",
+                "label": "stt",
+                "request_id": "stt-1",
+                "timestamp": 11.0,
+                "audio_duration": 2.5,
+                "metadata": {
+                    "model_name": "nova",
+                    "model_provider": "deepgram",
+                },
+            },
+        )
+        session.emit("metrics_collected", SimpleNamespace(metrics=stt_metrics))
+        await wrapper._drain_pending_tasks()
+
+        session.emit(
+            "user_input_transcribed",
+            SimpleNamespace(
+                transcript="hello world",
+                is_final=True,
+                speaker_id="user-1",
+                language="en",
+                created_at=12.0,
+            ),
+        )
+        await wrapper._drain_pending_tasks()
+
+        assert instance.calls[-1]["schema_name"] == "livekit:user_turn"
+        assert "stt" in instance.calls[-1]["result_payload"]["metrics"]
+        assert "livekit:stt" not in {call["schema_name"] for call in instance.calls}
+
+    async def test_interruption_finishes_active_assistant_turn(self) -> None:
+        instance = RecordingInstance()
+        wrapper = PrefactorLiveKitSession(instance=instance)
+        session = FakeSession()
+        await wrapper.attach(session)
+
+        session.emit(
+            "speech_created",
+            SimpleNamespace(
+                source="generate_reply",
+                user_initiated=True,
+                created_at=1.0,
+            ),
+        )
+        session.emit(
+            "conversation_item_added",
+            SimpleNamespace(
+                item=SimpleNamespace(
+                    type="message",
+                    role="assistant",
+                    content="hello there",
+                    created_at=1.2,
+                ),
+                created_at=1.2,
+            ),
+        )
+        await wrapper._drain_pending_tasks()
+
+        interruption_metrics = SimpleNamespace(
+            type="interruption_metrics",
+            model_dump=lambda: {
+                "type": "interruption_metrics",
+                "timestamp": 2.0,
+                "duration": 0.1,
+                "metadata": {},
+            },
+        )
+        session.emit("metrics_collected", SimpleNamespace(metrics=interruption_metrics))
+        await wrapper._drain_pending_tasks()
+
+        assert wrapper._active_assistant_turn is None
+        assert instance.calls[-1]["schema_name"] == "livekit:assistant_turn"
+        assert instance.calls[-1]["result_payload"]["interrupted"] is True
 
     async def test_error_and_close_fail_session(self) -> None:
         instance = RecordingInstance()
@@ -334,6 +528,47 @@ class TestPrefactorLiveKitSession:
         await wrapper._drain_pending_tasks()
 
         assert instance.calls[0]["status"] == "failed"
+        assert (
+            instance.calls[0]["result_payload"]["metadata"]["close_reason"] == "error"
+        )
+
+    async def test_user_initiated_close_completes_session(self) -> None:
+        instance = RecordingInstance()
+        wrapper = PrefactorLiveKitSession(instance=instance)
+        session = FakeSession()
+        await wrapper.attach(session)
+
+        session.emit(
+            "close",
+            SimpleNamespace(reason=SimpleNamespace(value="user_initiated"), error=None),
+        )
+        await wrapper._drain_pending_tasks()
+
+        assert instance.calls[0]["status"] == "completed"
+        assert (
+            instance.calls[0]["result_payload"]["metadata"]["close_reason"]
+            == "user_initiated"
+        )
+        turns = instance.calls[0]["result_payload"]["conversation"]["turns"]
+        assert turns == []
+
+    async def test_job_shutdown_close_completes_session(self) -> None:
+        instance = RecordingInstance()
+        wrapper = PrefactorLiveKitSession(instance=instance)
+        session = FakeSession()
+        await wrapper.attach(session)
+
+        session.emit(
+            "close",
+            SimpleNamespace(reason=SimpleNamespace(value="job_shutdown"), error=None),
+        )
+        await wrapper._drain_pending_tasks()
+
+        assert instance.calls[0]["status"] == "completed"
+        assert (
+            instance.calls[0]["result_payload"]["metadata"]["close_reason"]
+            == "job_shutdown"
+        )
 
     async def test_session_usage_updates_root_span_result(self) -> None:
         instance = RecordingInstance()
@@ -360,6 +595,68 @@ class TestPrefactorLiveKitSession:
             instance.calls[0]["set_result"]["usage"]["model_usage"][0]["model"]
             == "gpt-4.1-mini"
         )
+
+    async def test_session_result_includes_ordered_turn_story(self) -> None:
+        instance = RecordingInstance()
+        wrapper = PrefactorLiveKitSession(instance=instance)
+        session = FakeSession()
+        await wrapper.attach(session)
+
+        session.emit(
+            "user_state_changed",
+            SimpleNamespace(
+                old_state="listening",
+                new_state="speaking",
+                created_at=1.0,
+            ),
+        )
+        session.emit(
+            "user_input_transcribed",
+            SimpleNamespace(
+                transcript="hello",
+                is_final=True,
+                speaker_id="user-1",
+                language="en",
+                created_at=2.0,
+            ),
+        )
+        session.emit(
+            "speech_created",
+            SimpleNamespace(
+                source="generate_reply",
+                user_initiated=True,
+                created_at=3.0,
+            ),
+        )
+        session.emit(
+            "conversation_item_added",
+            SimpleNamespace(
+                item=SimpleNamespace(
+                    type="message",
+                    role="assistant",
+                    content="hi there",
+                    created_at=4.0,
+                ),
+                created_at=4.0,
+            ),
+        )
+        session.emit(
+            "agent_state_changed",
+            SimpleNamespace(
+                old_state="speaking",
+                new_state="listening",
+                created_at=5.0,
+            ),
+        )
+        session.emit(
+            "close",
+            SimpleNamespace(reason=SimpleNamespace(value="user_initiated"), error=None),
+        )
+        await wrapper._drain_pending_tasks()
+
+        turns = instance.calls[0]["result_payload"]["conversation"]["turns"]
+        assert [turn["role"] for turn in turns] == ["user", "assistant"]
+        assert [turn["turn_index"] for turn in turns] == [1, 2]
 
 
 class TestVersionHelpers:
