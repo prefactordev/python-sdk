@@ -146,7 +146,19 @@ class SchemaRegistry:
             title: Optional human-readable title (defaults to name on the API)
             description: Optional description of the span type
             template: Optional display template using ``{{field}}`` interpolation
-            data_risk: Optional data risk level (e.g., "low", "medium", "high")
+            data_risk: Optional data risk classification dict. See DataRisk model
+                in prefactor_http.models.agent_instance for structure. Must include:
+                - action_profile (object): Permitted actions with keys:
+                  create_data, read_data, update_data, destroy_data,
+                  financial_transactions, external_communication (values:
+                  "unknown" | "allowed" | "disallowed")
+                - params_data_categories (object): Input data categories with keys
+                  like personal_identifiers, contact_information,
+                  financial_information, etc. (values: "unknown" | "included"
+                  | "excluded")
+                - result_data_categories (object): Output data categories,
+                  same structure as params_data_categories
+                Example: {"action_profile": {"read_data": "allowed"}, ...}
 
         Raises:
             ValueError: If name is already registered as a span type schema.
