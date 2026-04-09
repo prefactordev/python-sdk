@@ -131,12 +131,13 @@ class SchemaRegistry:
         title: str | None = None,
         description: str | None = None,
         template: str | None = None,
+        data_risk: dict[str, Any] | None = None,
     ) -> None:
         """Register a full structured span type schema.
 
         Adds to ``span_type_schemas``. This is the richest form and supports
         all API fields: params schema, result schema, human-readable title,
-        description, and a display template.
+        description, template, and data risk classification.
 
         Args:
             name: Span type name (e.g., "agent:llm")
@@ -145,6 +146,7 @@ class SchemaRegistry:
             title: Optional human-readable title (defaults to name on the API)
             description: Optional description of the span type
             template: Optional display template using ``{{field}}`` interpolation
+            data_risk: Optional data risk level (e.g., "low", "medium", "high")
 
         Raises:
             ValueError: If name is already registered as a span type schema.
@@ -161,6 +163,8 @@ class SchemaRegistry:
             entry["description"] = description
         if template is not None:
             entry["template"] = template
+        if data_risk is not None:
+            entry["data_risk"] = data_risk
 
         self._span_type_schemas[name] = entry
 
