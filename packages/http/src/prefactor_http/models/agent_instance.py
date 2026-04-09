@@ -44,12 +44,14 @@ class DataCategories(BaseModel):
         behavioural_and_inferred: Behavioural and inferred data present
         gdpr_racial_or_ethnic_origin: GDPR: racial or ethnic origin
         gdpr_political_opinions: GDPR: political opinions
-        gdpr_religious_or_philosophical_beliefs: GDPR: religious or philosophical beliefs
+        gdpr_religious_or_philosophical_beliefs: GDPR: religious or philosophical
+            beliefs
         gdpr_trade_union_membership: GDPR: trade union membership
         gdpr_genetic_data: GDPR: genetic data
         gdpr_biometric_for_identification: GDPR: biometric data for identification
         gdpr_sex_life_or_sexual_orientation: GDPR: sex life or sexual orientation
-        classification: Classification level (unknown, public, internal, confidential, restricted, secret)
+        classification: Classification level (unknown, public, internal,
+            confidential, restricted, secret)
     """
 
     personal_identifiers: Literal["unknown", "included", "excluded"] = "unknown"
