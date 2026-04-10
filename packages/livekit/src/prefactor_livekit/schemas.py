@@ -47,11 +47,9 @@ LIVEKIT_USER_TURN_SCHEMA: dict[str, Any] = {
     "properties": {
         "name": {"type": "string"},
         "type": {"type": "string", "const": "livekit:user_turn"},
-        "transcript": {"type": "string"},
-        "speaker_id": {"type": "string"},
-        "language": {"type": "string"},
-        "is_final": {"type": "boolean"},
+        "turn_index": {"type": "integer"},
         "created_at": {"type": "number"},
+        "started_at": {"type": "number"},
         "metadata": GENERIC_OBJECT_SCHEMA,
     },
 }
@@ -59,7 +57,16 @@ LIVEKIT_USER_TURN_SCHEMA: dict[str, Any] = {
 LIVEKIT_USER_TURN_RESULT_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
-        "status": {"type": "string", "enum": ["completed", "failed"]},
+        "status": {
+            "type": "string",
+            "enum": ["completed", "failed", "cancelled"],
+        },
+        "transcript": {"type": "string"},
+        "speaker_id": {"type": "string"},
+        "language": {"type": "string"},
+        "is_final": {"type": "boolean"},
+        "finished_at": {"type": "number"},
+        "metrics": GENERIC_OBJECT_SCHEMA,
         "metadata": GENERIC_OBJECT_SCHEMA,
     },
 }
@@ -69,9 +76,11 @@ LIVEKIT_ASSISTANT_TURN_SCHEMA: dict[str, Any] = {
     "properties": {
         "name": {"type": "string"},
         "type": {"type": "string", "const": "livekit:assistant_turn"},
+        "turn_index": {"type": "integer"},
         "source": {"type": "string"},
         "user_initiated": {"type": "boolean"},
         "created_at": {"type": "number"},
+        "started_at": {"type": "number"},
         "metadata": GENERIC_OBJECT_SCHEMA,
     },
 }
@@ -84,6 +93,9 @@ LIVEKIT_ASSISTANT_TURN_RESULT_SCHEMA: dict[str, Any] = {
             "enum": ["completed", "failed", "cancelled"],
         },
         "outputs": GENERIC_OBJECT_SCHEMA,
+        "interrupted": {"type": "boolean"},
+        "finished_at": {"type": "number"},
+        "metrics": GENERIC_OBJECT_SCHEMA,
         "error": GENERIC_OBJECT_SCHEMA,
     },
 }
@@ -117,6 +129,7 @@ LIVEKIT_LLM_SCHEMA: dict[str, Any] = {
     "properties": {
         "name": {"type": "string"},
         "type": {"type": "string", "const": "livekit:llm"},
+        "turn_index": {"type": "integer"},
         "request_id": {"type": "string"},
         "label": {"type": "string"},
         "model_name": {"type": "string"},
@@ -340,24 +353,6 @@ def _base_entries() -> list[dict[str, Any]]:
             "params_schema": deepcopy(LIVEKIT_LLM_SCHEMA),
             "result_schema": deepcopy(LIVEKIT_LLM_RESULT_SCHEMA),
             "title": "LiveKit LLM Metrics",
-        },
-        {
-            "name": "livekit:stt",
-            "params_schema": deepcopy(LIVEKIT_STT_SCHEMA),
-            "result_schema": deepcopy(LIVEKIT_STT_RESULT_SCHEMA),
-            "title": "LiveKit STT Metrics",
-        },
-        {
-            "name": "livekit:tts",
-            "params_schema": deepcopy(LIVEKIT_TTS_SCHEMA),
-            "result_schema": deepcopy(LIVEKIT_TTS_RESULT_SCHEMA),
-            "title": "LiveKit TTS Metrics",
-        },
-        {
-            "name": "livekit:state",
-            "params_schema": deepcopy(LIVEKIT_STATE_SCHEMA),
-            "result_schema": deepcopy(LIVEKIT_STATE_RESULT_SCHEMA),
-            "title": "LiveKit State Transition",
         },
         {
             "name": "livekit:error",
