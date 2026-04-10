@@ -75,6 +75,7 @@ class RecordingInstance:
         self.finish_calls += 1
         self.finished = True
 
+
 class FailingRecordingInstance(RecordingInstance):
     """Instance stand-in that raises on finish."""
 
@@ -84,6 +85,7 @@ class FailingRecordingInstance(RecordingInstance):
             cause=RuntimeError("boom"),
             operation_type="FINISH_AGENT_INSTANCE",
         )
+
 
 class FailingStartRecordingSpanContext(RecordingSpanContext):
     """Span context that raises when started."""
