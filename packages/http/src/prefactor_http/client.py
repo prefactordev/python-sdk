@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING, Any
 
 import aiohttp
@@ -13,8 +14,10 @@ from prefactor_http.exceptions import (
     PrefactorAuthError,
     PrefactorClientError,
     PrefactorNotFoundError,
+    PrefactorResponseContractError,
     PrefactorRetryExhaustedError,
     PrefactorValidationError,
+    is_transient_http_error,
 )
 from prefactor_http.retry import RetryHandler
 
@@ -152,6 +155,14 @@ class PrefactorHttpClient:
             await self._session.close()
             self._session = None
 
+    @staticmethod
+    def _truncate_body(body: str, limit: int = 200) -> str:
+        """Return a compact response body snippet for error messages."""
+        collapsed = " ".join(body.split())
+        if len(collapsed) <= limit:
+            return collapsed
+        return f"{collapsed[:limit]}..."
+
     def _is_retryable_error(self, error: Exception) -> bool:
         """Determine if an error is retryable.
 
@@ -163,11 +174,7 @@ class PrefactorHttpClient:
         Returns:
             True if the error should trigger a retry.
         """
-        if isinstance(error, aiohttp.ClientError):
-            return True
-        if isinstance(error, PrefactorApiError):
-            return error.status_code in self.config.retry_on_status_codes
-        return False
+        return is_transient_http_error(error)
 
     def _raise_api_error(self, status: int, response_data: dict) -> None:
         """Raise appropriate exception based on API response.
@@ -241,11 +248,27 @@ class PrefactorHttpClient:
             json=json_data,
             headers=headers,
         ) as response:
-            # Try to parse JSON response
+            response_text = await response.text()
             try:
-                response_data = await response.json()
-            except Exception:
-                response_data = {}
+                response_data = json.loads(response_text)
+            except json.JSONDecodeError as exc:
+                snippet = self._truncate_body(response_text)
+                message = f"Expected JSON response from {path}, received invalid JSON"
+                if snippet:
+                    message = f"{message}: {snippet}"
+                raise PrefactorResponseContractError(
+                    message,
+                    status_code=response.status,
+                    body_snippet=snippet or None,
+                    cause=exc,
+                ) from exc
+
+            if not isinstance(response_data, dict):
+                raise PrefactorResponseContractError(
+                    f"Expected JSON object response from {path}",
+                    status_code=response.status,
+                    body_snippet=self._truncate_body(response_text) or None,
+                )
 
             if response.status >= 400:
                 self._raise_api_error(response.status, response_data)

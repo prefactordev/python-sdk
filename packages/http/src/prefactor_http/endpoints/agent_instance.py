@@ -5,6 +5,9 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
 
+from pydantic import ValidationError
+
+from prefactor_http.exceptions import PrefactorResponseContractError
 from prefactor_http.models.agent_instance import AgentInstance, FinishInstanceRequest
 from prefactor_http.models.base import ApiResponse
 from prefactor_http.models.types import FinishStatus
@@ -44,6 +47,17 @@ class AgentInstanceClient:
             http_client: The main HTTP client instance.
         """
         self._client = http_client
+
+    def _parse_response(self, response: dict, operation: str) -> AgentInstance:
+        """Parse a typed API response and wrap schema mismatches."""
+        try:
+            api_response = ApiResponse[AgentInstance](**response)
+        except ValidationError as exc:
+            raise PrefactorResponseContractError(
+                f"Invalid response payload for {operation}",
+                cause=exc,
+            ) from exc
+        return api_response.details
 
     async def register(
         self,
@@ -97,8 +111,7 @@ class AgentInstanceClient:
             json_data=payload,
         )
 
-        api_response = ApiResponse[AgentInstance](**response)
-        return api_response.details
+        return self._parse_response(response, "agent_instances.register")
 
     async def start(
         self,
@@ -135,8 +148,7 @@ class AgentInstanceClient:
             json_data=payload,
         )
 
-        api_response = ApiResponse[AgentInstance](**response)
-        return api_response.details
+        return self._parse_response(response, "agent_instances.start")
 
     async def finish(
         self,
@@ -177,5 +189,4 @@ class AgentInstanceClient:
             json_data=finish_request.model_dump(exclude_none=True),
         )
 
-        api_response = ApiResponse[AgentInstance](**response)
-        return api_response.details
+        return self._parse_response(response, "agent_instances.finish")

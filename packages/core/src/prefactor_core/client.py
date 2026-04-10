@@ -13,6 +13,7 @@ from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any
 
 from prefactor_http.client import PrefactorHttpClient
+from prefactor_http.exceptions import is_permanent_http_error, is_transient_http_error
 
 from ._version import PACKAGE_NAME as CORE_PACKAGE_NAME
 from ._version import PACKAGE_VERSION as CORE_PACKAGE_VERSION
@@ -21,6 +22,7 @@ from .context_stack import SpanContextStack
 from .exceptions import (
     ClientAlreadyInitializedError,
     ClientNotInitializedError,
+    PrefactorTelemetryFailureError,
 )
 from .managers.agent_instance import AgentInstanceManager
 from .managers.span import SpanManager
@@ -82,6 +84,8 @@ class PrefactorCoreClient:
         self._instance_manager: AgentInstanceManager | None = None
         self._span_manager: SpanManager | None = None
         self._initialized = False
+        self._telemetry_failure: PrefactorTelemetryFailureError | None = None
+        self._telemetry_failure_observed = False
 
     def _build_http_sdk_header(self) -> str:
         """Build the effective SDK header for HTTP requests."""
@@ -102,7 +106,11 @@ class PrefactorCoreClient:
 
     async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         """Exit async context manager."""
-        await self.close()
+        try:
+            await self.close()
+        except PrefactorTelemetryFailureError:
+            if exc_type is None:
+                raise
 
     async def initialize(self) -> None:
         """Initialize the client and start processing.
@@ -129,6 +137,7 @@ class PrefactorCoreClient:
         self._executor = TaskExecutor(
             queue=self._queue,
             handler=self._process_operation,
+            is_retryable=self._is_retryable_operation_error,
             num_workers=self._config.queue_config.num_workers,
             max_retries=self._config.queue_config.max_retries,
         )
@@ -165,6 +174,10 @@ class PrefactorCoreClient:
 
         self._initialized = False
 
+        if self._telemetry_failure is not None and not self._telemetry_failure_observed:
+            self._telemetry_failure_observed = True
+            raise self._telemetry_failure
+
     def _ensure_initialized(self) -> None:
         """Ensure the client is initialized.
 
@@ -177,12 +190,55 @@ class PrefactorCoreClient:
                 "use as context manager."
             )
 
+    def _record_telemetry_failure(
+        self, cause: Exception, operation_type: OperationType | str
+    ) -> None:
+        """Latch the first permanent telemetry failure."""
+        if self._telemetry_failure is not None:
+            return
+        if isinstance(operation_type, OperationType):
+            operation_name = operation_type.name
+        else:
+            operation_name = str(operation_type)
+        self._telemetry_failure = PrefactorTelemetryFailureError(
+            f"Telemetry permanently failed during {operation_name}",
+            cause=cause,
+            operation_type=operation_name,
+            dropped_operations=0,
+        )
+
+    def _increment_dropped_operations(self) -> None:
+        """Increment the dropped operation counter on the latched failure."""
+        if self._telemetry_failure is None:
+            return
+        self._telemetry_failure.dropped_operations += 1
+
+    def _raise_if_telemetry_failed(self) -> None:
+        """Raise the latched telemetry failure for caller-visible operations."""
+        if self._telemetry_failure is None:
+            return
+        self._telemetry_failure_observed = True
+        raise self._telemetry_failure
+
+    def _is_retryable_operation_error(self, error: Exception) -> bool:
+        """Return True when the worker should retry the operation."""
+        if isinstance(error, PrefactorTelemetryFailureError):
+            return False
+        if is_permanent_http_error(error):
+            return False
+        if is_transient_http_error(error):
+            return True
+        return True
+
     async def _enqueue(self, operation: Operation) -> None:
         """Add an operation to the queue.
 
         Args:
             operation: The operation to queue.
         """
+        if self._telemetry_failure is not None:
+            self._increment_dropped_operations()
+            self._raise_if_telemetry_failed()
         await self._queue.put(operation)
 
     async def _process_operation(self, operation: Operation) -> None:
@@ -194,6 +250,9 @@ class PrefactorCoreClient:
             operation: The operation to process.
         """
         if not self._http:
+            return
+        if self._telemetry_failure is not None:
+            self._increment_dropped_operations()
             return
 
         try:
@@ -238,6 +297,8 @@ class PrefactorCoreClient:
                 )
 
         except Exception as e:
+            if is_permanent_http_error(e):
+                self._record_telemetry_failure(e, operation.type)
             # Log error and re-raise so TaskExecutor retries can run
             logger.error(
                 f"Failed to process operation {operation.type}: {e}",
@@ -283,6 +344,7 @@ class PrefactorCoreClient:
             ValueError: If no schema version provided and registry not configured.
         """
         self._ensure_initialized()
+        self._raise_if_telemetry_failed()
         assert self._instance_manager is not None
 
         # Determine the agent_schema_version to use
@@ -339,6 +401,7 @@ class PrefactorCoreClient:
             The span ID.
         """
         self._ensure_initialized()
+        self._raise_if_telemetry_failed()
         assert self._span_manager is not None
 
         if parent_span_id is None:
@@ -401,6 +464,7 @@ class PrefactorCoreClient:
             SpanContext for the created span.
         """
         self._ensure_initialized()
+        self._raise_if_telemetry_failed()
         assert self._span_manager is not None
 
         # Import here to avoid circular import

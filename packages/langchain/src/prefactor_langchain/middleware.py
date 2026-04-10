@@ -14,6 +14,7 @@ from prefactor_core import (
     AgentInstanceHandle,
     PrefactorCoreClient,
     PrefactorCoreConfig,
+    PrefactorTelemetryFailureError,
     SchemaRegistry,
     SpanContext,
 )
@@ -30,6 +31,12 @@ from .spans import AgentSpan, LLMSpan, ToolSpan
 
 logger = logging.getLogger("prefactor_langchain.middleware")
 LANGCHAIN_SDK_HEADER_ENTRY = f"{LANGCHAIN_PACKAGE_NAME}@{LANGCHAIN_PACKAGE_VERSION}"
+
+
+def _raise_if_telemetry_failure(error: BaseException) -> None:
+    """Re-raise latched core telemetry failures through provider hooks."""
+    if isinstance(error, PrefactorTelemetryFailureError):
+        raise error
 
 
 class PrefactorMiddleware(AgentMiddleware):
@@ -169,6 +176,7 @@ class PrefactorMiddleware(AgentMiddleware):
             self._current_parent_span_id: str | None = None
             self._loop: asyncio.AbstractEventLoop | None = None
             self._pending_emit_futures: list[asyncio.Task[None]] = []
+            self._pending_emit_error: Exception | None = None
             self._tool_span_types = (
                 self._register_tool_schemas(None, tool_schemas) if tool_schemas else {}
             )
@@ -204,10 +212,30 @@ class PrefactorMiddleware(AgentMiddleware):
         self._current_parent_span_id: str | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._pending_emit_futures: list[asyncio.Task[None]] = []
+        self._pending_emit_error: Exception | None = None
         self._tool_span_types = {}
 
         if tool_schemas:
             self._tool_span_types = self._register_tool_schemas(client, tool_schemas)
+
+    def _prefer_shutdown_error(
+        self,
+        current: Exception | None,
+        new_error: Exception,
+    ) -> Exception:
+        """Choose which shutdown error to preserve.
+
+        Prefers ``PrefactorTelemetryFailureError`` over non-telemetry errors and
+        otherwise keeps the first observed exception.
+        """
+        if current is None:
+            return new_error
+        if isinstance(new_error, PrefactorTelemetryFailureError) and not isinstance(
+            current,
+            PrefactorTelemetryFailureError,
+        ):
+            return new_error
+        return current
 
     @classmethod
     def from_config(
@@ -284,6 +312,7 @@ class PrefactorMiddleware(AgentMiddleware):
         middleware._current_parent_span_id = None
         middleware._loop = None
         middleware._pending_emit_futures = []
+        middleware._pending_emit_error = None
         middleware._tool_span_types = tool_span_types
         logger.debug("PrefactorMiddleware created via from_config()")
         return middleware
@@ -375,20 +404,57 @@ class PrefactorMiddleware(AgentMiddleware):
         Awaits all in-flight span-emit tasks first, then closes the agent
         instance (if we created it) and finally the client.
         """
+        captured_error: Exception | None = None
+        pending_emit_error = self._pending_emit_error
+        self._pending_emit_error = None
+        if pending_emit_error is not None:
+            captured_error = self._prefer_shutdown_error(
+                captured_error,
+                pending_emit_error,
+            )
+
         # Drain any fire-and-forget span tasks scheduled by sync hooks.
         if self._pending_emit_futures:
-            await asyncio.gather(*self._pending_emit_futures, return_exceptions=True)
+            results = await asyncio.gather(
+                *self._pending_emit_futures, return_exceptions=True
+            )
             self._pending_emit_futures.clear()
+            for result in results:
+                if not isinstance(result, Exception):
+                    continue
+                captured_error = self._prefer_shutdown_error(
+                    captured_error,
+                    result,
+                )
+
+        pending_emit_error = self._pending_emit_error
+        self._pending_emit_error = None
+        if pending_emit_error is not None:
+            captured_error = self._prefer_shutdown_error(
+                captured_error,
+                pending_emit_error,
+            )
 
         if self._instance is not None and self._owns_instance:
-            await self._instance.finish()
-            self._instance = None
-            self._owns_instance = False
+            try:
+                await self._instance.finish()
+            except Exception as exc:
+                captured_error = self._prefer_shutdown_error(captured_error, exc)
+            finally:
+                self._instance = None
+                self._owns_instance = False
 
         if self._client is not None and self._owns_client:
-            await self._client.close()
-            self._client = None
-            self._owns_client = False
+            try:
+                await self._client.close()
+            except Exception as exc:
+                captured_error = self._prefer_shutdown_error(captured_error, exc)
+            finally:
+                self._client = None
+                self._owns_client = False
+
+        if captured_error is not None:
+            raise captured_error
 
     def _get_name_from_request(self, request: Any) -> str:
         """Extract model name from request for use as the span name.
@@ -664,10 +730,26 @@ class PrefactorMiddleware(AgentMiddleware):
                 else:
                     await ctx.complete(result)
 
+        def _on_emit_done(task: asyncio.Task[None]) -> None:
+            try:
+                pending.remove(task)
+            except ValueError:
+                pass
+
+            if task.cancelled():
+                return
+
+            error = task.exception()
+            if error is not None:
+                self._pending_emit_error = self._prefer_shutdown_error(
+                    self._pending_emit_error,
+                    cast(Exception, error),
+                )
+
         def _schedule() -> None:
             task = loop.create_task(_emit())
             pending.append(task)
-            task.add_done_callback(pending.remove)
+            task.add_done_callback(_on_emit_done)
 
         loop.call_soon_threadsafe(_schedule)
 
@@ -707,6 +789,7 @@ class PrefactorMiddleware(AgentMiddleware):
             return None
 
         except Exception as e:
+            _raise_if_telemetry_failure(e)
             logger.error("Error in before_agent: %s", e, exc_info=True)
             return None
 
@@ -766,6 +849,7 @@ class PrefactorMiddleware(AgentMiddleware):
             logger.debug("Finished agent span %s", span_id)
 
         except Exception as e:
+            _raise_if_telemetry_failure(e)
             logger.error("Error in after_agent: %s", e, exc_info=True)
 
         return None
@@ -827,6 +911,7 @@ class PrefactorMiddleware(AgentMiddleware):
             logger.debug("Created agent span %s (async)", self._agent_span_id)
 
         except Exception as e:
+            _raise_if_telemetry_failure(e)
             logger.error("Error in abefore_agent: %s", e, exc_info=True)
 
         return None
@@ -864,6 +949,7 @@ class PrefactorMiddleware(AgentMiddleware):
             self._agent_span_id = None
 
         except Exception as e:
+            _raise_if_telemetry_failure(e)
             logger.error("Error in aafter_agent: %s", e, exc_info=True)
 
         return None

@@ -151,6 +151,10 @@ class SpanManager:
         del self._spans[temp_id]
         self._spans[api_id] = span
 
+        for child_span in self._spans.values():
+            if child_span.parent_span_id == temp_id:
+                child_span.parent_span_id = api_id
+
         # Replace temp ID on the context stack
         stack = SpanContextStack.get_stack()
         new_stack = [api_id if s == temp_id else s for s in stack]
@@ -242,6 +246,7 @@ class SpanManager:
         span_id: str,
         result_payload: dict[str, Any] | None = None,
         status: "FinishStatus" = "complete",
+        idempotency_key: str | None = None,
     ) -> None:
         """Mark a span as finished.
 
@@ -254,6 +259,8 @@ class SpanManager:
                 ``"cancelled"`` (default: ``"complete"``). The span must be
                 ``active`` for this to succeed; use ``cancel_unstarted()``
                 to cancel a span that was never started.
+            idempotency_key: Optional key to make repeated finish requests
+                duplicate-safe. When omitted, a new key is generated.
 
         Raises:
             KeyError: If the span ID is not known.
@@ -273,7 +280,7 @@ class SpanManager:
         op_payload: dict[str, Any] = {
             "span_id": span_id,
             "status": status,
-            "idempotency_key": generate_idempotency_key(),
+            "idempotency_key": idempotency_key or generate_idempotency_key(),
         }
         if result_payload is not None:
             op_payload["result_payload"] = result_payload

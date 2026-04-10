@@ -4,7 +4,11 @@ The SpanContext provides an interface for updating span data during execution
 and ensures proper cleanup when the span completes.
 """
 
+from __future__ import annotations
+
 from typing import TYPE_CHECKING, Any
+
+from .utils import generate_idempotency_key
 
 if TYPE_CHECKING:
     from prefactor_http.models.types import FinishStatus
@@ -72,6 +76,10 @@ class SpanContext:
         self._finish_status: FinishStatus = "complete"
         self._started = False
         self._finished = False
+        self._finish_request: (
+            tuple[FinishStatus, tuple[tuple[str, Any], ...]] | None
+        ) = None
+        self._finish_idempotency_key: str | None = None
 
     @property
     def id(self) -> str:
@@ -169,24 +177,37 @@ class SpanContext:
         valid pre-active cancellation path.  For all other statuses the span
         is auto-started as ``active`` first.
         """
+        request = (
+            self._finish_status,
+            tuple(sorted(self._result_payload.items())),
+        )
         if self._finished:
             return
-
-        self._finished = True
+        if self._finish_request != request:
+            self._finish_request = (
+                self._finish_status,
+                tuple(sorted(self._result_payload.items())),
+            )
+            self._finish_idempotency_key = None
 
         try:
             if not self._started and self._finish_status == "cancelled":
                 await self._span_manager.cancel_unstarted(self._span_id)
+                self._finished = True
                 return
 
             if not self._started:
                 await self.start(self._default_payload)
 
+            if self._finish_idempotency_key is None:
+                self._finish_idempotency_key = generate_idempotency_key()
             await self._span_manager.finish(
                 self._span_id,
                 result_payload=self._result_payload or None,
                 status=self._finish_status,
+                idempotency_key=self._finish_idempotency_key,
             )
+            self._finished = True
         except Exception:
             raise
 
