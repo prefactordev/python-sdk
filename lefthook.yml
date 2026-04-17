@@ -11,4 +11,4 @@ pre-commit:
       stage_fixed: true
     ty-check:
       glob: "*.py"
-      run: uvx ty check .
+      run: uv run ty check .

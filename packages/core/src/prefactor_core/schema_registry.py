@@ -4,6 +4,8 @@ This module provides a SchemaRegistry that allows registration of span schemas
 from multiple packages before agent instances are created.
 """
 
+from __future__ import annotations
+
 from typing import Any
 
 
@@ -131,12 +133,13 @@ class SchemaRegistry:
         title: str | None = None,
         description: str | None = None,
         template: str | None = None,
+        data_risk: dict[str, Any] | None = None,
     ) -> None:
         """Register a full structured span type schema.
 
         Adds to ``span_type_schemas``. This is the richest form and supports
         all API fields: params schema, result schema, human-readable title,
-        description, and a display template.
+        description, template, and data risk classification.
 
         Args:
             name: Span type name (e.g., "agent:llm")
@@ -145,6 +148,25 @@ class SchemaRegistry:
             title: Optional human-readable title (defaults to name on the API)
             description: Optional description of the span type
             template: Optional display template using ``{{field}}`` interpolation
+            data_risk: Optional data risk classification dict. See DataRisk model
+                in prefactor_http.models.agent_instance for structure. Must include:
+                - action_profile (object): Permitted actions with keys:
+                  create_data, read_data, update_data, destroy_data,
+                  financial_transactions, external_communication (values:
+                  "unknown" | "allowed" | "disallowed")
+                - params_data_categories (object): Input data categories with keys
+                  like personal_identifiers, contact_information,
+                  financial_information, etc. (values: "unknown" | "included"
+                  | "excluded")
+                - result_data_categories (object): Output data categories,
+                  same structure as params_data_categories
+                All three top-level keys are required; fields within each default
+                to "unknown" when omitted.
+                Example: {
+                    "action_profile": {"read_data": "allowed"},
+                    "params_data_categories": {"personal_identifiers": "included"},
+                    "result_data_categories": {},
+                }
 
         Raises:
             ValueError: If name is already registered as a span type schema.
@@ -161,6 +183,8 @@ class SchemaRegistry:
             entry["description"] = description
         if template is not None:
             entry["template"] = template
+        if data_risk is not None:
+            entry["data_risk"] = data_risk
 
         self._span_type_schemas[name] = entry
 

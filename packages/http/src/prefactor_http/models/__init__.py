@@ -1,10 +1,13 @@
 """Prefactor HTTP Client models."""
 
 from prefactor_http.models.agent_instance import (
+    ActionProfile,
     AgentInstance,
     AgentInstanceSpanCounts,
     AgentSchemaVersionForRegister,
     AgentVersionForRegister,
+    DataCategories,
+    DataRisk,
     FinishInstanceRequest,
     SpanTypeSchemaForCreate,
 )
@@ -29,6 +32,10 @@ __all__ = [
     "AgentSchemaVersionForRegister",
     "FinishInstanceRequest",
     "SpanTypeSchemaForCreate",
+    # Data risk models
+    "ActionProfile",
+    "DataCategories",
+    "DataRisk",
     # AgentSpan models
     "AgentSpan",
     # Bulk models

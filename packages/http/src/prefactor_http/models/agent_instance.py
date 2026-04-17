@@ -1,11 +1,103 @@
 """AgentInstance data models."""
 
+from __future__ import annotations
+
 from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel
 
 from prefactor_http.models.types import AgentStatus, FinishStatus
+
+
+class ActionProfile(BaseModel):
+    """Action profile defining what actions a span type performs.
+
+    Attributes:
+        create_data: Whether this span creates data
+        read_data: Whether this span reads data
+        update_data: Whether this span updates data
+        destroy_data: Whether this span destroys data
+        financial_transactions: Whether this span performs financial transactions
+        external_communication: Whether this span sends external communications
+    """
+
+    create_data: Literal["unknown", "allowed", "disallowed"] = "unknown"
+    read_data: Literal["unknown", "allowed", "disallowed"] = "unknown"
+    update_data: Literal["unknown", "allowed", "disallowed"] = "unknown"
+    destroy_data: Literal["unknown", "allowed", "disallowed"] = "unknown"
+    financial_transactions: Literal["unknown", "allowed", "disallowed"] = "unknown"
+    external_communication: Literal["unknown", "allowed", "disallowed"] = "unknown"
+
+
+class DataCategories(BaseModel):
+    """Data categories present in span data.
+
+    Attributes:
+        personal_identifiers: Personal identifiers present
+        contact_information: Contact information present
+        financial_information: Financial information present
+        health_and_medical: Health and medical data present
+        criminal_justice: Criminal justice data present
+        authentication_and_secrets: Authentication and secrets present
+        organisational_confidential: Organisational confidential data present
+        minors_data: Minors data present
+        location_and_tracking: Location and tracking data present
+        behavioural_and_inferred: Behavioural and inferred data present
+        gdpr_racial_or_ethnic_origin: GDPR: racial or ethnic origin
+        gdpr_political_opinions: GDPR: political opinions
+        gdpr_religious_or_philosophical_beliefs: GDPR: religious or philosophical
+            beliefs
+        gdpr_trade_union_membership: GDPR: trade union membership
+        gdpr_genetic_data: GDPR: genetic data
+        gdpr_biometric_for_identification: GDPR: biometric data for identification
+        gdpr_sex_life_or_sexual_orientation: GDPR: sex life or sexual orientation
+        classification: Classification level (unknown, public, internal,
+            confidential, restricted, secret)
+    """
+
+    personal_identifiers: Literal["unknown", "included", "excluded"] = "unknown"
+    contact_information: Literal["unknown", "included", "excluded"] = "unknown"
+    financial_information: Literal["unknown", "included", "excluded"] = "unknown"
+    health_and_medical: Literal["unknown", "included", "excluded"] = "unknown"
+    criminal_justice: Literal["unknown", "included", "excluded"] = "unknown"
+    authentication_and_secrets: Literal["unknown", "included", "excluded"] = "unknown"
+    organisational_confidential: Literal["unknown", "included", "excluded"] = "unknown"
+    minors_data: Literal["unknown", "included", "excluded"] = "unknown"
+    location_and_tracking: Literal["unknown", "included", "excluded"] = "unknown"
+    behavioural_and_inferred: Literal["unknown", "included", "excluded"] = "unknown"
+    gdpr_racial_or_ethnic_origin: Literal["unknown", "included", "excluded"] = "unknown"
+    gdpr_political_opinions: Literal["unknown", "included", "excluded"] = "unknown"
+    gdpr_religious_or_philosophical_beliefs: Literal[
+        "unknown", "included", "excluded"
+    ] = "unknown"
+    gdpr_trade_union_membership: Literal["unknown", "included", "excluded"] = "unknown"
+    gdpr_genetic_data: Literal["unknown", "included", "excluded"] = "unknown"
+    gdpr_biometric_for_identification: Literal["unknown", "included", "excluded"] = (
+        "unknown"
+    )
+    gdpr_sex_life_or_sexual_orientation: Literal["unknown", "included", "excluded"] = (
+        "unknown"
+    )
+    classification: Literal[
+        "unknown", "public", "internal", "confidential", "restricted", "secret"
+    ] = "unknown"
+
+
+class DataRisk(BaseModel):
+    """Data risk specification for a span type.
+
+    Attributes:
+        action_profile: Actions this span performs
+        params_data_categories: Data categories present in params
+        result_data_categories: Data categories present in result
+    """
+
+    action_profile: ActionProfile
+    params_data_categories: DataCategories
+    result_data_categories: DataCategories
+
+    model_config = {"extra": "allow"}
 
 
 class SpanTypeSchemaForCreate(BaseModel):
@@ -18,6 +110,7 @@ class SpanTypeSchemaForCreate(BaseModel):
         title: Optional human-readable title
         description: Optional description
         template: Optional template string
+        data_risk: Optional data risk classification
     """
 
     name: str
@@ -26,6 +119,7 @@ class SpanTypeSchemaForCreate(BaseModel):
     title: str | None = None
     description: str | None = None
     template: str | None = None
+    data_risk: DataRisk | None = None
 
 
 class AgentInstanceSpanCounts(BaseModel):
