@@ -4,6 +4,8 @@ This module provides a SchemaRegistry that allows registration of span schemas
 from multiple packages before agent instances are created.
 """
 
+from __future__ import annotations
+
 from typing import Any
 
 
@@ -158,7 +160,13 @@ class SchemaRegistry:
                   | "excluded")
                 - result_data_categories (object): Output data categories,
                   same structure as params_data_categories
-                Example: {"action_profile": {"read_data": "allowed"}, ...}
+                All three top-level keys are required; fields within each default
+                to "unknown" when omitted.
+                Example: {
+                    "action_profile": {"read_data": "allowed"},
+                    "params_data_categories": {"personal_identifiers": "included"},
+                    "result_data_categories": {},
+                }
 
         Raises:
             ValueError: If name is already registered as a span type schema.
