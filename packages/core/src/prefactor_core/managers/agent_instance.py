@@ -14,6 +14,7 @@ from ..utils import generate_idempotency_key
 
 if TYPE_CHECKING:
     from prefactor_http.client import PrefactorHttpClient
+    from prefactor_http.models.types import FinishStatus
 
     from ..client import PrefactorCoreClient
 
@@ -115,20 +116,30 @@ class AgentInstanceManager:
 
         await self._enqueue(operation)
 
-    async def finish(self, instance_id: str) -> None:
+    async def finish(
+        self,
+        instance_id: str,
+        status: "FinishStatus" = "complete",
+    ) -> None:
         """Mark an instance as finished.
 
         Queues a finish operation for the instance.
 
         Args:
             instance_id: The ID of the instance to finish.
+            status: Terminal status for the instance. Defaults to ``"complete"``.
         """
-        await self.finish_with_idempotency_key(instance_id, generate_idempotency_key())
+        await self.finish_with_idempotency_key(
+            instance_id,
+            generate_idempotency_key(),
+            status=status,
+        )
 
     async def finish_with_idempotency_key(
         self,
         instance_id: str,
         idempotency_key: str,
+        status: "FinishStatus" = "complete",
     ) -> None:
         """Queue a finish operation using a stable idempotency key."""
         operation = Operation(
@@ -136,6 +147,7 @@ class AgentInstanceManager:
             payload={
                 "instance_id": instance_id,
                 "idempotency_key": idempotency_key,
+                "status": status,
             },
             timestamp=datetime.now(timezone.utc),
         )
@@ -199,16 +211,21 @@ class AgentInstanceHandle:
             self._start_idempotency_key,
         )
 
-    async def finish(self) -> None:
+    async def finish(self, status: "FinishStatus" = "complete") -> None:
         """Mark the instance as finished.
 
         This queues a finish operation for the instance.
+
+        Args:
+            status: Terminal status for the instance — one of ``"complete"``,
+                ``"failed"``, or ``"cancelled"``. Defaults to ``"complete"``.
         """
         manager = self._client.instance_manager
         assert manager is not None
         await manager.finish_with_idempotency_key(
             self._instance_id,
             self._finish_idempotency_key,
+            status=status,
         )
 
     async def create_span(
