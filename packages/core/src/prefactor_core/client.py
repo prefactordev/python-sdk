@@ -274,6 +274,7 @@ class PrefactorCoreClient:
             elif operation.type == OperationType.FINISH_AGENT_INSTANCE:
                 await self._http.agent_instances.finish(
                     agent_instance_id=operation.payload["instance_id"],
+                    status=operation.payload.get("status", "complete"),
                     timestamp=operation.timestamp,
                     idempotency_key=operation.payload.get("idempotency_key"),
                 )
