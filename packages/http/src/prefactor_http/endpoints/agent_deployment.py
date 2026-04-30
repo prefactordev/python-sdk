@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import builtins
 from typing import TYPE_CHECKING
 
 from pydantic import ValidationError
@@ -34,7 +35,7 @@ class AgentDeploymentClient:
             ) from exc
         return api_response.details
 
-    async def list(self, agent_id: str | None = None) -> list[AgentDeployment]:
+    async def list(self, agent_id: str | None = None) -> builtins.list[AgentDeployment]:
         """List agent deployments, optionally filtered by agent_id.
 
         GET /api/v1/agent_deployment/
@@ -98,7 +99,7 @@ class AgentDeploymentClient:
         agent_deployment_id: str,
         current_version_id: str | None = None,
     ) -> AgentDeployment:
-        """Update an agent deployment. Pass current_version_id=None to clear pinned version.
+        """Update an agent deployment. Pass current_version_id=None to clear the pin.
 
         PUT /api/v1/agent_deployment/:agent_deployment_id
         """

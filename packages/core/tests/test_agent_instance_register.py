@@ -59,7 +59,7 @@ class _StubHttpClient:
 
 @pytest.mark.asyncio
 async def test_create_agent_instance_passes_environment_id_to_register():
-    """environment_id passed to create_agent_instance() reaches the HTTP register call."""
+    """environment_id passed to create_agent_instance() reaches the HTTP layer."""
     stub_http = _StubHttpClient()
     with patch("prefactor_core.client.PrefactorHttpClient", return_value=stub_http):
         async with PrefactorCoreClient(_make_config()) as client:

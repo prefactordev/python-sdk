@@ -2,13 +2,17 @@
 
 import pytest
 from aioresponses import aioresponses
-from prefactor_http import HttpClientConfig, PrefactorHttpClient, PrefactorResponseContractError
-from pydantic import ValidationError
+from prefactor_http import (
+    HttpClientConfig,
+    PrefactorHttpClient,
+    PrefactorResponseContractError,
+)
 from prefactor_http.models.agent_deployment import (
     AgentDeployment,
     CreateAgentDeploymentRequest,
     UpdateAgentDeploymentRequest,
 )
+from pydantic import ValidationError
 
 NOW = "2024-01-01T00:00:00Z"
 
@@ -87,8 +91,8 @@ class TestAgentInstanceHasDeploymentId:
         assert inst.agent_deployment_id == "depl-1"
 
     def test_agent_instance_requires_agent_deployment_id(self):
-        from pydantic import ValidationError
         from prefactor_http.models.agent_instance import AgentInstance
+        from pydantic import ValidationError
 
         with pytest.raises(ValidationError):
             AgentInstance(
@@ -106,6 +110,7 @@ class TestAgentInstanceHasDeploymentId:
 
 def get_request_body(mock, method, url):
     from yarl import URL
+
     key = (method, URL(url))
     call = mock.requests[key][0]
     return call.kwargs["json"]
