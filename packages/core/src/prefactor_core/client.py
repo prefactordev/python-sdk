@@ -319,6 +319,7 @@ class PrefactorCoreClient:
         agent_schema_version: dict[str, Any] | None = None,
         instance_id: str | None = None,
         external_schema_version_id: str | None = None,
+        environment_id: str | None = None,
     ) -> "AgentInstanceHandle":
         """Create a new agent instance.
 
@@ -373,6 +374,7 @@ class PrefactorCoreClient:
             agent_version=agent_version,
             agent_schema_version=final_schema_version,
             instance_id=instance_id,
+            environment_id=environment_id,
         )
 
         return AgentInstanceHandle(
