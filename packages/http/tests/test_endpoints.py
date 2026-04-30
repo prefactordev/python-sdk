@@ -18,6 +18,7 @@ MOCK_INSTANCE = {
     "agent_id": "agent-1",
     "agent_version_id": "ver-1",
     "environment_id": "env-1",
+    "agent_deployment_id": "depl-1",
     "status": "active",
     "inserted_at": NOW,
     "updated_at": NOW,

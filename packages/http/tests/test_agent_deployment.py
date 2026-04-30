@@ -64,3 +64,39 @@ class TestAgentDeploymentModel:
     def test_update_request_with_version(self):
         req = UpdateAgentDeploymentRequest(current_version_id="ver-2")
         assert req.current_version_id == "ver-2"
+
+
+class TestAgentInstanceHasDeploymentId:
+    def test_agent_instance_includes_agent_deployment_id(self):
+        from prefactor_http.models.agent_instance import AgentInstance
+
+        inst = AgentInstance(
+            type="agent_instance",
+            id="inst-1",
+            account_id="acct-1",
+            agent_id="agent-1",
+            agent_version_id="ver-1",
+            environment_id="env-1",
+            agent_deployment_id="depl-1",
+            status="active",
+            inserted_at="2024-01-01T00:00:00Z",
+            updated_at="2024-01-01T00:00:00Z",
+        )
+        assert inst.agent_deployment_id == "depl-1"
+
+    def test_agent_instance_requires_agent_deployment_id(self):
+        from pydantic import ValidationError
+        from prefactor_http.models.agent_instance import AgentInstance
+
+        with pytest.raises(ValidationError):
+            AgentInstance(
+                type="agent_instance",
+                id="inst-1",
+                account_id="acct-1",
+                agent_id="agent-1",
+                agent_version_id="ver-1",
+                environment_id="env-1",
+                status="active",
+                inserted_at="2024-01-01T00:00:00Z",
+                updated_at="2024-01-01T00:00:00Z",
+            )

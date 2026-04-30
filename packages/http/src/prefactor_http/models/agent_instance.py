@@ -244,6 +244,7 @@ class AgentInstance(BaseModel):
     agent_id: str
     agent_version_id: str
     environment_id: str
+    agent_deployment_id: str
     status: AgentStatus
     inserted_at: datetime
     updated_at: datetime
