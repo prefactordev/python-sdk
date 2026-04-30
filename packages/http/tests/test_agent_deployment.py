@@ -254,3 +254,20 @@ class TestAgentDeploymentEndpoints:
             async with PrefactorHttpClient(config) as client:
                 with pytest.raises(PrefactorResponseContractError):
                     await client.agent_deployments.get("depl-1")
+
+
+class TestAgentDeploymentExports:
+    def test_model_importable_from_models_package(self):
+        from prefactor_http.models import AgentDeployment as D
+
+        assert D is not None
+
+    def test_client_importable_from_endpoints_package(self):
+        from prefactor_http.endpoints import AgentDeploymentClient as C
+
+        assert C is not None
+
+    def test_model_importable_from_top_level(self):
+        from prefactor_http import AgentDeployment as D
+
+        assert D is not None
