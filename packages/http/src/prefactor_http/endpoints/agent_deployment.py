@@ -25,9 +25,27 @@ class AgentDeploymentClient:
     _UNSET = object()
 
     def __init__(self, http_client: "PrefactorHttpClient") -> None:
+        """Initialize the client.
+
+        Args:
+            http_client: The main HTTP client instance.
+        """
         self._client = http_client
 
     def _parse_response(self, response: dict, operation: str) -> AgentDeployment:
+        """Parse an agent deployment response.
+
+        Args:
+            response: Raw API response payload.
+            operation: Operation name used in response contract errors.
+
+        Returns:
+            Parsed agent deployment details.
+
+        Raises:
+            PrefactorResponseContractError: If the response payload does not
+                match the expected schema.
+        """
         try:
             api_response = ApiResponse[AgentDeployment](**response)
         except ValidationError as exc:
@@ -41,6 +59,16 @@ class AgentDeploymentClient:
         """List agent deployments, optionally filtered by agent_id.
 
         GET /api/v1/agent_deployment/
+
+        Args:
+            agent_id: Optional agent ID to filter deployments by.
+
+        Returns:
+            Agent deployment summaries.
+
+        Raises:
+            PrefactorResponseContractError: If the response payload does not
+                match the expected schema.
         """
         params = {}
         if agent_id is not None:
@@ -65,6 +93,16 @@ class AgentDeploymentClient:
         """Get a single agent deployment by ID.
 
         GET /api/v1/agent_deployment/:agent_deployment_id
+
+        Args:
+            agent_deployment_id: Agent deployment ID to fetch.
+
+        Returns:
+            The requested agent deployment.
+
+        Raises:
+            PrefactorResponseContractError: If the response payload does not
+                match the expected schema.
         """
         response = await self._client.request(
             "GET",
@@ -82,6 +120,19 @@ class AgentDeploymentClient:
         """Create a new agent deployment.
 
         POST /api/v1/agent_deployment/
+
+        Args:
+            agent_id: Agent ID to deploy.
+            environment_id: Environment ID to deploy into.
+            current_version_id: Optional initial pinned agent version ID.
+            id: Optional explicit agent deployment ID.
+
+        Returns:
+            The created agent deployment.
+
+        Raises:
+            PrefactorResponseContractError: If the response payload does not
+                match the expected schema.
         """
         details = CreateAgentDeploymentRequest(
             agent_id=agent_id,
@@ -107,6 +158,18 @@ class AgentDeploymentClient:
         unchanged.
 
         PUT /api/v1/agent_deployment/:agent_deployment_id
+
+        Args:
+            agent_deployment_id: Agent deployment ID to update.
+            current_version_id: New pinned agent version ID, None to clear the
+                pin, or omitted to leave the pin unchanged.
+
+        Returns:
+            The updated agent deployment.
+
+        Raises:
+            PrefactorResponseContractError: If the response payload does not
+                match the expected schema.
         """
         if current_version_id is self._UNSET:
             details = UpdateAgentDeploymentRequest()
@@ -124,6 +187,12 @@ class AgentDeploymentClient:
         """Delete an agent deployment.
 
         DELETE /api/v1/agent_deployment/:agent_deployment_id
+
+        Args:
+            agent_deployment_id: Agent deployment ID to delete.
+
+        Returns:
+            None.
         """
         await self._client.request(
             "DELETE",

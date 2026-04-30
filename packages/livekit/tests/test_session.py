@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from types import SimpleNamespace
+from typing import TYPE_CHECKING, cast
 from unittest.mock import AsyncMock, Mock
 
 import prefactor_livekit
@@ -11,6 +12,9 @@ import pytest
 from prefactor_core import PrefactorTelemetryFailureError
 from prefactor_livekit import LiveKitToolSchemaConfig, PrefactorLiveKitSession
 from prefactor_livekit._version import PACKAGE_VERSION
+
+if TYPE_CHECKING:
+    from prefactor_core import AgentInstanceHandle, PrefactorCoreClient
 
 
 class RecordingSpanContext:
@@ -163,8 +167,8 @@ def build_owned_wrapper() -> tuple[
     )
     instance = RecordingInstance()
     client = RecordingClient()
-    wrapper._instance = instance
-    wrapper._client = client
+    wrapper._instance = cast("AgentInstanceHandle", instance)
+    wrapper._client = cast("PrefactorCoreClient", client)
     wrapper._owns_instance = True
     wrapper._owns_client = True
     return wrapper, instance, client
