@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import builtins
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from pydantic import ValidationError
 
@@ -111,9 +111,8 @@ class AgentDeploymentClient:
         if current_version_id is self._UNSET:
             details = UpdateAgentDeploymentRequest()
         else:
-            details = UpdateAgentDeploymentRequest(
-                current_version_id=current_version_id
-            )
+            version_id = cast(str | None, current_version_id)
+            details = UpdateAgentDeploymentRequest(current_version_id=version_id)
         response = await self._client.request(
             "PUT",
             f"/api/v1/agent_deployment/{agent_deployment_id}",
