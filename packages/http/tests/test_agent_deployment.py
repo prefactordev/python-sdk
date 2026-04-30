@@ -1,5 +1,7 @@
 """Tests for AgentDeployment models and endpoint client."""
 
+from __future__ import annotations
+
 import pytest
 from aioresponses import aioresponses
 from prefactor_http import (
@@ -238,6 +240,20 @@ class TestAgentDeploymentEndpoints:
             m, "PUT", "https://api.test.com/api/v1/agent_deployment/depl-1"
         )
         assert body["details"]["current_version_id"] is None
+
+    @pytest.mark.asyncio
+    async def test_update_without_version_leaves_version_unchanged(self, config):
+        with aioresponses() as m:
+            m.put(
+                "https://api.test.com/api/v1/agent_deployment/depl-1",
+                payload={"status": "success", "details": MOCK_DEPLOYMENT},
+            )
+            async with PrefactorHttpClient(config) as client:
+                await client.agent_deployments.update("depl-1")
+        body = get_request_body(
+            m, "PUT", "https://api.test.com/api/v1/agent_deployment/depl-1"
+        )
+        assert body == {"details": {}}
 
     @pytest.mark.asyncio
     async def test_delete_calls_correct_endpoint(self, config):

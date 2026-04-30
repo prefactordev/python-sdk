@@ -337,6 +337,7 @@ class PrefactorCoreClient:
             instance_id: Optional custom ID for the instance.
             external_schema_version_id: Optional external identifier for the
                 schema version. Defaults to "auto-generated" when using registry.
+            environment_id: Optional environment ID used to scope the agent instance.
 
         Returns:
             AgentInstanceHandle for the created instance.

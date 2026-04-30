@@ -22,6 +22,8 @@ if TYPE_CHECKING:
 class AgentDeploymentClient:
     """Client for AgentDeployment CRUD endpoints."""
 
+    _UNSET = object()
+
     def __init__(self, http_client: "PrefactorHttpClient") -> None:
         self._client = http_client
 
@@ -97,17 +99,25 @@ class AgentDeploymentClient:
     async def update(
         self,
         agent_deployment_id: str,
-        current_version_id: str | None = None,
+        current_version_id: str | None | object = _UNSET,
     ) -> AgentDeployment:
-        """Update an agent deployment. Pass current_version_id=None to clear the pin.
+        """Update an agent deployment.
+
+        Pass current_version_id=None to clear the pin. Omit it to leave the pin
+        unchanged.
 
         PUT /api/v1/agent_deployment/:agent_deployment_id
         """
-        details = UpdateAgentDeploymentRequest(current_version_id=current_version_id)
+        if current_version_id is self._UNSET:
+            details = UpdateAgentDeploymentRequest()
+        else:
+            details = UpdateAgentDeploymentRequest(
+                current_version_id=current_version_id
+            )
         response = await self._client.request(
             "PUT",
             f"/api/v1/agent_deployment/{agent_deployment_id}",
-            json_data={"details": details.model_dump()},
+            json_data={"details": details.model_dump(exclude_unset=True)},
         )
         return self._parse_response(response, "agent_deployments.update")
 
