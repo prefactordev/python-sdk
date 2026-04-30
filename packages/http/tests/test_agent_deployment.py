@@ -1,6 +1,8 @@
 """Tests for AgentDeployment models and endpoint client."""
 
 import pytest
+from aioresponses import aioresponses
+from prefactor_http import HttpClientConfig, PrefactorHttpClient, PrefactorResponseContractError
 from pydantic import ValidationError
 from prefactor_http.models.agent_deployment import (
     AgentDeployment,
@@ -100,3 +102,155 @@ class TestAgentInstanceHasDeploymentId:
                 inserted_at="2024-01-01T00:00:00Z",
                 updated_at="2024-01-01T00:00:00Z",
             )
+
+
+def get_request_body(mock, method, url):
+    from yarl import URL
+    key = (method, URL(url))
+    call = mock.requests[key][0]
+    return call.kwargs["json"]
+
+
+@pytest.fixture
+def config():
+    return HttpClientConfig(
+        api_url="https://api.test.com",
+        api_token="test-token",
+        max_retries=0,
+    )
+
+
+class TestAgentDeploymentEndpoints:
+    @pytest.mark.asyncio
+    async def test_list_returns_deployments(self, config):
+        payload = {
+            "status": "success",
+            "summaries": [MOCK_DEPLOYMENT],
+            "pagination": None,
+            "sorting": None,
+        }
+        with aioresponses() as m:
+            m.get("https://api.test.com/api/v1/agent_deployment/", payload=payload)
+            async with PrefactorHttpClient(config) as client:
+                result = await client.agent_deployments.list()
+        assert len(result) == 1
+        assert result[0].id == "depl-1"
+
+    @pytest.mark.asyncio
+    async def test_list_with_agent_id_filter(self, config):
+        payload = {
+            "status": "success",
+            "summaries": [MOCK_DEPLOYMENT],
+            "pagination": None,
+            "sorting": None,
+        }
+        with aioresponses() as m:
+            m.get(
+                "https://api.test.com/api/v1/agent_deployment/?agent_id=agent-1",
+                payload=payload,
+            )
+            async with PrefactorHttpClient(config) as client:
+                result = await client.agent_deployments.list(agent_id="agent-1")
+        assert result[0].agent_id == "agent-1"
+
+    @pytest.mark.asyncio
+    async def test_get_returns_deployment(self, config):
+        with aioresponses() as m:
+            m.get(
+                "https://api.test.com/api/v1/agent_deployment/depl-1",
+                payload={"status": "success", "details": MOCK_DEPLOYMENT},
+            )
+            async with PrefactorHttpClient(config) as client:
+                result = await client.agent_deployments.get("depl-1")
+        assert result.id == "depl-1"
+
+    @pytest.mark.asyncio
+    async def test_create_sends_correct_payload(self, config):
+        with aioresponses() as m:
+            m.post(
+                "https://api.test.com/api/v1/agent_deployment/",
+                payload={"status": "success", "details": MOCK_DEPLOYMENT},
+            )
+            async with PrefactorHttpClient(config) as client:
+                result = await client.agent_deployments.create(
+                    agent_id="agent-1",
+                    environment_id="env-1",
+                )
+        assert result.agent_id == "agent-1"
+        body = get_request_body(
+            m, "POST", "https://api.test.com/api/v1/agent_deployment/"
+        )
+        assert body["details"]["agent_id"] == "agent-1"
+        assert body["details"]["environment_id"] == "env-1"
+
+    @pytest.mark.asyncio
+    async def test_create_with_optional_fields(self, config):
+        with aioresponses() as m:
+            m.post(
+                "https://api.test.com/api/v1/agent_deployment/",
+                payload={"status": "success", "details": MOCK_DEPLOYMENT},
+            )
+            async with PrefactorHttpClient(config) as client:
+                await client.agent_deployments.create(
+                    agent_id="agent-1",
+                    environment_id="env-1",
+                    current_version_id="ver-1",
+                    id="depl-custom",
+                )
+        body = get_request_body(
+            m, "POST", "https://api.test.com/api/v1/agent_deployment/"
+        )
+        assert body["details"]["current_version_id"] == "ver-1"
+        assert body["details"]["id"] == "depl-custom"
+
+    @pytest.mark.asyncio
+    async def test_update_sends_correct_payload(self, config):
+        with aioresponses() as m:
+            m.put(
+                "https://api.test.com/api/v1/agent_deployment/depl-1",
+                payload={"status": "success", "details": MOCK_DEPLOYMENT},
+            )
+            async with PrefactorHttpClient(config) as client:
+                result = await client.agent_deployments.update(
+                    "depl-1", current_version_id="ver-2"
+                )
+        assert result.id == "depl-1"
+        body = get_request_body(
+            m, "PUT", "https://api.test.com/api/v1/agent_deployment/depl-1"
+        )
+        assert body["details"]["current_version_id"] == "ver-2"
+
+    @pytest.mark.asyncio
+    async def test_update_with_null_clears_version(self, config):
+        with aioresponses() as m:
+            m.put(
+                "https://api.test.com/api/v1/agent_deployment/depl-1",
+                payload={"status": "success", "details": MOCK_DEPLOYMENT},
+            )
+            async with PrefactorHttpClient(config) as client:
+                await client.agent_deployments.update("depl-1", current_version_id=None)
+        body = get_request_body(
+            m, "PUT", "https://api.test.com/api/v1/agent_deployment/depl-1"
+        )
+        assert body["details"]["current_version_id"] is None
+
+    @pytest.mark.asyncio
+    async def test_delete_calls_correct_endpoint(self, config):
+        with aioresponses() as m:
+            m.delete(
+                "https://api.test.com/api/v1/agent_deployment/depl-1",
+                payload={"status": "success"},
+            )
+            async with PrefactorHttpClient(config) as client:
+                await client.agent_deployments.delete("depl-1")
+
+    @pytest.mark.asyncio
+    async def test_get_invalid_response_raises_contract_error(self, config):
+        with aioresponses() as m:
+            m.get(
+                "https://api.test.com/api/v1/agent_deployment/depl-1",
+                payload={"status": "success", "details": {"id": "depl-1"}},
+            )
+            async with PrefactorHttpClient(config) as client:
+                with pytest.raises(PrefactorResponseContractError):
+                    await client.agent_deployments.get("depl-1")

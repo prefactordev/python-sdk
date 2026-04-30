@@ -22,6 +22,7 @@ from prefactor_http.exceptions import (
 from prefactor_http.retry import RetryHandler
 
 if TYPE_CHECKING:
+    from prefactor_http.endpoints.agent_deployment import AgentDeploymentClient
     from prefactor_http.endpoints.agent_instance import AgentInstanceClient
     from prefactor_http.endpoints.agent_span import AgentSpanClient
     from prefactor_http.endpoints.bulk import BulkClient
@@ -72,6 +73,7 @@ class PrefactorHttpClient:
         self._sdk_header = sdk_header or DEFAULT_SDK_HEADER
         # Import here to avoid circular import during __init__.py loading
         self._bulk: BulkClient | None = None
+        self._agent_deployments: AgentDeploymentClient | None = None
         self._agent_instances: AgentInstanceClient | None = None
         self._agent_spans: AgentSpanClient | None = None
 
@@ -92,6 +94,15 @@ class PrefactorHttpClient:
                 connect=self.config.connect_timeout,
             )
             self._session = aiohttp.ClientSession(timeout=timeout)
+
+    @property
+    def agent_deployments(self) -> "AgentDeploymentClient":
+        """Access the agent deployment endpoint client."""
+        if self._agent_deployments is None:
+            from prefactor_http.endpoints.agent_deployment import AgentDeploymentClient
+
+            self._agent_deployments = AgentDeploymentClient(self)
+        return self._agent_deployments
 
     @property
     def agent_instances(self) -> "AgentInstanceClient":
