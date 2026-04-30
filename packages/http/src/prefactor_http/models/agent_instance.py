@@ -179,6 +179,8 @@ class RegisterAgentInstanceRequest(BaseModel):
 
     Attributes:
         agent_id: ID of the agent to create an instance for
+        environment_id: Environment to deploy into; omit when using a
+            deployment-scoped token (server reads it from the token)
         agent_version: Version information for the agent
         agent_schema_version: Schema version for the agent
         id: Optional custom ID for the instance
@@ -187,6 +189,7 @@ class RegisterAgentInstanceRequest(BaseModel):
     """
 
     agent_id: str
+    environment_id: str | None = None
     agent_version: AgentVersionForRegister
     agent_schema_version: AgentSchemaVersionForRegister
     id: str | None = None

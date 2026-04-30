@@ -64,6 +64,7 @@ class AgentInstanceClient:
         agent_id: str,
         agent_version: dict,
         agent_schema_version: dict,
+        environment_id: str | None = None,
         id: str | None = None,
         idempotency_key: str | None = None,
         update_current_version: bool = True,
@@ -79,10 +80,12 @@ class AgentInstanceClient:
             agent_schema_version: Schema version dict with external_identifier
                 and span type definitions (span_type_schemas, span_schemas,
                 and/or span_result_schemas)
+            environment_id: Environment to deploy into. Required when using an
+                account-scoped token; omit when using a deployment-scoped token
             id: Optional custom ID for the instance
             idempotency_key: Optional idempotency key
-            update_current_version: Whether to update the current version
-                (defaults to True)
+            update_current_version: Whether to update the deployment's pinned
+                version (defaults to True)
 
         Returns:
             The created agent instance
@@ -100,6 +103,8 @@ class AgentInstanceClient:
             "agent_schema_version": agent_schema_version,
             "update_current_version": update_current_version,
         }
+        if environment_id is not None:
+            payload["environment_id"] = environment_id
         if id is not None:
             payload["id"] = id
         if idempotency_key is not None:
