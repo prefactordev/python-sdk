@@ -23,13 +23,16 @@ session = AgentSession(...)
 tracer = PrefactorLiveKitSession.from_config(
     api_url="https://api.prefactor.ai",
     api_token="your-api-token",
-    agent_id="voice-agent",
+    agent_id="voice-agent",  # Optional for deployment-scoped tokens
     agent_name="Voice Agent",
 )
 
 await tracer.start(session=session, agent=my_agent)
 await tracer.close()
 ```
+
+With a deployment-scoped token you can omit `agent_id`; the backend derives the
+agent and environment from the token during registration.
 
 ### Example runner
 
