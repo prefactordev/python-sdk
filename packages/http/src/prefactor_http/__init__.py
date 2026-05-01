@@ -41,7 +41,6 @@ from prefactor_http.exceptions import (
     PrefactorRetryExhaustedError,
     PrefactorValidationError,
 )
-from prefactor_http.models.agent_deployment import AgentDeployment
 from prefactor_http.models.agent_instance import (
     AgentInstance,
     AgentInstanceSpanCounts,
@@ -63,8 +62,6 @@ from prefactor_http.models.types import AgentStatus, FinishStatus
 __all__ = [
     # Main client
     "PrefactorHttpClient",
-    # AgentDeployment
-    "AgentDeployment",
     # Configuration
     "HttpClientConfig",
     # Exceptions

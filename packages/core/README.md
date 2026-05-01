@@ -70,6 +70,10 @@ async def main():
 asyncio.run(main())
 ```
 
+`create_agent_instance()` supports two auth modes:
+- Account-scoped token: pass `agent_id` and usually `environment_id`.
+- Deployment-scoped token: omit `agent_id` and `environment_id`; the API derives both from the token.
+
 ## API Reference
 
 ### `PrefactorCoreClient`
@@ -87,9 +91,9 @@ await client.close()
 
 ```python
 handle = await client.create_agent_instance(
-    agent_id="my-agent",
     agent_version={"name": "My Agent", "external_identifier": "v1.0.0"},
     agent_schema_version=None,        # Optional: auto-generated if schema_registry is configured
+    agent_id="my-agent",              # Optional for deployment-scoped tokens
     external_schema_version_id=None,  # Optional: reference an existing schema version
 ) -> AgentInstanceHandle
 ```
@@ -229,8 +233,8 @@ config = PrefactorCoreConfig(
 async with PrefactorCoreClient(config) as client:
     # agent_schema_version is generated automatically from the registry
     instance = await client.create_agent_instance(
-        agent_id="my-agent",
         agent_version={"name": "My Agent", "external_identifier": "v1.0.0"},
+        agent_id="my-agent",  # Optional for deployment-scoped tokens
     )
 ```
 

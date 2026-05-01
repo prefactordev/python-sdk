@@ -178,7 +178,7 @@ class RegisterAgentInstanceRequest(BaseModel):
     """Request to register a new agent instance.
 
     Attributes:
-        agent_id: ID of the agent to create an instance for
+        agent_id: Agent ID; omit when using a deployment-scoped token
         environment_id: Environment to deploy into; omit when using a
             deployment-scoped token (server reads it from the token)
         agent_version: Version information for the agent
@@ -188,7 +188,7 @@ class RegisterAgentInstanceRequest(BaseModel):
         update_current_version: Whether to update the current version
     """
 
-    agent_id: str
+    agent_id: str | None = None
     environment_id: str | None = None
     agent_version: AgentVersionForRegister
     agent_schema_version: AgentSchemaVersionForRegister

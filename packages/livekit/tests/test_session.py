@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, cast
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, patch
 
 import prefactor_livekit
 import pytest
@@ -190,6 +190,40 @@ class TestPrefactorLiveKitSession:
         assert wrapper._owns_client is True
         assert wrapper._owns_instance is True
 
+    async def test_factory_pattern_without_agent_id(self) -> None:
+        wrapper = PrefactorLiveKitSession.from_config(
+            api_url="http://test",
+            api_token="test-token",
+            agent_id=None,
+        )
+
+        assert wrapper._agent_id is None
+        assert wrapper._owns_client is True
+        assert wrapper._owns_instance is True
+
+    async def test_factory_pattern_without_agent_id_initializes_instance(self) -> None:
+        wrapper = PrefactorLiveKitSession.from_config(
+            api_url="http://test",
+            api_token="test-token",
+            agent_id=None,
+        )
+
+        assert wrapper._client is not None
+        instance = Mock()
+        instance.start = AsyncMock()
+        instance.finish = AsyncMock()
+
+        with patch.object(
+            wrapper._client,
+            "create_agent_instance",
+            AsyncMock(return_value=instance),
+        ) as mock_create:
+            await wrapper.ensure_initialized()
+            await wrapper.close()
+
+        assert mock_create.await_args is not None
+        assert mock_create.await_args.kwargs["agent_id"] is None
+
     async def test_factory_pattern_with_tool_schemas(self) -> None:
         wrapper = PrefactorLiveKitSession.from_config(
             api_url="http://test",
@@ -217,6 +251,18 @@ class TestPrefactorLiveKitSession:
         assert wrapper._client is client
         assert wrapper._agent_id == "cfg-agent"
         assert wrapper._agent_name == "Config Agent"
+
+    async def test_configuration_mode_without_agent_id(self) -> None:
+        client = Mock()
+        client._initialized = True
+
+        wrapper = PrefactorLiveKitSession(
+            client=client,
+            agent_id=None,
+        )
+
+        assert wrapper._client is client
+        assert wrapper._agent_id is None
 
     async def test_pre_configured_instance(self) -> None:
         instance = RecordingInstance()

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from pydantic import ValidationError
 
@@ -61,9 +61,9 @@ class AgentInstanceClient:
 
     async def register(
         self,
-        agent_id: str,
         agent_version: dict,
         agent_schema_version: dict,
+        agent_id: str | None = None,
         environment_id: str | None = None,
         id: str | None = None,
         idempotency_key: str | None = None,
@@ -74,7 +74,7 @@ class AgentInstanceClient:
         POST /api/v1/agent_instance/register
 
         Args:
-            agent_id: ID of the agent to create an instance for
+            agent_id: Agent ID. Omit when using a deployment-scoped token.
             agent_version: Version info dict with name, external_identifier,
                 description
             agent_schema_version: Schema version dict with external_identifier
@@ -97,12 +97,13 @@ class AgentInstanceClient:
         if idempotency_key is not None:
             _validate_idempotency_key(idempotency_key)
 
-        payload = {
-            "agent_id": agent_id,
+        payload: dict[str, Any] = {
             "agent_version": agent_version,
             "agent_schema_version": agent_schema_version,
             "update_current_version": update_current_version,
         }
+        if agent_id is not None:
+            payload["agent_id"] = agent_id
         if environment_id is not None:
             payload["environment_id"] = environment_id
         if id is not None:

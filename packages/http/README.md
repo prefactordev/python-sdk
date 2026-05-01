@@ -61,6 +61,10 @@ async def main():
 asyncio.run(main())
 ```
 
+`agent_instances.register()` supports two auth modes:
+- Account-scoped token: pass `agent_id` and usually `environment_id`.
+- Deployment-scoped token: omit `agent_id` and `environment_id`; the API derives both from the token.
+
 ## Endpoints
 
 ### Agent Instances (`client.agent_instances`)
@@ -93,6 +97,18 @@ instance = await client.agent_instances.register(
     id=None,                      # Optional: pre-assign an ID
     idempotency_key=None,         # Optional: idempotency key
     update_current_version=True,  # Optional: update the agent's current version
+)
+
+# Register with a deployment-scoped token
+instance = await client.agent_instances.register(
+    agent_version={
+        "name": "My Agent",
+        "external_identifier": "v1.0.0",
+    },
+    agent_schema_version={
+        "external_identifier": "schema-v1",
+        "span_type_schemas": [],
+    },
 )
 
 # Start an instance

@@ -59,9 +59,9 @@ class AgentInstanceManager:
 
     async def register(
         self,
-        agent_id: str,
         agent_version: dict[str, Any],
         agent_schema_version: dict[str, Any],
+        agent_id: str | None = None,
         instance_id: str | None = None,
         environment_id: str | None = None,
     ) -> str:
@@ -71,7 +71,7 @@ class AgentInstanceManager:
         the API-generated ID.
 
         Args:
-            agent_id: ID of the agent to create an instance for.
+            agent_id: Agent ID. Omit when using a deployment-scoped token.
             agent_version: Version information (name, external_identifier, etc.).
             agent_schema_version: Schema version information.
             instance_id: Optional ID to forward to the API as ``id``.  When

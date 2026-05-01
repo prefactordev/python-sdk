@@ -1,6 +1,5 @@
 """Prefactor HTTP Client models."""
 
-from prefactor_http.models.agent_deployment import AgentDeployment
 from prefactor_http.models.agent_instance import (
     ActionProfile,
     AgentInstance,
@@ -23,7 +22,6 @@ from prefactor_http.models.bulk import (
 from prefactor_http.models.types import AgentStatus, FinishStatus
 
 __all__ = [
-    "AgentDeployment",
     # Type definitions
     "AgentStatus",
     "FinishStatus",

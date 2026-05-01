@@ -133,7 +133,7 @@ class PrefactorMiddleware(AgentMiddleware):
     def __init__(
         self,
         client: PrefactorCoreClient | None = None,
-        agent_id: str = "langchain-agent",
+        agent_id: str | None = None,
         agent_name: str | None = None,
         instance: AgentInstanceHandle | None = None,
         tool_schemas: Mapping[str, LangChainToolSchemaConfig | Mapping[str, Any]]
@@ -242,7 +242,7 @@ class PrefactorMiddleware(AgentMiddleware):
         cls,
         api_url: str,
         api_token: str,
-        agent_id: str = "langchain-agent",
+        agent_id: str | None = None,
         agent_name: str | None = None,
         schema_registry: SchemaRegistry | None = None,
         include_langchain_schemas: bool = True,
@@ -366,7 +366,10 @@ class PrefactorMiddleware(AgentMiddleware):
         # that the same configuration always maps to the same version
         # (idempotent across runs) and any change produces a new, distinct ID.
         agent_version_name = self._agent_name or "langchain-agent"
-        schema_version_id = f"langchain-{self._agent_id}"
+        if self._agent_id is None:
+            schema_version_id = "langchain-deployment"
+        else:
+            schema_version_id = f"langchain-{self._agent_id}"
         if self._client._config.schema_registry is not None:
             raw = self._client._config.schema_registry.to_agent_schema_version(
                 schema_version_id
@@ -374,7 +377,10 @@ class PrefactorMiddleware(AgentMiddleware):
             digest = hashlib.sha1(
                 json.dumps({"name": agent_version_name, **raw}, sort_keys=True).encode()
             ).hexdigest()[:8]
-            schema_version_id = f"langchain-{self._agent_id}-{digest}"
+            if self._agent_id is None:
+                schema_version_id = f"langchain-deployment-{digest}"
+            else:
+                schema_version_id = f"langchain-{self._agent_id}-{digest}"
 
         # Create agent instance.  agent_version fields are immutable once
         # stored by the API, so both name and external_identifier must be

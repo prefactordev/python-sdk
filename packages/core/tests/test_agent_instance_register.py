@@ -85,3 +85,39 @@ async def test_create_agent_instance_without_environment_id_omits_field():
             )
     call = stub_http.agent_instances.register_calls[0]
     assert "environment_id" not in call or call["environment_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_create_agent_instance_without_agent_id_omits_field():
+    """Omitting agent_id does not send it to the HTTP register call."""
+    stub_http = _StubHttpClient()
+    with patch("prefactor_core.client.PrefactorHttpClient", return_value=stub_http):
+        async with PrefactorCoreClient(_make_config()) as client:
+            await client.create_agent_instance(
+                agent_version={"name": "v1"},
+                agent_schema_version={"span_schemas": {}},
+            )
+    call = stub_http.agent_instances.register_calls[0]
+    assert "agent_id" not in call or call["agent_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_create_agent_instance_without_agent_id_uses_deployment_schema_fallback():
+    """Registry fallback should not require agent_id to generate an external ID."""
+    stub_http = _StubHttpClient()
+    config = _make_config()
+    config.schema_registry = SimpleNamespace(
+        to_agent_schema_version=lambda external_id: {"external_identifier": external_id}
+    )
+
+    with patch("prefactor_core.client.PrefactorHttpClient", return_value=stub_http):
+        async with PrefactorCoreClient(config) as client:
+            await client.create_agent_instance(
+                agent_version={"name": "v1"},
+                agent_schema_version=None,
+            )
+
+    call = stub_http.agent_instances.register_calls[0]
+    assert call["agent_schema_version"]["external_identifier"].startswith(
+        "auto-deployment-"
+    )

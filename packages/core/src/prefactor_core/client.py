@@ -314,9 +314,9 @@ class PrefactorCoreClient:
 
     async def create_agent_instance(
         self,
-        agent_id: str,
         agent_version: dict[str, Any],
         agent_schema_version: dict[str, Any] | None = None,
+        agent_id: str | None = None,
         instance_id: str | None = None,
         external_schema_version_id: str | None = None,
         environment_id: str | None = None,
@@ -330,7 +330,7 @@ class PrefactorCoreClient:
         the registry's schemas will be used automatically.
 
         Args:
-            agent_id: ID of the agent to create an instance for.
+            agent_id: Agent ID. Omit when using a deployment-scoped token.
             agent_version: Version information (name, etc.).
             agent_schema_version: Schema version. Uses registry if not provided
                 and registry is configured.
@@ -358,7 +358,10 @@ class PrefactorCoreClient:
             # Use registry to generate schema version
             ext_id = external_schema_version_id
             if ext_id is None:
-                ext_id = f"auto-{agent_id}-{time.time()}"
+                if agent_id is None:
+                    ext_id = f"auto-deployment-{time.time()}"
+                else:
+                    ext_id = f"auto-{agent_id}-{time.time()}"
             final_schema_version = self._config.schema_registry.to_agent_schema_version(
                 ext_id
             )

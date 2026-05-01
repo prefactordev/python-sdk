@@ -18,7 +18,7 @@ from prefactor_langchain import LangChainToolSchemaConfig, PrefactorMiddleware
 middleware = PrefactorMiddleware.from_config(
     api_url="https://api.prefactor.ai",
     api_token="your-api-token",
-    agent_id="my-agent",
+    agent_id="my-agent",  # Optional for deployment-scoped tokens
     agent_name="My Agent",  # optional
     tool_schemas={
         "send_email": LangChainToolSchemaConfig(
@@ -48,6 +48,9 @@ result = agent.invoke({"messages": [...]})
 await middleware.close()
 ```
 
+With a deployment-scoped token you can omit `agent_id`; the backend derives the
+agent and environment from the token during registration.
+
 ### Pre-configured client
 
 Pass a client you created yourself when you need full control over its
@@ -65,7 +68,7 @@ await client.initialize()
 
 middleware = PrefactorMiddleware(
     client=client,
-    agent_id="my-agent",
+    agent_id="my-agent",  # Optional for deployment-scoped tokens
     agent_name="My Agent",
 )
 
@@ -112,7 +115,7 @@ register_langchain_schemas(
 middleware = PrefactorMiddleware.from_config(
     api_url="https://api.prefactor.ai",
     api_token="your-api-token",
-    agent_id="my-agent",
+    agent_id="my-agent",  # Optional for deployment-scoped tokens
     schema_registry=registry,
 )
 ```
