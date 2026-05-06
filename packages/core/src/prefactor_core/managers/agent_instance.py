@@ -218,12 +218,18 @@ class AgentInstanceHandle:
     async def finish(self, status: "FinishStatus" = "complete") -> None:
         """Mark the instance as finished.
 
-        This queues a finish operation for the instance.
+        Resets the termination monitor (fence + new event) before enqueueing
+        the HTTP finish so stale span responses from the dying run cannot
+        trigger termination on the next run.
 
         Args:
             status: Terminal status for the instance — one of ``"complete"``,
                 ``"failed"``, or ``"cancelled"``. Defaults to ``"complete"``.
         """
+        monitor = getattr(self._client, "_termination_monitor", None)
+        if monitor is not None:
+            monitor.reset()
+        self._client._clear_current_instance(self._instance_id)
         manager = self._client.instance_manager
         assert manager is not None
         await manager.finish_with_idempotency_key(

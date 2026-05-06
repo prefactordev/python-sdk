@@ -136,3 +136,30 @@ class TestFinishAgentInstance409Handling:
         )
         # Should not raise
         await client._process_operation(op)
+
+
+class TestAgentInstanceHandleFinishResetsMonitor:
+    async def test_finish_resets_termination_monitor(self):
+        """handle.finish() should reset the termination monitor before enqueueing."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        from prefactor_core.managers.agent_instance import AgentInstanceHandle
+        from prefactor_core.monitoring.termination_monitor import TerminationMonitor
+
+        fetch = AsyncMock(return_value=MagicMock(status="active", terminated_reason=None))
+        monitor = TerminationMonitor(fetch_instance=fetch)
+        monitor.detect_termination("run 1")
+        assert monitor.get_termination_event().is_set()
+
+        mock_client = MagicMock()
+        mock_client._termination_monitor = monitor
+        mock_client.instance_manager = MagicMock()
+        mock_client.instance_manager.finish_with_idempotency_key = AsyncMock()
+
+        handle = AgentInstanceHandle(instance_id="inst-1", client=mock_client)
+        await handle.finish()
+
+        # Monitor should be reset (new unset event)
+        assert not monitor.get_termination_event().is_set()
+        # finish_with_idempotency_key should still be called
+        mock_client.instance_manager.finish_with_idempotency_key.assert_called_once()
