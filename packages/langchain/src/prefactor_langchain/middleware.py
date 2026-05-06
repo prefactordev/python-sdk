@@ -168,6 +168,7 @@ class PrefactorMiddleware(AgentMiddleware):
             self._client = None
             self._agent_id = agent_id
             self._agent_name = agent_name
+            self._environment_id: str | None = None
             self._instance = instance
             self._owns_instance = False
             self._owns_client = False
@@ -203,6 +204,7 @@ class PrefactorMiddleware(AgentMiddleware):
         self._client = client
         self._agent_id = agent_id
         self._agent_name = agent_name
+        self._environment_id = None
 
         self._instance: AgentInstanceHandle | None = None
         self._owns_instance = True
@@ -260,6 +262,7 @@ class PrefactorMiddleware(AgentMiddleware):
         api_token: str,
         agent_id: str | None = None,
         agent_name: str | None = None,
+        environment_id: str | None = None,
         schema_registry: SchemaRegistry | None = None,
         include_langchain_schemas: bool = True,
         tool_schemas: Mapping[str, LangChainToolSchemaConfig | Mapping[str, Any]]
@@ -319,6 +322,7 @@ class PrefactorMiddleware(AgentMiddleware):
         middleware._client = client
         middleware._agent_id = agent_id
         middleware._agent_name = agent_name
+        middleware._environment_id = environment_id
         middleware._instance = None
         middleware._owns_instance = True
         middleware._owns_client = True
@@ -410,6 +414,7 @@ class PrefactorMiddleware(AgentMiddleware):
             },
             agent_schema_version=None,  # Will use registry if available
             external_schema_version_id=schema_version_id,
+            environment_id=self._environment_id,
         )
 
         self._owns_instance = True

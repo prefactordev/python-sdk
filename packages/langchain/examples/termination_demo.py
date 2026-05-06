@@ -71,11 +71,13 @@ async def run_once(
     agent_id: str,
     auto_terminate_delay: float,
 ) -> None:
+    environment_id = os.environ.get("PREFACTOR_ENVIRONMENT_ID")
     middleware = PrefactorMiddleware.from_config(
         api_url=api_url,
         api_token=api_token,
         agent_id=agent_id,
         agent_name="termination-demo-agent",
+        environment_id=environment_id,
     )
 
     model = ChatAnthropic(model="claude-haiku-4-5-20251001")
