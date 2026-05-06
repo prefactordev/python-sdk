@@ -82,6 +82,7 @@ class TestFallbackPoll:
         monitor.sync("inst-1")
         await asyncio.sleep(0)
         poll_task = monitor._poll_task
+        assert poll_task is not None
         monitor.sync(None)
         await asyncio.sleep(0)
         assert poll_task.cancelled() or poll_task.done()
@@ -99,6 +100,7 @@ class TestFallbackPoll:
         monitor.sync("inst-1")
         await asyncio.sleep(0)
         poll_task = monitor._poll_task
+        assert poll_task is not None
         monitor.detect_termination("reason")
         await asyncio.sleep(0)
         assert poll_task.cancelled() or poll_task.done()
@@ -157,6 +159,7 @@ class TestReset:
         monitor.sync("inst-1")
         await asyncio.sleep(0)
         poll_task = monitor._poll_task
+        assert poll_task is not None
         monitor.reset()
         await asyncio.sleep(0)
         assert poll_task.cancelled() or poll_task.done()

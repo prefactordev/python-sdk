@@ -86,7 +86,7 @@ async def run_once(
         environment_id=environment_id,
     )
 
-    model = ChatAnthropic(model="claude-haiku-4-5-20251001")
+    model = ChatAnthropic(model_name="claude-haiku-4-5-20251001")
     agent = create_agent(
         model, tools=[get_current_time], middleware=[middleware], checkpointer=None
     )
