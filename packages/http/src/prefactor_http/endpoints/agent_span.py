@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 from pydantic import ValidationError
 
@@ -18,6 +18,15 @@ from prefactor_http.models.types import AgentStatus, FinishStatus
 
 if TYPE_CHECKING:
     from prefactor_http.client import PrefactorHttpClient
+
+
+def _check_control_signal(
+    response: dict,
+    callback: Callable[[str | None], None],
+) -> None:
+    control = response.get("control")
+    if control and control.get("terminate"):
+        callback(control.get("reason"))
 
 
 def _validate_idempotency_key(key: str) -> None:
@@ -74,6 +83,7 @@ class AgentSpanClient:
         started_at: datetime | None = None,
         finished_at: datetime | None = None,
         idempotency_key: str | None = None,
+        control_signal_callback: Callable[[str | None], None] | None = None,
     ) -> AgentSpan:
         """Create a new agent span.
 
@@ -123,6 +133,9 @@ class AgentSpanClient:
             json_data=body,
         )
 
+        if control_signal_callback is not None:
+            _check_control_signal(response, control_signal_callback)
+
         return self._parse_response(response, "agent_spans.create")
 
     async def finish(
@@ -132,6 +145,7 @@ class AgentSpanClient:
         result_payload: dict | None = None,
         timestamp: datetime | None = None,
         idempotency_key: str | None = None,
+        control_signal_callback: Callable[[str | None], None] | None = None,
     ) -> AgentSpan:
         """Finish an agent span.
 
@@ -166,5 +180,8 @@ class AgentSpanClient:
             f"/api/v1/agent_spans/{agent_span_id}/finish",
             json_data=finish_request.model_dump(exclude_none=True),
         )
+
+        if control_signal_callback is not None:
+            _check_control_signal(response, control_signal_callback)
 
         return self._parse_response(response, "agent_spans.finish")
