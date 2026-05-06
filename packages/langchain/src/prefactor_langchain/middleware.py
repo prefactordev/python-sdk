@@ -14,6 +14,7 @@ from prefactor_core import (
     AgentInstanceHandle,
     PrefactorCoreClient,
     PrefactorCoreConfig,
+    PrefactorTerminatedError,
     PrefactorTelemetryFailureError,
     SchemaRegistry,
     SpanContext,
@@ -180,6 +181,7 @@ class PrefactorMiddleware(AgentMiddleware):
             self._tool_span_types = (
                 self._register_tool_schemas(None, tool_schemas) if tool_schemas else {}
             )
+            self._get_termination_event = None
             return
 
         if client is None:
@@ -214,6 +216,7 @@ class PrefactorMiddleware(AgentMiddleware):
         self._pending_emit_futures: list[asyncio.Task[None]] = []
         self._pending_emit_error: Exception | None = None
         self._tool_span_types = {}
+        self._get_termination_event = None
 
         if tool_schemas:
             self._tool_span_types = self._register_tool_schemas(client, tool_schemas)
@@ -236,6 +239,19 @@ class PrefactorMiddleware(AgentMiddleware):
         ):
             return new_error
         return current
+
+    def _throw_if_terminated(self) -> None:
+        if self._get_termination_event is None:
+            return
+        event = self._get_termination_event()
+        if event.is_set():
+            monitor = (
+                self._client._termination_monitor
+                if self._client and hasattr(self._client, "_termination_monitor")
+                else None
+            )
+            reason = monitor.termination_reason if monitor is not None else None
+            raise PrefactorTerminatedError(reason)
 
     @classmethod
     def from_config(
@@ -314,6 +330,7 @@ class PrefactorMiddleware(AgentMiddleware):
         middleware._pending_emit_futures = []
         middleware._pending_emit_error = None
         middleware._tool_span_types = tool_span_types
+        middleware._get_termination_event = None
         logger.debug("PrefactorMiddleware created via from_config()")
         return middleware
 
@@ -397,6 +414,12 @@ class PrefactorMiddleware(AgentMiddleware):
 
         self._owns_instance = True
         await self._instance.start()
+        if (
+            self._client is not None
+            and hasattr(self._client, "_termination_monitor")
+            and self._client._termination_monitor is not None
+        ):
+            self._get_termination_event = self._client._termination_monitor.get_termination_event
         logger.debug("Initialized agent instance %s", self._instance.id)
         return self._instance
 
@@ -772,6 +795,7 @@ class PrefactorMiddleware(AgentMiddleware):
             Optional state updates.
         """
         try:
+            self._throw_if_terminated()
             if self._instance is None:
                 return None
 
@@ -879,6 +903,7 @@ class PrefactorMiddleware(AgentMiddleware):
             Optional state updates.
         """
         try:
+            self._throw_if_terminated()
             instance = await self._ensure_initialized()
 
             messages = []
@@ -976,6 +1001,7 @@ class PrefactorMiddleware(AgentMiddleware):
         Returns:
             The model response.
         """
+        self._throw_if_terminated()
         inputs = self._extract_model_inputs(request)
         span_data = LLMSpan(
             name=self._get_name_from_request(request),
@@ -1014,6 +1040,7 @@ class PrefactorMiddleware(AgentMiddleware):
         Returns:
             The model response.
         """
+        self._throw_if_terminated()
         instance = await self._ensure_initialized()
 
         inputs = self._extract_model_inputs(request)
@@ -1058,6 +1085,7 @@ class PrefactorMiddleware(AgentMiddleware):
         Returns:
             The tool response.
         """
+        self._throw_if_terminated()
         inputs = self._extract_tool_inputs(request)
         tool_name = inputs.get("tool_name", "unknown_tool")
 
@@ -1100,6 +1128,7 @@ class PrefactorMiddleware(AgentMiddleware):
         Returns:
             The tool response.
         """
+        self._throw_if_terminated()
         instance = await self._ensure_initialized()
 
         inputs = self._extract_tool_inputs(request)
