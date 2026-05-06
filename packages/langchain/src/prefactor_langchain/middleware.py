@@ -14,8 +14,8 @@ from prefactor_core import (
     AgentInstanceHandle,
     PrefactorCoreClient,
     PrefactorCoreConfig,
-    PrefactorTerminatedError,
     PrefactorTelemetryFailureError,
+    PrefactorTerminatedError,
     SchemaRegistry,
     SpanContext,
 )
@@ -424,7 +424,9 @@ class PrefactorMiddleware(AgentMiddleware):
             and hasattr(self._client, "_termination_monitor")
             and self._client._termination_monitor is not None
         ):
-            self._get_termination_event = self._client._termination_monitor.get_termination_event
+            self._get_termination_event = (
+                self._client._termination_monitor.get_termination_event
+            )
         logger.debug("Initialized agent instance %s", self._instance.id)
         return self._instance
 

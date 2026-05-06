@@ -357,6 +357,7 @@ class TestAgentSpanNewFields:
 class TestAgentInstanceTerminatedReason:
     def _make_instance(self, status="active", **kwargs):
         from datetime import datetime, timezone
+
         return AgentInstance(
             type="agent_instance",
             id="inst-1",
@@ -376,5 +377,7 @@ class TestAgentInstanceTerminatedReason:
         assert instance.termination_reason is None
 
     def test_termination_reason_parsed(self):
-        instance = self._make_instance(status="terminated", termination_reason="admin action")
+        instance = self._make_instance(
+            status="terminated", termination_reason="admin action"
+        )
         assert instance.termination_reason == "admin action"

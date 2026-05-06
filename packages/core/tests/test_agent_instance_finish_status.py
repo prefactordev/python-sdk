@@ -131,7 +131,11 @@ class TestFinishAgentInstance409Handling:
 
         op = Operation(
             type=OperationType.FINISH_AGENT_INSTANCE,
-            payload={"instance_id": "inst-1", "idempotency_key": "key-1", "status": "complete"},
+            payload={
+                "instance_id": "inst-1",
+                "idempotency_key": "key-1",
+                "status": "complete",
+            },
             timestamp=datetime.now(timezone.utc),
         )
         # Should not raise
@@ -146,7 +150,9 @@ class TestAgentInstanceHandleFinishResetsMonitor:
         from prefactor_core.managers.agent_instance import AgentInstanceHandle
         from prefactor_core.monitoring.termination_monitor import TerminationMonitor
 
-        fetch = AsyncMock(return_value=MagicMock(status="active", termination_reason=None))
+        fetch = AsyncMock(
+            return_value=MagicMock(status="active", termination_reason=None)
+        )
         monitor = TerminationMonitor(fetch_instance=fetch)
         monitor.detect_termination("run 1")
         assert monitor.get_termination_event().is_set()

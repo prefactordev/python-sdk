@@ -14,7 +14,11 @@ from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any
 
 from prefactor_http.client import PrefactorHttpClient
-from prefactor_http.exceptions import PrefactorApiError, is_permanent_http_error, is_transient_http_error
+from prefactor_http.exceptions import (
+    PrefactorApiError,
+    is_permanent_http_error,
+    is_transient_http_error,
+)
 
 from ._version import PACKAGE_NAME as CORE_PACKAGE_NAME
 from ._version import PACKAGE_VERSION as CORE_PACKAGE_VERSION
@@ -306,7 +310,8 @@ class PrefactorCoreClient:
                 except PrefactorApiError as finish_err:
                     if finish_err.status_code == 409:
                         logger.debug(
-                            "[prefactor:http] Agent instance %s already in terminal state; skipping finish.",
+                            "[prefactor:http] Agent instance %s already in"
+                            " terminal state; skipping finish.",
                             operation.payload["instance_id"],
                         )
                         return

@@ -863,7 +863,10 @@ class TestMiddlewareThrowIfTerminated:
 
     async def test_throw_if_terminated_raises_when_event_set(self):
         from prefactor_core import PrefactorTerminatedError
-        middleware, _ = self._make_middleware_with_monitor(terminated=True, reason="test")
+
+        middleware, _ = self._make_middleware_with_monitor(
+            terminated=True, reason="test"
+        )
         with pytest.raises(PrefactorTerminatedError) as exc_info:
             middleware._throw_if_terminated()
         assert exc_info.value.reason == "test"
@@ -874,6 +877,7 @@ class TestMiddlewareThrowIfTerminated:
 
     async def test_throw_if_terminated_noop_when_getter_is_none(self):
         from prefactor_langchain.middleware import PrefactorMiddleware
+
         middleware = PrefactorMiddleware.__new__(PrefactorMiddleware)
         middleware._get_termination_event = None
         middleware._client = None
@@ -881,13 +885,19 @@ class TestMiddlewareThrowIfTerminated:
 
     async def test_awrap_model_call_raises_when_terminated(self):
         from prefactor_core import PrefactorTerminatedError
-        middleware, _ = self._make_middleware_with_monitor(terminated=True, reason="terminated")
+
+        middleware, _ = self._make_middleware_with_monitor(
+            terminated=True, reason="terminated"
+        )
         with pytest.raises(PrefactorTerminatedError):
             await middleware.awrap_model_call(Mock(), AsyncMock())
 
     async def test_awrap_tool_call_raises_when_terminated(self):
         from prefactor_core import PrefactorTerminatedError
-        middleware, _ = self._make_middleware_with_monitor(terminated=True, reason="terminated")
+
+        middleware, _ = self._make_middleware_with_monitor(
+            terminated=True, reason="terminated"
+        )
         with pytest.raises(PrefactorTerminatedError):
             await middleware.awrap_tool_call(Mock(), AsyncMock())
         assert "properties" in LANGCHAIN_TOOL_SCHEMA

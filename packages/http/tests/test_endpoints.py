@@ -529,7 +529,10 @@ class TestAgentSpanControlSignal:
 
         callback = MagicMock()
         with aioresponses() as m:
-            m.post("https://api.test.com/api/v1/agent_spans/span-1/finish", payload=span_data)
+            m.post(
+                "https://api.test.com/api/v1/agent_spans/span-1/finish",
+                payload=span_data,
+            )
             async with PrefactorHttpClient(config) as client:
                 await client.agent_spans.finish(
                     agent_span_id="span-1",

@@ -5,7 +5,8 @@ Required env vars:
     PREFACTOR_API_URL       e.g. http://localhost:4000
     PREFACTOR_AGENT_ID      agent ID on the target p2 instance
     PREFACTOR_API_TOKEN     deployment/BA token for SDK (span creation etc.)
-    PREFACTOR_BA_TOKEN      BA token for terminate API (falls back to PREFACTOR_API_TOKEN)
+    PREFACTOR_BA_TOKEN      BA token for terminate API (falls back to
+                            PREFACTOR_API_TOKEN)
 
 Optional env vars:
     PREFACTOR_AUTO_TERMINATE_DELAY  seconds before demo calls terminate API (default: 6)
@@ -30,11 +31,12 @@ import aiohttp
 from langchain.agents import create_agent
 from langchain_anthropic import ChatAnthropic
 from langchain_core.tools import tool
-
 from prefactor_core import PrefactorTerminatedError
 from prefactor_langchain.middleware import PrefactorMiddleware
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s"
+)
 logger = logging.getLogger("termination-demo")
 
 
@@ -42,6 +44,7 @@ logger = logging.getLogger("termination-demo")
 def get_current_time() -> str:
     """Return the current UTC time as a string."""
     from datetime import datetime, timezone
+
     return datetime.now(timezone.utc).isoformat()
 
 
@@ -57,7 +60,10 @@ async def terminate_after_delay(
     async with aiohttp.ClientSession() as session:
         async with session.post(
             url,
-            headers={"Authorization": f"Bearer {ba_token}", "Content-Type": "application/json"},
+            headers={
+                "Authorization": f"Bearer {ba_token}",
+                "Content-Type": "application/json",
+            },
             json={"reason": "demo termination"},
         ) as resp:
             body = await resp.json()
@@ -81,7 +87,9 @@ async def run_once(
     )
 
     model = ChatAnthropic(model="claude-haiku-4-5-20251001")
-    agent = create_agent(model, tools=[get_current_time], middleware=[middleware], checkpointer=None)
+    agent = create_agent(
+        model, tools=[get_current_time], middleware=[middleware], checkpointer=None
+    )
 
     instance = await middleware.ensure_initialized()
     logger.info("Run #%d — Agent instance: %s", run_number, instance.id)
@@ -94,7 +102,14 @@ async def run_once(
 
     try:
         result = await agent.ainvoke(
-            {"messages": [{"role": "user", "content": "What time is it? Then keep asking me every 2 seconds."}]},
+            {
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "What time is it? Then keep asking every 2 seconds.",
+                    }
+                ]
+            },
         )
         logger.info("Run #%d completed normally: %s", run_number, result)
     except PrefactorTerminatedError as e:
@@ -120,7 +135,9 @@ async def main() -> None:
     while True:
         run_number += 1
         try:
-            await run_once(run_number, api_url, api_token, agent_id, auto_terminate_delay)
+            await run_once(
+                run_number, api_url, api_token, agent_id, auto_terminate_delay
+            )
         except PrefactorTerminatedError:
             logger.info("Service continues — next run in %.0fs.", restart_delay)
             await asyncio.sleep(restart_delay)

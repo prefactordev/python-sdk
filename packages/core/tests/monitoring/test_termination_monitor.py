@@ -6,14 +6,14 @@ from __future__ import annotations
 import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
 from prefactor_core.monitoring.termination_monitor import TerminationMonitor
 
 
 def _make_monitor(fetch_instance=None) -> TerminationMonitor:
     if fetch_instance is None:
-        fetch_instance = AsyncMock(return_value=MagicMock(status="active", termination_reason=None))
+        fetch_instance = AsyncMock(
+            return_value=MagicMock(status="active", termination_reason=None)
+        )
     return TerminationMonitor(fetch_instance=fetch_instance)
 
 
@@ -27,6 +27,7 @@ def _terminated_instance(reason: str | None = "test reason"):
 # ---------------------------------------------------------------------------
 # Primary path (5 tests)
 # ---------------------------------------------------------------------------
+
 
 class TestPrimaryPath:
     async def test_detect_termination_sets_event(self):
@@ -65,6 +66,7 @@ class TestPrimaryPath:
 # ---------------------------------------------------------------------------
 # Fallback poll (5 tests)
 # ---------------------------------------------------------------------------
+
 
 class TestFallbackPoll:
     async def test_poll_starts_when_instance_id_arrives(self):
@@ -115,6 +117,7 @@ class TestFallbackPoll:
 # ---------------------------------------------------------------------------
 # reset() (7 tests)
 # ---------------------------------------------------------------------------
+
 
 class TestReset:
     async def test_reset_creates_fresh_event(self):
@@ -208,6 +211,7 @@ class TestReset:
 # ---------------------------------------------------------------------------
 # Callback lifecycle (2 tests)
 # ---------------------------------------------------------------------------
+
 
 class TestCallbackLifecycle:
     async def test_unsubscribe_removes_callback(self):
