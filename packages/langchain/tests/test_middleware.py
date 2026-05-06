@@ -833,7 +833,7 @@ class TestMiddlewareThrowIfTerminated:
         from prefactor_core.monitoring.termination_monitor import TerminationMonitor
         from prefactor_langchain.middleware import PrefactorMiddleware
 
-        fetch = AsyncMock(return_value=Mock(status="active", terminated_reason=None))
+        fetch = AsyncMock(return_value=Mock(status="active", termination_reason=None))
         monitor = TerminationMonitor(fetch_instance=fetch)
         if terminated:
             monitor.detect_termination(reason)

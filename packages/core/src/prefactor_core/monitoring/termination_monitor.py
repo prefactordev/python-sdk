@@ -66,11 +66,17 @@ class TerminationMonitor:
             cb()
 
     def sync(self, instance_id: str | None) -> None:
-        """Update the tracked instance ID and start/stop the fallback poll."""
-        self._current_instance_id = instance_id
-        # Receiving a real instance ID lifts the fence
+        """Update the tracked instance ID and start/stop the fallback poll.
+
+        Idempotent: calling with the same non-None ID when a poll is already
+        running does not restart it (preserving the sleep interval).
+        """
         if instance_id is not None:
             self._fenced = False
+        if instance_id == self._current_instance_id:
+            # Same ID — no change needed; poll (if any) keeps running
+            return
+        self._current_instance_id = instance_id
         self._stop_poll()
         if instance_id is not None and not self._event.is_set() and not self._destroyed:
             self._start_poll(instance_id, self._generation)
@@ -137,5 +143,5 @@ class TerminationMonitor:
             if self._generation != generation:
                 return
             if instance.status == "terminated":
-                self.detect_termination(instance.terminated_reason)
+                self.detect_termination(instance.termination_reason)
                 return

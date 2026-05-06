@@ -458,7 +458,7 @@ class TestAgentInstanceGet:
                 "environment_id": "env-1",
                 "agent_deployment_id": "dep-1",
                 "status": "terminated",
-                "terminated_reason": "admin terminated",
+                "termination_reason": "admin terminated",
                 "inserted_at": NOW,
                 "updated_at": NOW,
             },
@@ -474,7 +474,7 @@ class TestAgentInstanceGet:
 
         assert result.id == "inst-123"
         assert result.status == "terminated"
-        assert result.terminated_reason == "admin terminated"
+        assert result.termination_reason == "admin terminated"
 
 
 class TestAgentSpanControlSignal:

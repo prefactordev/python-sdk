@@ -146,7 +146,7 @@ class TestAgentInstanceHandleFinishResetsMonitor:
         from prefactor_core.managers.agent_instance import AgentInstanceHandle
         from prefactor_core.monitoring.termination_monitor import TerminationMonitor
 
-        fetch = AsyncMock(return_value=MagicMock(status="active", terminated_reason=None))
+        fetch = AsyncMock(return_value=MagicMock(status="active", termination_reason=None))
         monitor = TerminationMonitor(fetch_instance=fetch)
         monitor.detect_termination("run 1")
         assert monitor.get_termination_event().is_set()

@@ -13,14 +13,14 @@ from prefactor_core.monitoring.termination_monitor import TerminationMonitor
 
 def _make_monitor(fetch_instance=None) -> TerminationMonitor:
     if fetch_instance is None:
-        fetch_instance = AsyncMock(return_value=MagicMock(status="active", terminated_reason=None))
+        fetch_instance = AsyncMock(return_value=MagicMock(status="active", termination_reason=None))
     return TerminationMonitor(fetch_instance=fetch_instance)
 
 
 def _terminated_instance(reason: str | None = "test reason"):
     inst = MagicMock()
     inst.status = "terminated"
-    inst.terminated_reason = reason
+    inst.termination_reason = reason
     return inst
 
 

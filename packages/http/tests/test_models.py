@@ -371,10 +371,10 @@ class TestAgentInstanceTerminatedReason:
             **kwargs,
         )
 
-    def test_terminated_reason_defaults_none(self):
+    def test_termination_reason_defaults_none(self):
         instance = self._make_instance()
-        assert instance.terminated_reason is None
+        assert instance.termination_reason is None
 
-    def test_terminated_reason_parsed(self):
-        instance = self._make_instance(status="terminated", terminated_reason="admin action")
-        assert instance.terminated_reason == "admin action"
+    def test_termination_reason_parsed(self):
+        instance = self._make_instance(status="terminated", termination_reason="admin action")
+        assert instance.termination_reason == "admin action"
