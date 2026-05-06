@@ -352,3 +352,29 @@ class TestAgentSpanNewFields:
     def test_summary_present(self):
         span = self._make_span(summary="Completed tool call")
         assert span.summary == "Completed tool call"
+
+
+class TestAgentInstanceTerminatedReason:
+    def _make_instance(self, status="active", **kwargs):
+        from datetime import datetime, timezone
+        return AgentInstance(
+            type="agent_instance",
+            id="inst-1",
+            account_id="acc-1",
+            agent_id="agent-1",
+            agent_version_id="ver-1",
+            environment_id="env-1",
+            agent_deployment_id="dep-1",
+            status=status,
+            inserted_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+            **kwargs,
+        )
+
+    def test_terminated_reason_defaults_none(self):
+        instance = self._make_instance()
+        assert instance.terminated_reason is None
+
+    def test_terminated_reason_parsed(self):
+        instance = self._make_instance(status="terminated", terminated_reason="admin action")
+        assert instance.terminated_reason == "admin action"

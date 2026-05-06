@@ -253,4 +253,5 @@ class AgentInstance(BaseModel):
     updated_at: datetime
     started_at: datetime | None = None
     finished_at: datetime | None = None
+    terminated_reason: str | None = None
     span_counts: AgentInstanceSpanCounts | None = None

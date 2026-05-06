@@ -196,3 +196,24 @@ class AgentInstanceClient:
         )
 
         return self._parse_response(response, "agent_instances.finish")
+
+    async def get(self, agent_instance_id: str) -> AgentInstance:
+        """Fetch an agent instance by ID.
+
+        GET /api/v1/agent_instance/{agent_instance_id}
+
+        Args:
+            agent_instance_id: The instance ID to fetch.
+
+        Returns:
+            The agent instance.
+
+        Raises:
+            PrefactorNotFoundError: If instance not found.
+            PrefactorApiError: On other errors.
+        """
+        response = await self._client.request(
+            "GET",
+            f"/api/v1/agent_instance/{agent_instance_id}",
+        )
+        return self._parse_response(response, "agent_instances.get")

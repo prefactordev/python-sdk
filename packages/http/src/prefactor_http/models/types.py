@@ -2,5 +2,5 @@
 
 from typing import Literal
 
-AgentStatus = Literal["pending", "active", "complete", "failed", "cancelled"]
+AgentStatus = Literal["pending", "active", "complete", "failed", "cancelled", "terminated"]
 FinishStatus = Literal["complete", "failed", "cancelled"]

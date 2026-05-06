@@ -443,3 +443,35 @@ class TestIdempotencyKeyValidation:
                     idempotency_key="a" * 64,
                 )
             assert result.id == "span-1"
+
+
+class TestAgentInstanceGet:
+    async def test_get_returns_agent_instance(self, config):
+        instance_data = {
+            "status": "success",
+            "details": {
+                "type": "agent_instance",
+                "id": "inst-123",
+                "account_id": "acc-1",
+                "agent_id": "agent-1",
+                "agent_version_id": "ver-1",
+                "environment_id": "env-1",
+                "agent_deployment_id": "dep-1",
+                "status": "terminated",
+                "terminated_reason": "admin terminated",
+                "inserted_at": NOW,
+                "updated_at": NOW,
+            },
+        }
+
+        with aioresponses() as m:
+            m.get(
+                "https://api.test.com/api/v1/agent_instance/inst-123",
+                payload=instance_data,
+            )
+            async with PrefactorHttpClient(config) as client:
+                result = await client.agent_instances.get("inst-123")
+
+        assert result.id == "inst-123"
+        assert result.status == "terminated"
+        assert result.terminated_reason == "admin terminated"
