@@ -4,7 +4,8 @@ automatic detection of p2-initiated termination.
 Required env vars:
     PREFACTOR_API_URL       e.g. http://localhost:4000
     PREFACTOR_AGENT_ID      agent ID on the target p2 instance
-    PREFACTOR_API_TOKEN     API token
+    PREFACTOR_API_TOKEN     deployment/BA token for SDK (span creation etc.)
+    PREFACTOR_BA_TOKEN      BA token for terminate API (falls back to PREFACTOR_API_TOKEN)
 
 Optional env vars:
     PREFACTOR_AUTO_TERMINATE_DELAY  seconds before demo calls terminate API (default: 6)
@@ -26,9 +27,9 @@ import logging
 import os
 
 import aiohttp
+from langchain.agents import create_agent
 from langchain_anthropic import ChatAnthropic
 from langchain_core.tools import tool
-from langgraph.prebuilt import create_react_agent
 
 from prefactor_core import PrefactorTerminatedError
 from prefactor_langchain.middleware import PrefactorMiddleware
@@ -46,7 +47,7 @@ def get_current_time() -> str:
 
 async def terminate_after_delay(
     api_url: str,
-    api_token: str,
+    ba_token: str,
     instance_id: str,
     delay: float,
 ) -> None:
@@ -56,11 +57,11 @@ async def terminate_after_delay(
     async with aiohttp.ClientSession() as session:
         async with session.post(
             url,
-            headers={"Authorization": f"Bearer {api_token}", "Content-Type": "application/json"},
-            json={},
+            headers={"Authorization": f"Bearer {ba_token}", "Content-Type": "application/json"},
+            json={"reason": "demo termination"},
         ) as resp:
             body = await resp.json()
-            logger.info("Terminate API: status=%s", body.get("status"))
+            logger.info("Terminate API: status=%s body=%s", resp.status, body)
 
 
 async def run_once(
@@ -78,15 +79,15 @@ async def run_once(
     )
 
     model = ChatAnthropic(model="claude-haiku-4-5-20251001")
-    agent = create_react_agent(model, tools=[get_current_time], checkpointer=None)
-    agent.middleware = [middleware]
+    agent = create_agent(model, tools=[get_current_time], middleware=[middleware], checkpointer=None)
 
     instance = await middleware.ensure_initialized()
     logger.info("Run #%d — Agent instance: %s", run_number, instance.id)
     logger.info("Auto-terminate in %.0fs...", auto_terminate_delay)
 
+    ba_token = os.environ.get("PREFACTOR_BA_TOKEN", api_token)
     terminate_task = asyncio.create_task(
-        terminate_after_delay(api_url, api_token, instance.id, auto_terminate_delay)
+        terminate_after_delay(api_url, ba_token, instance.id, auto_terminate_delay)
     )
 
     try:
