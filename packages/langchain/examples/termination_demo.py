@@ -141,7 +141,7 @@ async def main() -> None:
         except PrefactorTerminatedError:
             logger.info("Service continues — next run in %.0fs.", restart_delay)
             await asyncio.sleep(restart_delay)
-        except KeyboardInterrupt:
+        except (KeyboardInterrupt, asyncio.CancelledError):
             logger.info("Stopped by user.")
             break
         except Exception as e:

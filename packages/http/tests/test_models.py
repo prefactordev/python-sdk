@@ -355,7 +355,10 @@ class TestAgentSpanNewFields:
 
 
 class TestAgentInstanceTerminatedReason:
+    """Tests parsing of AgentInstance termination reasons."""
+
     def _make_instance(self, status="active", **kwargs):
+        """Create an AgentInstance with default required fields."""
         from datetime import datetime, timezone
 
         return AgentInstance(
@@ -373,10 +376,12 @@ class TestAgentInstanceTerminatedReason:
         )
 
     def test_termination_reason_defaults_none(self):
+        """Termination reason defaults to None for non-terminated instances."""
         instance = self._make_instance()
         assert instance.termination_reason is None
 
     def test_termination_reason_parsed(self):
+        """Termination reason is parsed when present on a terminated instance."""
         instance = self._make_instance(
             status="terminated", termination_reason="admin action"
         )

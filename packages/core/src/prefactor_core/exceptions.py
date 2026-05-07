@@ -59,7 +59,11 @@ class PrefactorTelemetryFailureError(PrefactorCoreError):
 
 
 class PrefactorTerminatedError(PrefactorCoreError):
-    """Raised when the agent instance has been terminated by p2."""
+    """Raised when the agent instance has been terminated by p2.
+
+    Args:
+        reason: Optional reason reported by p2 for the termination.
+    """
 
     def __init__(self, reason: str | None = None) -> None:
         msg = (

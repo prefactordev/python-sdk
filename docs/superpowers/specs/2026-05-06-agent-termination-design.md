@@ -24,7 +24,7 @@ Control signal appears in span_create and span_finish responses only (span_start
 
 Key absent when instance is not terminated.
 
-GET `/api/v1/agent_instance/{id}` — fallback poll. Returns `AgentInstance` with `status: "terminated"` and an optional `terminated_reason: str | None` field. Add this field to the `AgentInstance` Pydantic model (currently absent).
+GET `/api/v1/agent_instance/{id}` — fallback poll. Returns `AgentInstance` with `status: "terminated"` and an optional `termination_reason: str | None` field.
 
 409 on `agent_instance/finish` when p2 already terminated the instance — treated as success.
 
@@ -34,7 +34,7 @@ GET `/api/v1/agent_instance/{id}` — fallback poll. Returns `AgentInstance` wit
 
 ### Data Flow
 
-```
+```text
 p2 span response
   → AgentSpanClient.create/finish(control_signal_callback=...)
       → _check_control_signal(raw_response, callback)
@@ -135,7 +135,7 @@ async def _poll(self, instance_id: str, poll_generation: int) -> None:
         if self._generation != poll_generation:
             return  # post-await stale guard
         if instance.status == "terminated":
-            self.detect_termination(getattr(instance, "terminated_reason", None))
+            self.detect_termination(getattr(instance, "termination_reason", None))
 ```
 
 Started via `asyncio.create_task`. Cancelled on `sync(None)` / `reset()` / `destroy()`.
@@ -287,7 +287,7 @@ When p2 terminates externally, calling `agent_instance/finish` returns 409 (alre
 - `packages/core/src/prefactor_core/managers/agent_instance.py` — `finish()` calls monitor reset
 - `packages/http/src/prefactor_http/endpoints/agent_span.py` — `control_signal_callback` param
 - `packages/http/src/prefactor_http/endpoints/agent_instance.py` — `get()` method
-- `packages/http/src/prefactor_http/models/agent_instance.py` — add `terminated_reason: str | None = None` to `AgentInstance`
+- `packages/http/src/prefactor_http/models/agent_instance.py` — add `termination_reason: str | None = None` to `AgentInstance`
 - `packages/langchain/src/prefactor_langchain/middleware.py` — `_throw_if_terminated()` + getter wiring
 
 ---

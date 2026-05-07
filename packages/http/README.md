@@ -267,7 +267,7 @@ config = HttpClientConfig(
 ```python
 from prefactor_http import AgentStatus, FinishStatus
 
-# AgentStatus = Literal["pending", "active", "complete", "failed", "cancelled"]
+# AgentStatus = Literal["pending", "active", "complete", "failed", "cancelled", "terminated"]
 # FinishStatus = Literal["complete", "failed", "cancelled"]
 ```
 

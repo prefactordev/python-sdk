@@ -233,11 +233,13 @@ class AgentInstance(BaseModel):
         agent_id: Agent ID
         agent_version_id: Agent version ID
         environment_id: Environment ID
+        agent_deployment_id: Agent deployment ID
         status: Instance status
         inserted_at: When the instance was created
         updated_at: When the instance was last updated
         started_at: When the instance started (null if not started)
         finished_at: When the instance finished (null if not finished)
+        termination_reason: Reason for termination (null if not terminated)
         span_counts: Span counts for this instance
     """
 

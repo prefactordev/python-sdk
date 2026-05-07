@@ -13,6 +13,7 @@
 ## File Map
 
 ### New files
+
 | File | Responsibility |
 |------|----------------|
 | `packages/core/src/prefactor_core/monitoring/__init__.py` | Package init |
@@ -22,11 +23,12 @@
 | `packages/langchain/examples/termination_demo.py` | End-to-end demo script |
 
 ### Modified files
+
 | File | Change |
 |------|--------|
 | `packages/core/src/prefactor_core/exceptions.py` | Add `PrefactorTerminatedError` |
 | `packages/core/src/prefactor_core/__init__.py` | Export `PrefactorTerminatedError` |
-| `packages/http/src/prefactor_http/models/agent_instance.py` | Add `terminated_reason: str \| None = None` to `AgentInstance` |
+| `packages/http/src/prefactor_http/models/agent_instance.py` | Add `termination_reason: str \| None = None` to `AgentInstance` |
 | `packages/http/src/prefactor_http/endpoints/agent_instance.py` | Add `get()` method |
 | `packages/http/src/prefactor_http/endpoints/agent_span.py` | Add `control_signal_callback` param to `create()` and `finish()` |
 | `packages/core/src/prefactor_core/client.py` | Add monitor, sync task, instance tracking, 409 swallow, control signal callback |
@@ -121,7 +123,7 @@ Open `packages/http/tests/test_models.py`. Add at the end:
 
 ```python
 class TestAgentInstanceTerminatedReason:
-    def test_terminated_reason_defaults_none(self):
+    def test_termination_reason_defaults_none(self):
         from prefactor_http.models.agent_instance import AgentInstance
         from datetime import datetime, timezone
         instance = AgentInstance(
@@ -136,9 +138,9 @@ class TestAgentInstanceTerminatedReason:
             inserted_at=datetime.now(timezone.utc),
             updated_at=datetime.now(timezone.utc),
         )
-        assert instance.terminated_reason is None
+        assert instance.termination_reason is None
 
-    def test_terminated_reason_parsed(self):
+    def test_termination_reason_parsed(self):
         from prefactor_http.models.agent_instance import AgentInstance
         from datetime import datetime, timezone
         instance = AgentInstance(
@@ -152,9 +154,9 @@ class TestAgentInstanceTerminatedReason:
             status="terminated",
             inserted_at=datetime.now(timezone.utc),
             updated_at=datetime.now(timezone.utc),
-            terminated_reason="admin action",
+            termination_reason="admin action",
         )
-        assert instance.terminated_reason == "admin action"
+        assert instance.termination_reason == "admin action"
 ```
 
 - [ ] **Step 2: Run to verify it fails**
@@ -163,14 +165,14 @@ class TestAgentInstanceTerminatedReason:
 pytest packages/http/tests/test_models.py::TestAgentInstanceTerminatedReason -v
 ```
 
-Expected: FAIL — `AgentInstance` has no `terminated_reason` field.
+Expected: FAIL — `AgentInstance` has no `termination_reason` field.
 
 - [ ] **Step 3: Add field to AgentInstance model**
 
 Open `packages/http/src/prefactor_http/models/agent_instance.py`. In the `AgentInstance` class, add after `finished_at`:
 
 ```python
-    terminated_reason: str | None = None
+    termination_reason: str | None = None
 ```
 
 - [ ] **Step 4: Run to verify model tests pass**
@@ -202,7 +204,7 @@ class TestAgentInstanceGet:
                 "environment_id": "env-1",
                 "agent_deployment_id": "dep-1",
                 "status": "terminated",
-                "terminated_reason": "admin terminated",
+                "termination_reason": "admin terminated",
                 "inserted_at": datetime.now(timezone.utc).isoformat(),
                 "updated_at": datetime.now(timezone.utc).isoformat(),
             },
@@ -217,7 +219,7 @@ class TestAgentInstanceGet:
 
         assert result.id == "inst-123"
         assert result.status == "terminated"
-        assert result.terminated_reason == "admin terminated"
+        assert result.termination_reason == "admin terminated"
 ```
 
 Note: check `test_endpoints.py` for the existing `http_client` fixture signature and adapt if needed.
@@ -277,7 +279,7 @@ Expected: all pass.
 
 ```bash
 git add packages/http/src/prefactor_http/models/agent_instance.py packages/http/src/prefactor_http/endpoints/agent_instance.py packages/http/tests/test_models.py packages/http/tests/test_endpoints.py
-git commit -m "feat(http): add AgentInstance.terminated_reason field and get() endpoint"
+git commit -m "feat(http): add AgentInstance.termination_reason field and get() endpoint"
 ```
 
 ---
@@ -507,14 +509,14 @@ from prefactor_core.monitoring.termination_monitor import TerminationMonitor
 
 def _make_monitor(fetch_instance=None) -> TerminationMonitor:
     if fetch_instance is None:
-        fetch_instance = AsyncMock(return_value=MagicMock(status="active", terminated_reason=None))
+        fetch_instance = AsyncMock(return_value=MagicMock(status="active", termination_reason=None))
     return TerminationMonitor(fetch_instance=fetch_instance)
 
 
 def _terminated_instance(reason: str | None = "test reason"):
     inst = MagicMock()
     inst.status = "terminated"
-    inst.terminated_reason = reason
+    inst.termination_reason = reason
     return inst
 
 
@@ -880,7 +882,7 @@ class TerminationMonitor:
             if self._generation != poll_generation:
                 return
             if instance.status == "terminated":
-                self.detect_termination(getattr(instance, "terminated_reason", None))
+                self.detect_termination(getattr(instance, "termination_reason", None))
                 return
 ```
 
@@ -1154,7 +1156,7 @@ class TestAgentInstanceHandleFinishResetsMonitor:
         from prefactor_core.managers.agent_instance import AgentInstanceHandle
         from prefactor_core.monitoring.termination_monitor import TerminationMonitor
 
-        fetch = AsyncMock(return_value=MagicMock(status="active", terminated_reason=None))
+        fetch = AsyncMock(return_value=MagicMock(status="active", termination_reason=None))
         monitor = TerminationMonitor(fetch_instance=fetch)
         monitor.detect_termination("run 1")
         assert monitor.get_termination_event().is_set()
@@ -1258,7 +1260,7 @@ class TestMiddlewareThrowIfTerminated:
         from prefactor_core.monitoring.termination_monitor import TerminationMonitor
         from prefactor_langchain.middleware import PrefactorMiddleware
 
-        fetch = AsyncMock(return_value=MagicMock(status="active", terminated_reason=None))
+        fetch = AsyncMock(return_value=MagicMock(status="active", termination_reason=None))
         monitor = TerminationMonitor(fetch_instance=fetch)
         if terminated:
             monitor.detect_termination(reason)
@@ -1659,7 +1661,7 @@ PREFACTOR_API_URL=http://localhost:4000 \
 
 Expected log output per run:
 
-```
+```text
 Run #1 — Agent instance: <instance-id>
 Auto-terminate in 6s...
 Calling terminate API: POST http://localhost:4000/api/v1/agent_instance/<id>/terminate
@@ -1701,7 +1703,7 @@ git commit -m "test(e2e): verify agent termination against local p2 (manual)"
 | Spec requirement | Task |
 |-----------------|------|
 | `PrefactorTerminatedError` with `reason` | Task 1 |
-| `AgentInstance.terminated_reason` field | Task 2 |
+| `AgentInstance.termination_reason` field | Task 2 |
 | `AgentInstanceClient.get()` for fallback poll | Task 2 |
 | `control_signal_callback` on span create/finish | Task 3 |
 | `TerminationMonitor` full state machine | Task 4 |
