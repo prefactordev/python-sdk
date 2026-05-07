@@ -63,7 +63,10 @@ class TerminationMonitor:
         self._event.set()
         self._stop_poll()
         for cb in list(self._callbacks):
-            cb()
+            try:
+                cb()
+            except Exception:
+                logger.exception("Termination callback failed: %r", cb)
 
     def sync(self, instance_id: str | None) -> None:
         """Update the tracked instance ID and start/stop the fallback poll.
@@ -113,6 +116,7 @@ class TerminationMonitor:
         """Permanently shut down the monitor (no further events will fire)."""
         self._destroyed = True
         self._stop_poll()
+        self._callbacks.clear()
 
     # ------------------------------------------------------------------
     # Internal

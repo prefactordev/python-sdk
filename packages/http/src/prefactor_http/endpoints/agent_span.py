@@ -25,7 +25,7 @@ def _check_control_signal(
     callback: Callable[[str | None], None],
 ) -> None:
     control = response.get("control")
-    if control and control.get("terminate"):
+    if isinstance(control, dict) and control.get("terminate"):
         callback(control.get("reason"))
 
 

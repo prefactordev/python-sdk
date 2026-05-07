@@ -278,6 +278,7 @@ class PrefactorMiddleware(AgentMiddleware):
             api_token: The API token for authentication.
             agent_id: Optional agent identifier for categorization.
             agent_name: Optional human-readable agent name.
+            environment_id: Optional environment identifier for scoping the agent.
             schema_registry: Optional SchemaRegistry for registering span schemas.
             include_langchain_schemas: If True and schema_registry is provided,
                 automatically register LangChain-specific schemas.
@@ -827,6 +828,8 @@ class PrefactorMiddleware(AgentMiddleware):
 
         except Exception as e:
             _raise_if_telemetry_failure(e)
+            if isinstance(e, PrefactorTerminatedError):
+                raise
             logger.error("Error in before_agent: %s", e, exc_info=True)
             return None
 
@@ -950,6 +953,8 @@ class PrefactorMiddleware(AgentMiddleware):
 
         except Exception as e:
             _raise_if_telemetry_failure(e)
+            if isinstance(e, PrefactorTerminatedError):
+                raise
             logger.error("Error in abefore_agent: %s", e, exc_info=True)
 
         return None

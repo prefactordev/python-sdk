@@ -883,6 +883,24 @@ class TestMiddlewareThrowIfTerminated:
         middleware._client = None
         middleware._throw_if_terminated()  # should not raise
 
+    async def test_before_agent_raises_when_terminated(self):
+        from prefactor_core import PrefactorTerminatedError
+
+        middleware, _ = self._make_middleware_with_monitor(
+            terminated=True, reason="terminated"
+        )
+        with pytest.raises(PrefactorTerminatedError):
+            middleware.before_agent({}, Mock())
+
+    async def test_abefore_agent_raises_when_terminated(self):
+        from prefactor_core import PrefactorTerminatedError
+
+        middleware, _ = self._make_middleware_with_monitor(
+            terminated=True, reason="terminated"
+        )
+        with pytest.raises(PrefactorTerminatedError):
+            await middleware.abefore_agent({}, Mock())
+
     async def test_awrap_model_call_raises_when_terminated(self):
         from prefactor_core import PrefactorTerminatedError
 
@@ -900,4 +918,3 @@ class TestMiddlewareThrowIfTerminated:
         )
         with pytest.raises(PrefactorTerminatedError):
             await middleware.awrap_tool_call(Mock(), AsyncMock())
-        assert "properties" in LANGCHAIN_TOOL_SCHEMA

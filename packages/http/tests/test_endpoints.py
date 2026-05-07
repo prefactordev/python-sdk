@@ -518,6 +518,28 @@ class TestAgentSpanControlSignal:
 
         callback.assert_not_called()
 
+    async def test_create_ignores_non_dict_control_payload(self, config):
+        from unittest.mock import MagicMock
+
+        span_data = {
+            "status": "success",
+            "details": {**MOCK_SPAN},
+            "control": "terminate",
+        }
+
+        callback = MagicMock()
+        with aioresponses() as m:
+            m.post("https://api.test.com/api/v1/agent_spans", payload=span_data)
+            async with PrefactorHttpClient(config) as client:
+                await client.agent_spans.create(
+                    agent_instance_id="inst-1",
+                    schema_name="langchain:llm",
+                    status="pending",
+                    control_signal_callback=callback,
+                )
+
+        callback.assert_not_called()
+
     async def test_finish_calls_callback_when_control_signal_present(self, config):
         from unittest.mock import MagicMock
 
@@ -540,3 +562,26 @@ class TestAgentSpanControlSignal:
                 )
 
         callback.assert_called_once_with(None)
+
+    async def test_finish_ignores_non_dict_control_payload(self, config):
+        from unittest.mock import MagicMock
+
+        span_data = {
+            "status": "success",
+            "details": {**MOCK_SPAN},
+            "control": ["terminate"],
+        }
+
+        callback = MagicMock()
+        with aioresponses() as m:
+            m.post(
+                "https://api.test.com/api/v1/agent_spans/span-1/finish",
+                payload=span_data,
+            )
+            async with PrefactorHttpClient(config) as client:
+                await client.agent_spans.finish(
+                    agent_span_id="span-1",
+                    control_signal_callback=callback,
+                )
+
+        callback.assert_not_called()

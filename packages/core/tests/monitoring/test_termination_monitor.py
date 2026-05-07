@@ -233,3 +233,27 @@ class TestCallbackLifecycle:
         monitor.subscribe(lambda: order.append(3))
         monitor.detect_termination("reason")
         assert order == [1, 2, 3]
+
+    async def test_bad_callback_does_not_block_later_callbacks(self):
+        order = []
+        monitor = _make_monitor()
+
+        def failing_callback():
+            order.append("bad")
+            raise RuntimeError("callback failed")
+
+        monitor.subscribe(failing_callback)
+        monitor.subscribe(lambda: order.append("good"))
+
+        monitor.detect_termination("reason")
+
+        assert order == ["bad", "good"]
+        assert monitor.get_termination_event().is_set()
+
+    async def test_destroy_clears_callbacks(self):
+        monitor = _make_monitor()
+        monitor.subscribe(MagicMock())
+
+        monitor.destroy()
+
+        assert monitor._callbacks == []
