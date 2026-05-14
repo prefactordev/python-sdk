@@ -3,5 +3,5 @@
 from __future__ import annotations
 
 PACKAGE_NAME = "prefactor-http"
-__version__ = "0.1.2"
+__version__ = "0.1.3"
 PACKAGE_VERSION = __version__

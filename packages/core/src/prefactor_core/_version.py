@@ -3,5 +3,5 @@
 from __future__ import annotations
 
 PACKAGE_NAME = "prefactor-core"
-__version__ = "0.2.4"
+__version__ = "0.2.5"
 PACKAGE_VERSION = __version__
