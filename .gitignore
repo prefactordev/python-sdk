@@ -70,3 +70,4 @@ htmlcov/
 .env
 mise.local.toml
 prefactor.json
+.worktrees/

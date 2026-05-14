@@ -148,6 +148,43 @@ class TestPrefactorMiddleware:
         assert middleware._agent_id == "my-agent"
         assert middleware._agent_name == "My Test Agent"
 
+    def test_factory_pattern_without_agent_id(self):
+        """from_config() should allow agent_id to be omitted."""
+        middleware = PrefactorMiddleware.from_config(
+            api_url="http://test",
+            api_token="test-token",
+            agent_id=None,
+        )
+
+        assert middleware._agent_id is None
+
+    def test_factory_pattern_without_agent_id_initializes_instance(self):
+        """Lazy instance creation should forward agent_id=None."""
+        middleware = PrefactorMiddleware.from_config(
+            api_url="http://test",
+            api_token="test-token",
+            agent_id=None,
+        )
+
+        assert middleware._client is not None
+        instance = Mock()
+        instance.start = AsyncMock()
+        instance.finish = AsyncMock()
+
+        async def _run() -> None:
+            with patch.object(
+                middleware._client,
+                "create_agent_instance",
+                AsyncMock(return_value=instance),
+            ) as mock_create:
+                await middleware._ensure_initialized()
+                await middleware.close()
+
+            assert mock_create.await_args is not None
+            assert mock_create.await_args.kwargs["agent_id"] is None
+
+        asyncio.run(_run())
+
     def test_factory_pattern_with_tool_schemas(self):
         """from_config() should register tool schemas and store span mappings."""
         middleware = PrefactorMiddleware.from_config(
@@ -196,6 +233,19 @@ class TestPrefactorMiddleware:
         assert middleware._owns_client is False  # Caller created the client
         assert middleware._owns_instance is True  # Will lazily create
         client._set_sdk_header_entry.assert_called_once_with(LANGCHAIN_SDK_HEADER_ENTRY)
+
+    def test_configuration_mode_without_agent_id(self):
+        """Configuration mode should allow agent_id to be omitted."""
+        client = Mock()
+        client._initialized = True
+        client._set_sdk_header_entry = Mock()
+
+        middleware = PrefactorMiddleware(
+            client=client,
+            agent_id=None,
+        )
+
+        assert middleware._agent_id is None
 
     def test_pre_configured_instance(self):
         """Test using a pre-configured AgentInstanceHandle."""

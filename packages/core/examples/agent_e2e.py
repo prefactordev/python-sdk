@@ -24,8 +24,11 @@ Run via mise (env vars set automatically):
 Or manually:
     PREFACTOR_API_URL=https://api.prefactor.ai \\
     PREFACTOR_API_TOKEN=your-token \\
-    PREFACTOR_AGENT_ID=your-agent-id \\
     python packages/core/examples/agent_e2e.py
+
+Set `PREFACTOR_AGENT_ID` only when using an account-scoped token. With a
+deployment-scoped token, leave it unset and the API derives the agent and
+environment from the token.
 """
 
 import asyncio
@@ -182,7 +185,7 @@ async def simulate_retrieval(query: str) -> list[str]:
 
 
 async def main() -> None:
-    agent_id = os.environ["PREFACTOR_AGENT_ID"]
+    agent_id = os.environ.get("PREFACTOR_AGENT_ID")
 
     config = PrefactorCoreConfig(
         http_config=HttpClientConfig(
@@ -194,10 +197,21 @@ async def main() -> None:
 
     async with PrefactorCoreClient(config) as client:
         # Register the agent instance — schema version derived from registry.
-        instance = await client.create_agent_instance(
-            agent_id=agent_id,
-            agent_version={"name": "Example Agent", "external_identifier": "v8.0.0"},
-        )
+        if agent_id is None:
+            instance = await client.create_agent_instance(
+                agent_version={
+                    "name": "Example Agent",
+                    "external_identifier": "v8.0.0",
+                }
+            )
+        else:
+            instance = await client.create_agent_instance(
+                agent_id=agent_id,
+                agent_version={
+                    "name": "Example Agent",
+                    "external_identifier": "v8.0.0",
+                },
+            )
 
         await instance.start()
 

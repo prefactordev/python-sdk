@@ -18,6 +18,7 @@ MOCK_INSTANCE = {
     "agent_id": "agent-1",
     "agent_version_id": "ver-1",
     "environment_id": "env-1",
+    "agent_deployment_id": "depl-1",
     "status": "active",
     "inserted_at": NOW,
     "updated_at": NOW,
@@ -107,6 +108,103 @@ class TestAgentInstanceEndpoints:
                 m, "POST", "https://api.test.com/api/v1/agent_instance/register"
             )
             assert body["update_current_version"] is True
+
+    @pytest.mark.asyncio
+    async def test_register_with_environment_id(self, config):
+        """register() sends environment_id in payload when provided."""
+        with aioresponses() as m:
+            m.post(
+                "https://api.test.com/api/v1/agent_instance/register",
+                payload={"status": "success", "details": MOCK_INSTANCE},
+            )
+            async with PrefactorHttpClient(config) as client:
+                await client.agent_instances.register(
+                    agent_id="agent-1",
+                    agent_version={},
+                    agent_schema_version={},
+                    environment_id="env-1",
+                )
+        body = get_request_body(
+            m, "POST", "https://api.test.com/api/v1/agent_instance/register"
+        )
+        assert body["environment_id"] == "env-1"
+
+    @pytest.mark.asyncio
+    async def test_register_without_environment_id_omits_field(self, config):
+        """register() omits environment_id from payload when not provided."""
+        with aioresponses() as m:
+            m.post(
+                "https://api.test.com/api/v1/agent_instance/register",
+                payload={"status": "success", "details": MOCK_INSTANCE},
+            )
+            async with PrefactorHttpClient(config) as client:
+                await client.agent_instances.register(
+                    agent_id="agent-1",
+                    agent_version={},
+                    agent_schema_version={},
+                )
+        body = get_request_body(
+            m, "POST", "https://api.test.com/api/v1/agent_instance/register"
+        )
+        assert "environment_id" not in body
+
+    @pytest.mark.asyncio
+    async def test_register_without_agent_id_omits_field(self, config):
+        """register() omits agent_id from payload when not provided."""
+        with aioresponses() as m:
+            m.post(
+                "https://api.test.com/api/v1/agent_instance/register",
+                payload={"status": "success", "details": MOCK_INSTANCE},
+            )
+            async with PrefactorHttpClient(config) as client:
+                await client.agent_instances.register(
+                    agent_version={},
+                    agent_schema_version={},
+                )
+        body = get_request_body(
+            m, "POST", "https://api.test.com/api/v1/agent_instance/register"
+        )
+        assert "agent_id" not in body
+
+    @pytest.mark.asyncio
+    async def test_register_with_environment_id_only(self, config):
+        """register() can send environment_id without agent_id."""
+        with aioresponses() as m:
+            m.post(
+                "https://api.test.com/api/v1/agent_instance/register",
+                payload={"status": "success", "details": MOCK_INSTANCE},
+            )
+            async with PrefactorHttpClient(config) as client:
+                await client.agent_instances.register(
+                    agent_version={},
+                    agent_schema_version={},
+                    environment_id="env-1",
+                )
+        body = get_request_body(
+            m, "POST", "https://api.test.com/api/v1/agent_instance/register"
+        )
+        assert body["environment_id"] == "env-1"
+        assert "agent_id" not in body
+
+    @pytest.mark.asyncio
+    async def test_register_with_agent_id_only(self, config):
+        """register() can send agent_id without environment_id."""
+        with aioresponses() as m:
+            m.post(
+                "https://api.test.com/api/v1/agent_instance/register",
+                payload={"status": "success", "details": MOCK_INSTANCE},
+            )
+            async with PrefactorHttpClient(config) as client:
+                await client.agent_instances.register(
+                    agent_id="agent-1",
+                    agent_version={},
+                    agent_schema_version={},
+                )
+        body = get_request_body(
+            m, "POST", "https://api.test.com/api/v1/agent_instance/register"
+        )
+        assert body["agent_id"] == "agent-1"
+        assert "environment_id" not in body
 
     @pytest.mark.asyncio
     async def test_finish_with_status(self, config):

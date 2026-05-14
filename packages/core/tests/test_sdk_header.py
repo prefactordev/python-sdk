@@ -47,7 +47,7 @@ class TestPrefactorCoreSdkHeader:
         """Core prepends the adapter entry ahead of the core entry."""
         client = PrefactorCoreClient(
             create_config(),
-            sdk_header_entry="prefactor-langchain@0.2.4",
+            sdk_header_entry="prefactor-langchain@0.2.5",
         )
 
         with (
@@ -63,7 +63,7 @@ class TestPrefactorCoreSdkHeader:
             await client.initialize()
             assert client._http is not None
             assert client._http._sdk_header == (
-                f"prefactor-langchain@0.2.4 {CORE_SDK_HEADER_ENTRY}"
+                f"prefactor-langchain@0.2.5 {CORE_SDK_HEADER_ENTRY}"
             )
             await client.close()
 

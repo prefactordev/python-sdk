@@ -53,7 +53,7 @@ class PrefactorLiveKitSession:
     def __init__(
         self,
         client: PrefactorCoreClient | None = None,
-        agent_id: str = "livekit-agent",
+        agent_id: str | None = None,
         agent_name: str | None = None,
         instance: AgentInstanceHandle | None = None,
         tool_schemas: Mapping[str, LiveKitToolSchemaConfig | Mapping[str, Any]]
@@ -124,7 +124,7 @@ class PrefactorLiveKitSession:
         cls,
         api_url: str,
         api_token: str,
-        agent_id: str = "livekit-agent",
+        agent_id: str | None = None,
         agent_name: str | None = None,
         schema_registry: SchemaRegistry | None = None,
         include_livekit_schemas: bool = True,
@@ -220,7 +220,10 @@ class PrefactorLiveKitSession:
 
         self._loop = asyncio.get_running_loop()
         agent_version_name = self._agent_name or "livekit-agent"
-        schema_version_id = f"livekit-{self._agent_id}"
+        if self._agent_id is None:
+            schema_version_id = "livekit-deployment"
+        else:
+            schema_version_id = f"livekit-{self._agent_id}"
         if self._client._config.schema_registry is not None:
             raw = self._client._config.schema_registry.to_agent_schema_version(
                 schema_version_id
@@ -228,7 +231,10 @@ class PrefactorLiveKitSession:
             digest = hashlib.sha1(
                 json.dumps({"name": agent_version_name, **raw}, sort_keys=True).encode()
             ).hexdigest()[:8]
-            schema_version_id = f"livekit-{self._agent_id}-{digest}"
+            if self._agent_id is None:
+                schema_version_id = f"livekit-deployment-{digest}"
+            else:
+                schema_version_id = f"livekit-{self._agent_id}-{digest}"
 
         self._instance = await self._client.create_agent_instance(
             agent_id=self._agent_id,
