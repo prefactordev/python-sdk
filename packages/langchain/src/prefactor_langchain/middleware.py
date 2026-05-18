@@ -15,6 +15,7 @@ from prefactor_core import (
     PrefactorCoreClient,
     PrefactorCoreConfig,
     PrefactorTelemetryFailureError,
+    PrefactorTerminatedError,
     SchemaRegistry,
     SpanContext,
 )
@@ -167,6 +168,7 @@ class PrefactorMiddleware(AgentMiddleware):
             self._client = None
             self._agent_id = agent_id
             self._agent_name = agent_name
+            self._environment_id: str | None = None
             self._instance = instance
             self._owns_instance = False
             self._owns_client = False
@@ -180,6 +182,7 @@ class PrefactorMiddleware(AgentMiddleware):
             self._tool_span_types = (
                 self._register_tool_schemas(None, tool_schemas) if tool_schemas else {}
             )
+            self._get_termination_event = None
             return
 
         if client is None:
@@ -201,6 +204,7 @@ class PrefactorMiddleware(AgentMiddleware):
         self._client = client
         self._agent_id = agent_id
         self._agent_name = agent_name
+        self._environment_id = None
 
         self._instance: AgentInstanceHandle | None = None
         self._owns_instance = True
@@ -214,6 +218,7 @@ class PrefactorMiddleware(AgentMiddleware):
         self._pending_emit_futures: list[asyncio.Task[None]] = []
         self._pending_emit_error: Exception | None = None
         self._tool_span_types = {}
+        self._get_termination_event = None
 
         if tool_schemas:
             self._tool_span_types = self._register_tool_schemas(client, tool_schemas)
@@ -237,6 +242,19 @@ class PrefactorMiddleware(AgentMiddleware):
             return new_error
         return current
 
+    def _throw_if_terminated(self) -> None:
+        if self._get_termination_event is None:
+            return
+        event = self._get_termination_event()
+        if event.is_set():
+            monitor = (
+                self._client._termination_monitor
+                if self._client and hasattr(self._client, "_termination_monitor")
+                else None
+            )
+            reason = monitor.termination_reason if monitor is not None else None
+            raise PrefactorTerminatedError(reason)
+
     @classmethod
     def from_config(
         cls,
@@ -244,6 +262,7 @@ class PrefactorMiddleware(AgentMiddleware):
         api_token: str,
         agent_id: str | None = None,
         agent_name: str | None = None,
+        environment_id: str | None = None,
         schema_registry: SchemaRegistry | None = None,
         include_langchain_schemas: bool = True,
         tool_schemas: Mapping[str, LangChainToolSchemaConfig | Mapping[str, Any]]
@@ -259,6 +278,7 @@ class PrefactorMiddleware(AgentMiddleware):
             api_token: The API token for authentication.
             agent_id: Optional agent identifier for categorization.
             agent_name: Optional human-readable agent name.
+            environment_id: Optional environment identifier for scoping the agent.
             schema_registry: Optional SchemaRegistry for registering span schemas.
             include_langchain_schemas: If True and schema_registry is provided,
                 automatically register LangChain-specific schemas.
@@ -303,6 +323,7 @@ class PrefactorMiddleware(AgentMiddleware):
         middleware._client = client
         middleware._agent_id = agent_id
         middleware._agent_name = agent_name
+        middleware._environment_id = environment_id
         middleware._instance = None
         middleware._owns_instance = True
         middleware._owns_client = True
@@ -314,6 +335,7 @@ class PrefactorMiddleware(AgentMiddleware):
         middleware._pending_emit_futures = []
         middleware._pending_emit_error = None
         middleware._tool_span_types = tool_span_types
+        middleware._get_termination_event = None
         logger.debug("PrefactorMiddleware created via from_config()")
         return middleware
 
@@ -393,10 +415,19 @@ class PrefactorMiddleware(AgentMiddleware):
             },
             agent_schema_version=None,  # Will use registry if available
             external_schema_version_id=schema_version_id,
+            environment_id=self._environment_id,
         )
 
         self._owns_instance = True
         await self._instance.start()
+        if (
+            self._client is not None
+            and hasattr(self._client, "_termination_monitor")
+            and self._client._termination_monitor is not None
+        ):
+            self._get_termination_event = (
+                self._client._termination_monitor.get_termination_event
+            )
         logger.debug("Initialized agent instance %s", self._instance.id)
         return self._instance
 
@@ -772,6 +803,7 @@ class PrefactorMiddleware(AgentMiddleware):
             Optional state updates.
         """
         try:
+            self._throw_if_terminated()
             if self._instance is None:
                 return None
 
@@ -796,6 +828,8 @@ class PrefactorMiddleware(AgentMiddleware):
 
         except Exception as e:
             _raise_if_telemetry_failure(e)
+            if isinstance(e, PrefactorTerminatedError):
+                raise
             logger.error("Error in before_agent: %s", e, exc_info=True)
             return None
 
@@ -879,6 +913,7 @@ class PrefactorMiddleware(AgentMiddleware):
             Optional state updates.
         """
         try:
+            self._throw_if_terminated()
             instance = await self._ensure_initialized()
 
             messages = []
@@ -918,6 +953,8 @@ class PrefactorMiddleware(AgentMiddleware):
 
         except Exception as e:
             _raise_if_telemetry_failure(e)
+            if isinstance(e, PrefactorTerminatedError):
+                raise
             logger.error("Error in abefore_agent: %s", e, exc_info=True)
 
         return None
@@ -976,6 +1013,7 @@ class PrefactorMiddleware(AgentMiddleware):
         Returns:
             The model response.
         """
+        self._throw_if_terminated()
         inputs = self._extract_model_inputs(request)
         span_data = LLMSpan(
             name=self._get_name_from_request(request),
@@ -1014,6 +1052,7 @@ class PrefactorMiddleware(AgentMiddleware):
         Returns:
             The model response.
         """
+        self._throw_if_terminated()
         instance = await self._ensure_initialized()
 
         inputs = self._extract_model_inputs(request)
@@ -1058,6 +1097,7 @@ class PrefactorMiddleware(AgentMiddleware):
         Returns:
             The tool response.
         """
+        self._throw_if_terminated()
         inputs = self._extract_tool_inputs(request)
         tool_name = inputs.get("tool_name", "unknown_tool")
 
@@ -1100,6 +1140,7 @@ class PrefactorMiddleware(AgentMiddleware):
         Returns:
             The tool response.
         """
+        self._throw_if_terminated()
         instance = await self._ensure_initialized()
 
         inputs = self._extract_tool_inputs(request)

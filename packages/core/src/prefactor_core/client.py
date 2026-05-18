@@ -7,13 +7,18 @@ through an async queue-based architecture.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any
 
 from prefactor_http.client import PrefactorHttpClient
-from prefactor_http.exceptions import is_permanent_http_error, is_transient_http_error
+from prefactor_http.exceptions import (
+    PrefactorApiError,
+    is_permanent_http_error,
+    is_transient_http_error,
+)
 
 from ._version import PACKAGE_NAME as CORE_PACKAGE_NAME
 from ._version import PACKAGE_VERSION as CORE_PACKAGE_VERSION
@@ -26,6 +31,7 @@ from .exceptions import (
 )
 from .managers.agent_instance import AgentInstanceManager
 from .managers.span import SpanManager
+from .monitoring.termination_monitor import TerminationMonitor
 from .operations import Operation, OperationType
 from .queue.base import Queue
 from .queue.executor import TaskExecutor
@@ -86,6 +92,9 @@ class PrefactorCoreClient:
         self._initialized = False
         self._telemetry_failure: PrefactorTelemetryFailureError | None = None
         self._telemetry_failure_observed = False
+        self._termination_monitor: TerminationMonitor | None = None
+        self._sync_task: asyncio.Task | None = None
+        self._current_instance_id: str | None = None
 
     def _build_http_sdk_header(self) -> str:
         """Build the effective SDK header for HTTP requests."""
@@ -155,6 +164,13 @@ class PrefactorCoreClient:
 
         self._initialized = True
 
+        self._termination_monitor = TerminationMonitor(
+            fetch_instance=self._fetch_instance_for_poll,
+        )
+        self._sync_task = asyncio.create_task(
+            self._run_sync_loop(), name="prefactor-termination-sync"
+        )
+
     async def close(self) -> None:
         """Close the client and cleanup resources.
 
@@ -163,6 +179,24 @@ class PrefactorCoreClient:
         """
         if not self._initialized:
             return
+
+        if self._sync_task is not None:
+            if not self._sync_task.done():
+                self._sync_task.cancel()
+            try:
+                await self._sync_task
+            except asyncio.CancelledError:
+                pass
+            except Exception:
+                logger.exception(
+                    "Termination sync loop exited with error during close()"
+                )
+            finally:
+                self._sync_task = None
+
+        if self._termination_monitor is not None:
+            self._termination_monitor.destroy()
+            self._termination_monitor = None
 
         # Stop executor
         if self._executor:
@@ -272,12 +306,23 @@ class PrefactorCoreClient:
                 )
 
             elif operation.type == OperationType.FINISH_AGENT_INSTANCE:
-                await self._http.agent_instances.finish(
-                    agent_instance_id=operation.payload["instance_id"],
-                    status=operation.payload.get("status", "complete"),
-                    timestamp=operation.timestamp,
-                    idempotency_key=operation.payload.get("idempotency_key"),
-                )
+                try:
+                    await self._http.agent_instances.finish(
+                        agent_instance_id=operation.payload["instance_id"],
+                        status=operation.payload.get("status", "complete"),
+                        timestamp=operation.timestamp,
+                        idempotency_key=operation.payload.get("idempotency_key"),
+                    )
+                except PrefactorApiError as finish_err:
+                    if finish_err.status_code == 409:
+                        logger.debug(
+                            "[prefactor:http] Agent instance %s already in"
+                            " terminal state; skipping finish.",
+                            operation.payload["instance_id"],
+                        )
+                        return
+                    raise
+
             elif operation.type == OperationType.CREATE_SPAN:
                 await self._http.agent_spans.create(
                     agent_instance_id=operation.payload["instance_id"],
@@ -286,6 +331,7 @@ class PrefactorCoreClient:
                     id=operation.payload.get("span_id"),
                     parent_span_id=operation.payload.get("parent_span_id"),
                     payload=operation.payload.get("payload"),
+                    control_signal_callback=self._on_control_signal,
                 )
 
             elif operation.type == OperationType.FINISH_SPAN:
@@ -295,6 +341,7 @@ class PrefactorCoreClient:
                     result_payload=operation.payload.get("result_payload"),
                     timestamp=operation.timestamp,
                     idempotency_key=operation.payload.get("idempotency_key"),
+                    control_signal_callback=self._on_control_signal,
                 )
 
         except Exception as e:
@@ -306,6 +353,32 @@ class PrefactorCoreClient:
                 exc_info=True,
             )
             raise
+
+    async def _fetch_instance_for_poll(self, instance_id: str):
+        if self._http is None:
+            return None
+        return await self._http.agent_instances.get(instance_id)
+
+    async def _run_sync_loop(self) -> None:
+        while True:
+            await asyncio.sleep(1)
+            if self._termination_monitor is None:
+                continue
+            try:
+                self._termination_monitor.sync(self._current_instance_id)
+            except Exception:
+                logger.exception("Termination sync iteration failed")
+
+    def _on_control_signal(self, reason: str | None) -> None:
+        if self._termination_monitor is not None:
+            self._termination_monitor.detect_termination(reason)
+
+    def _set_current_instance(self, instance_id: str | None) -> None:
+        self._current_instance_id = instance_id
+
+    def _clear_current_instance(self, instance_id: str) -> None:
+        if self._current_instance_id == instance_id:
+            self._current_instance_id = None
 
     @property
     def instance_manager(self) -> AgentInstanceManager | None:
@@ -380,6 +453,8 @@ class PrefactorCoreClient:
             instance_id=instance_id,
             environment_id=environment_id,
         )
+
+        self._set_current_instance(instance_id)
 
         return AgentInstanceHandle(
             instance_id=instance_id,

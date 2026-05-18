@@ -16,6 +16,7 @@ from .exceptions import (
     OperationError,
     PrefactorCoreError,
     PrefactorTelemetryFailureError,
+    PrefactorTerminatedError,
     SpanNotFoundError,
 )
 from .managers.agent_instance import AgentInstanceHandle
@@ -43,6 +44,7 @@ __all__ = [
     "InstanceNotFoundError",
     "SpanNotFoundError",
     "PrefactorTelemetryFailureError",
+    "PrefactorTerminatedError",
     # Models
     "AgentInstance",
     "Span",

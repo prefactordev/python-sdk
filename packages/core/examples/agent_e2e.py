@@ -31,6 +31,8 @@ deployment-scoped token, leave it unset and the API derives the agent and
 environment from the token.
 """
 
+from __future__ import annotations
+
 import asyncio
 import os
 
@@ -186,6 +188,8 @@ async def simulate_retrieval(query: str) -> list[str]:
 
 async def main() -> None:
     agent_id = os.environ.get("PREFACTOR_AGENT_ID")
+    if agent_id is not None:
+        agent_id = agent_id.strip() or None
 
     config = PrefactorCoreConfig(
         http_config=HttpClientConfig(

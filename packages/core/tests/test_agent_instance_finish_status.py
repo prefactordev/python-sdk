@@ -102,3 +102,70 @@ async def test_finish_forwards_explicit_status(status):
 
     assert len(stub_http.agent_instances.finish_calls) == 1
     assert stub_http.agent_instances.finish_calls[0]["status"] == status
+
+
+class TestFinishAgentInstance409Handling:
+    async def test_409_on_finish_treated_as_success(self):
+        """FINISH_AGENT_INSTANCE with 409 response should not raise."""
+        from datetime import datetime, timezone
+        from unittest.mock import AsyncMock, MagicMock
+
+        from prefactor_core.operations import Operation, OperationType
+        from prefactor_http.exceptions import PrefactorApiError
+
+        mock_http = MagicMock()
+        mock_http.agent_instances = MagicMock()
+        mock_http.agent_instances.finish = AsyncMock(
+            side_effect=PrefactorApiError("already terminated", "conflict", 409)
+        )
+        mock_http.agent_spans = MagicMock()
+        mock_http.agent_spans.create = AsyncMock()
+        mock_http.agent_spans.finish = AsyncMock()
+
+        config = PrefactorCoreConfig(
+            http_config=HttpClientConfig(api_url="http://fake", api_token="tok")
+        )
+        client = PrefactorCoreClient(config)
+        client._http = mock_http
+        client._initialized = True
+
+        op = Operation(
+            type=OperationType.FINISH_AGENT_INSTANCE,
+            payload={
+                "instance_id": "inst-1",
+                "idempotency_key": "key-1",
+                "status": "complete",
+            },
+            timestamp=datetime.now(timezone.utc),
+        )
+        # Should not raise
+        await client._process_operation(op)
+
+
+class TestAgentInstanceHandleFinishResetsMonitor:
+    async def test_finish_resets_termination_monitor(self):
+        """handle.finish() should reset the termination monitor before enqueueing."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        from prefactor_core.managers.agent_instance import AgentInstanceHandle
+        from prefactor_core.monitoring.termination_monitor import TerminationMonitor
+
+        fetch = AsyncMock(
+            return_value=MagicMock(status="active", termination_reason=None)
+        )
+        monitor = TerminationMonitor(fetch_instance=fetch)
+        monitor.detect_termination("run 1")
+        assert monitor.get_termination_event().is_set()
+
+        mock_client = MagicMock()
+        mock_client._termination_monitor = monitor
+        mock_client.instance_manager = MagicMock()
+        mock_client.instance_manager.finish_with_idempotency_key = AsyncMock()
+
+        handle = AgentInstanceHandle(instance_id="inst-1", client=mock_client)
+        await handle.finish()
+
+        # Monitor should be reset (new unset event)
+        assert not monitor.get_termination_event().is_set()
+        # finish_with_idempotency_key should still be called
+        mock_client.instance_manager.finish_with_idempotency_key.assert_called_once()

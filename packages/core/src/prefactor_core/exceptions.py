@@ -58,6 +58,23 @@ class PrefactorTelemetryFailureError(PrefactorCoreError):
         self.dropped_operations = dropped_operations
 
 
+class PrefactorTerminatedError(PrefactorCoreError):
+    """Raised when the agent instance has been terminated by p2.
+
+    Args:
+        reason: Optional reason reported by p2 for the termination.
+    """
+
+    def __init__(self, reason: str | None = None) -> None:
+        msg = (
+            f"Agent instance terminated by p2: {reason}"
+            if reason
+            else "Agent instance terminated by p2"
+        )
+        super().__init__(msg)
+        self.reason = reason
+
+
 __all__ = [
     "PrefactorCoreError",
     "ClientNotInitializedError",
@@ -66,4 +83,5 @@ __all__ = [
     "InstanceNotFoundError",
     "SpanNotFoundError",
     "PrefactorTelemetryFailureError",
+    "PrefactorTerminatedError",
 ]
