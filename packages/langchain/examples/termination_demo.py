@@ -54,10 +54,27 @@ async def terminate_after_delay(
     instance_id: str,
     delay: float,
 ) -> None:
+    """Call the terminate endpoint after a configured delay.
+
+    Args:
+        api_url: Base Prefactor API URL.
+        ba_token: Bearer token for terminate API authorization.
+        instance_id: Agent instance identifier to terminate.
+        delay: Seconds to wait before posting the terminate request.
+
+    Returns:
+        None.
+
+    Raises:
+        aiohttp.ClientResponseError: If the terminate API returns a non-2xx
+            response.
+        aiohttp.ClientError: If the terminate request fails before a response.
+    """
     await asyncio.sleep(delay)
     url = f"{api_url.rstrip('/')}/api/v1/agent_instance/{instance_id}/terminate"
     logger.info("Calling terminate API: POST %s", url)
-    async with aiohttp.ClientSession() as session:
+    timeout = aiohttp.ClientTimeout(total=10)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
         async with session.post(
             url,
             headers={
@@ -66,8 +83,21 @@ async def terminate_after_delay(
             },
             json={"reason": "demo termination"},
         ) as resp:
-            body = await resp.json()
+            body = await resp.text()
             logger.info("Terminate API: status=%s body=%s", resp.status, body)
+            resp.raise_for_status()
+
+
+async def _cancel_and_await_terminate_task(task: asyncio.Task[None]) -> None:
+    if not task.done():
+        task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+    except Exception:
+        logger.exception("Auto-terminate task failed")
+        raise
 
 
 async def run_once(
@@ -77,6 +107,23 @@ async def run_once(
     agent_id: str,
     auto_terminate_delay: float,
 ) -> None:
+    """Run one termination-demo agent session.
+
+    Args:
+        run_number: Sequential run counter used in log messages.
+        api_url: Base Prefactor API URL.
+        api_token: SDK API token for Prefactor telemetry.
+        agent_id: Agent identifier used to initialize the middleware.
+        auto_terminate_delay: Seconds before the demo calls the terminate API.
+
+    Returns:
+        None.
+
+    Raises:
+        PrefactorTerminatedError: If Prefactor signals agent termination.
+        Exception: If agent invocation, termination cleanup, or middleware
+            cleanup fails.
+    """
     environment_id = os.environ.get("PREFACTOR_ENVIRONMENT_ID")
     middleware = PrefactorMiddleware.from_config(
         api_url=api_url,
@@ -116,15 +163,18 @@ async def run_once(
         logger.info("Run #%d terminated: %s", run_number, e)
         raise
     finally:
-        terminate_task.cancel()
         try:
-            await terminate_task
-        except (asyncio.CancelledError, Exception):
-            pass
-        await middleware.close()
+            await _cancel_and_await_terminate_task(terminate_task)
+        finally:
+            await middleware.close()
 
 
 async def main() -> None:
+    """Run the termination demo restart loop.
+
+    Returns:
+        None.
+    """
     api_url = os.environ["PREFACTOR_API_URL"]
     api_token = os.environ["PREFACTOR_API_TOKEN"]
     agent_id = os.environ["PREFACTOR_AGENT_ID"]

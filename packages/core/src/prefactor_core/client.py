@@ -180,13 +180,19 @@ class PrefactorCoreClient:
         if not self._initialized:
             return
 
-        if self._sync_task is not None and not self._sync_task.done():
-            self._sync_task.cancel()
+        if self._sync_task is not None:
+            if not self._sync_task.done():
+                self._sync_task.cancel()
             try:
                 await self._sync_task
             except asyncio.CancelledError:
                 pass
-            self._sync_task = None
+            except Exception:
+                logger.exception(
+                    "Termination sync loop exited with error during close()"
+                )
+            finally:
+                self._sync_task = None
 
         if self._termination_monitor is not None:
             self._termination_monitor.destroy()
@@ -356,8 +362,12 @@ class PrefactorCoreClient:
     async def _run_sync_loop(self) -> None:
         while True:
             await asyncio.sleep(1)
-            if self._termination_monitor is not None:
+            if self._termination_monitor is None:
+                continue
+            try:
                 self._termination_monitor.sync(self._current_instance_id)
+            except Exception:
+                logger.exception("Termination sync iteration failed")
 
     def _on_control_signal(self, reason: str | None) -> None:
         if self._termination_monitor is not None:

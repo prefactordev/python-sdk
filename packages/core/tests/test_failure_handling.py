@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import aiohttp
 import pytest
@@ -101,6 +102,60 @@ async def _wait_until(
             return
         await asyncio.sleep(interval)
     raise AssertionError("Timed out waiting for expected condition")
+
+
+@pytest.mark.asyncio
+async def test_termination_sync_loop_survives_iteration_failures(caplog):
+    """A failed sync iteration should be logged without stopping future syncs."""
+    client = PrefactorCoreClient(_make_client_config())
+    monitor = Mock()
+    calls = 0
+
+    def sync(_instance_id):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise RuntimeError("sync failed")
+
+    monitor.sync.side_effect = sync
+    client._termination_monitor = monitor
+    original_sleep = asyncio.sleep
+
+    async def fast_sleep(_delay):
+        await original_sleep(0)
+
+    with (
+        caplog.at_level(logging.ERROR, logger="prefactor_core.client"),
+        patch("prefactor_core.client.asyncio.sleep", side_effect=fast_sleep),
+    ):
+        task = asyncio.create_task(client._run_sync_loop())
+        try:
+            await _wait_until(lambda: monitor.sync.call_count >= 2)
+        finally:
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+
+    assert "Termination sync iteration failed" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_close_observes_completed_sync_task_exceptions(caplog):
+    """close() should await already-failed sync tasks and clear the task handle."""
+    client = PrefactorCoreClient(_make_client_config())
+    client._initialized = True
+
+    async def fail_sync_loop():
+        raise RuntimeError("sync task failed")
+
+    client._sync_task = asyncio.create_task(fail_sync_loop())
+    await asyncio.sleep(0)
+
+    with caplog.at_level(logging.ERROR, logger="prefactor_core.client"):
+        await client.close()
+
+    assert client._sync_task is None
+    assert "Termination sync loop exited with error during close()" in caplog.text
 
 
 @pytest.mark.asyncio
