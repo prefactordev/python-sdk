@@ -172,11 +172,17 @@ class TestPrefactorMiddleware:
         instance.finish = AsyncMock()
 
         async def _run() -> None:
-            with patch.object(
-                middleware._client,
-                "create_agent_instance",
-                AsyncMock(return_value=instance),
-            ) as mock_create:
+            with (
+                patch(
+                    "prefactor_http.client.PrefactorHttpClient.validate_token",
+                    AsyncMock(return_value={"status": "success"}),
+                ),
+                patch.object(
+                    middleware._client,
+                    "create_agent_instance",
+                    AsyncMock(return_value=instance),
+                ) as mock_create,
+            ):
                 await middleware._ensure_initialized()
                 await middleware.close()
 

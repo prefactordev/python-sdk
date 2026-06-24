@@ -142,6 +142,8 @@ class PrefactorCoreClient:
         )
         await self._http.__aenter__()
 
+        await self._http.validate_token()
+
         # Initialize executor
         self._executor = TaskExecutor(
             queue=self._queue,
