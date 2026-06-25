@@ -142,7 +142,13 @@ class PrefactorCoreClient:
         )
         await self._http.__aenter__()
 
-        await self._http.validate_token()
+        try:
+            await self._http.validate_token()
+        except BaseException as exc:
+            http = self._http
+            self._http = None
+            await http.__aexit__(type(exc), exc, exc.__traceback__)
+            raise
 
         # Initialize executor
         self._executor = TaskExecutor(

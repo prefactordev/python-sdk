@@ -74,11 +74,15 @@ class _StubHttpClient:
         self.agent_instances = agent_instances or _StubAgentInstances()
         self.agent_spans = agent_spans or _StubAgentSpans()
         self._validate_token_error = validate_token_error
+        self.enter_calls = 0
+        self.exit_calls = 0
 
     async def __aenter__(self):
+        self.enter_calls += 1
         return self
 
     async def __aexit__(self, exc_type, exc, tb):
+        self.exit_calls += 1
         return None
 
     async def validate_token(self):
@@ -397,5 +401,8 @@ async def test_initialize_raises_auth_error_when_token_validation_fails():
             await client.initialize()
 
         assert exc_info.value.code == "bad_authtoken"
+        assert stub_http.enter_calls == 1
+        assert stub_http.exit_calls == 1
+        assert client._http is None
         assert client._executor is None
         await client.close()
