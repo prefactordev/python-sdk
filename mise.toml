@@ -42,6 +42,7 @@ lefthook install
 [tasks.build]
 description = "Build all packages"
 run = """
+rm -f dist/prefactor_*.whl dist/prefactor_*.tar.gz
 uv build --package prefactor-http
 uv build --package prefactor-core
 uv build --package prefactor-langchain
@@ -52,20 +53,72 @@ uv build --package prefactor-livekit
 description = "Publish all packages to PyPI in dependency order (requires UV_PUBLISH_TOKEN)"
 depends = ["build"]
 run = """
-uv publish dist/prefactor_http-*
-uv publish dist/prefactor_core-*
-uv publish dist/prefactor_langchain-*
-uv publish dist/prefactor_livekit-*
+set -euo pipefail
+
+publish_if_missing() {
+  local pypi_name="$1"
+  local dist_prefix="$2"
+  local version="$3"
+  local publish_url="${4:-https://upload.pypi.org/legacy/}"
+  local check_url="${5:-https://pypi.org/simple/}"
+
+  if curl -sf "https://pypi.org/pypi/${pypi_name}/${version}/json" >/dev/null; then
+    echo "${pypi_name} ${version} already on PyPI, skipping"
+    return 0
+  fi
+
+  uv publish --publish-url "${publish_url}" --check-url "${check_url}" \
+    "dist/${dist_prefix}-${version}.tar.gz" \
+    "dist/${dist_prefix}-${version}-py3-none-any.whl"
+}
+
+HTTP_VER=$(grep '^__version__' packages/http/src/prefactor_http/_version.py | sed 's/.*"\\(.*\\)".*/\\1/')
+CORE_VER=$(grep '^__version__' packages/core/src/prefactor_core/_version.py | sed 's/.*"\\(.*\\)".*/\\1/')
+LANGCHAIN_VER=$(grep '^__version__' packages/langchain/src/prefactor_langchain/_version.py | sed 's/.*"\\(.*\\)".*/\\1/')
+LIVEKIT_VER=$(grep '^__version__' packages/livekit/src/prefactor_livekit/_version.py | sed 's/.*"\\(.*\\)".*/\\1/')
+
+publish_if_missing prefactor-http prefactor_http "${HTTP_VER}"
+publish_if_missing prefactor-core prefactor_core "${CORE_VER}"
+publish_if_missing prefactor-langchain prefactor_langchain "${LANGCHAIN_VER}"
+publish_if_missing prefactor-livekit prefactor_livekit "${LIVEKIT_VER}"
 """
 
 [tasks.publish-test]
 description = "Publish all packages to TestPyPI (requires UV_PUBLISH_TOKEN)"
 depends = ["build"]
 run = """
-uv publish --publish-url https://test.pypi.org/legacy/ dist/prefactor_http-*
-uv publish --publish-url https://test.pypi.org/legacy/ dist/prefactor_core-*
-uv publish --publish-url https://test.pypi.org/legacy/ dist/prefactor_langchain-*
-uv publish --publish-url https://test.pypi.org/legacy/ dist/prefactor_livekit-*
+set -euo pipefail
+
+publish_if_missing() {
+  local pypi_name="$1"
+  local dist_prefix="$2"
+  local version="$3"
+  local publish_url="${4:-https://upload.pypi.org/legacy/}"
+  local check_url="${5:-https://pypi.org/simple/}"
+
+  if curl -sf "https://test.pypi.org/pypi/${pypi_name}/${version}/json" >/dev/null; then
+    echo "${pypi_name} ${version} already on TestPyPI, skipping"
+    return 0
+  fi
+
+  uv publish --publish-url "${publish_url}" --check-url "${check_url}" \
+    "dist/${dist_prefix}-${version}.tar.gz" \
+    "dist/${dist_prefix}-${version}-py3-none-any.whl"
+}
+
+HTTP_VER=$(grep '^__version__' packages/http/src/prefactor_http/_version.py | sed 's/.*"\\(.*\\)".*/\\1/')
+CORE_VER=$(grep '^__version__' packages/core/src/prefactor_core/_version.py | sed 's/.*"\\(.*\\)".*/\\1/')
+LANGCHAIN_VER=$(grep '^__version__' packages/langchain/src/prefactor_langchain/_version.py | sed 's/.*"\\(.*\\)".*/\\1/')
+LIVEKIT_VER=$(grep '^__version__' packages/livekit/src/prefactor_livekit/_version.py | sed 's/.*"\\(.*\\)".*/\\1/')
+
+publish_if_missing prefactor-http prefactor_http "${HTTP_VER}" \
+  "https://test.pypi.org/legacy/" "https://test.pypi.org/simple/"
+publish_if_missing prefactor-core prefactor_core "${CORE_VER}" \
+  "https://test.pypi.org/legacy/" "https://test.pypi.org/simple/"
+publish_if_missing prefactor-langchain prefactor_langchain "${LANGCHAIN_VER}" \
+  "https://test.pypi.org/legacy/" "https://test.pypi.org/simple/"
+publish_if_missing prefactor-livekit prefactor_livekit "${LIVEKIT_VER}" \
+  "https://test.pypi.org/legacy/" "https://test.pypi.org/simple/"
 """
 
 [hooks]
