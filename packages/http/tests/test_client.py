@@ -382,6 +382,38 @@ class TestAuthorizationHeader:
             await client.close()
 
 
+class TestValidateToken:
+    """Tests for API token validation."""
+
+    @pytest.mark.asyncio
+    async def test_validate_token_calls_ping(self, client):
+        """validate_token() should call GET /api/v1/ping."""
+
+        mock_request = AsyncMock(return_value={"status": "success"})
+        with patch.object(client, "request", mock_request):
+            response = await client.validate_token()
+
+            mock_request.assert_awaited_once_with("GET", "/api/v1/ping")
+            assert response == {"status": "success"}
+
+    @pytest.mark.asyncio
+    async def test_validate_token_raises_auth_error(self, client):
+        """Invalid tokens should raise PrefactorAuthError."""
+
+        with patch.object(client._session, "request") as mock_request:
+            mock_response = _mock_json_response(
+                401, {"code": "bad_authtoken", "message": "Token expired"}
+            )
+            mock_request.return_value.__aenter__ = AsyncMock(return_value=mock_response)
+            mock_request.return_value.__aexit__ = AsyncMock(return_value=None)
+
+            with pytest.raises(PrefactorAuthError) as exc_info:
+                await client.validate_token()
+
+            assert exc_info.value.status_code == 401
+            assert exc_info.value.code == "bad_authtoken"
+
+
 class TestVersionHelpers:
     """Tests for package version exports."""
 

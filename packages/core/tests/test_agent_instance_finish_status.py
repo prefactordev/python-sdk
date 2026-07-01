@@ -53,6 +53,9 @@ class _StubHttpClient:
     async def __aexit__(self, exc_type, exc, tb):
         return None
 
+    async def validate_token(self):
+        return {"status": "success"}
+
 
 def _make_client_config() -> PrefactorCoreConfig:
     return PrefactorCoreConfig(

@@ -41,7 +41,6 @@ env/
 
 # uv
 .uv/
-uv.lock
 
 # Type checkers
 .mypy_cache/

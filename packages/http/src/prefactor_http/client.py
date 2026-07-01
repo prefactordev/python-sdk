@@ -275,6 +275,17 @@ class PrefactorHttpClient:
 
             return response_data
 
+    async def validate_token(self) -> dict[str, Any]:
+        """Validate the configured API token against the Prefactor ping endpoint.
+
+        Returns:
+            Parsed JSON response from the ping endpoint.
+
+        Raises:
+            PrefactorAuthError: When the token is invalid, expired, or unauthorized.
+        """
+        return await self.request("GET", "/api/v1/ping")
+
     async def request(
         self,
         method: str,

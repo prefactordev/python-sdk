@@ -37,6 +37,10 @@ class TestPrefactorCoreSdkHeader:
                 "prefactor_http.client.PrefactorHttpClient.__aexit__",
                 AsyncMock(return_value=None),
             ),
+            patch(
+                "prefactor_http.client.PrefactorHttpClient.validate_token",
+                AsyncMock(return_value={"status": "success"}),
+            ),
         ):
             await client.initialize()
             assert client._http is not None
@@ -58,6 +62,10 @@ class TestPrefactorCoreSdkHeader:
             patch(
                 "prefactor_http.client.PrefactorHttpClient.__aexit__",
                 AsyncMock(return_value=None),
+            ),
+            patch(
+                "prefactor_http.client.PrefactorHttpClient.validate_token",
+                AsyncMock(return_value={"status": "success"}),
             ),
         ):
             await client.initialize()

@@ -213,11 +213,17 @@ class TestPrefactorLiveKitSession:
         instance.start = AsyncMock()
         instance.finish = AsyncMock()
 
-        with patch.object(
-            wrapper._client,
-            "create_agent_instance",
-            AsyncMock(return_value=instance),
-        ) as mock_create:
+        with (
+            patch(
+                "prefactor_http.client.PrefactorHttpClient.validate_token",
+                AsyncMock(return_value={"status": "success"}),
+            ),
+            patch.object(
+                wrapper._client,
+                "create_agent_instance",
+                AsyncMock(return_value=instance),
+            ) as mock_create,
+        ):
             await wrapper.ensure_initialized()
             await wrapper.close()
 
