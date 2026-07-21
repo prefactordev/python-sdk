@@ -315,6 +315,10 @@ class SchemaRegistry:
             if name in self._span_type_schemas:
                 conflicts.append(f"span_type_schemas/{name}")
 
+        if other._quality_schema is not None:
+            if self._quality_schema is not None:
+                conflicts.append("quality_schema")
+
         if conflicts:
             msg = f"Cannot merge registries - conflicting schemas: {conflicts}"
             raise ValueError(msg)
@@ -327,6 +331,9 @@ class SchemaRegistry:
 
         for name, entry in other._span_type_schemas.items():
             self._span_type_schemas[name] = entry.copy()
+
+        if other._quality_schema is not None:
+            self._quality_schema = other._quality_schema.copy()
 
 
 __all__ = ["SchemaRegistry"]

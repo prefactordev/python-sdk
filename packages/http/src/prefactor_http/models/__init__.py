@@ -10,6 +10,7 @@ from prefactor_http.models.agent_instance import (
     DataCategories,
     DataRisk,
     FinishInstanceRequest,
+    QualitySchemaDetails,
     QualitySchemaForCreate,
     SpanTypeSchemaForCreate,
 )
@@ -35,6 +36,7 @@ __all__ = [
     "AgentVersionForRegister",
     "AgentSchemaVersionForRegister",
     "FinishInstanceRequest",
+    "QualitySchemaDetails",
     "QualitySchemaForCreate",
     "SpanTypeSchemaForCreate",
     # Data risk models

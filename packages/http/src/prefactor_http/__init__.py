@@ -48,6 +48,7 @@ from prefactor_http.models.agent_instance import (
     AgentSchemaVersionForRegister,
     AgentVersionForRegister,
     FinishInstanceRequest,
+    QualitySchemaDetails,
     QualitySchemaForCreate,
     SpanTypeSchemaForCreate,
 )
@@ -86,6 +87,7 @@ __all__ = [
     "AgentVersionForRegister",
     "AgentSchemaVersionForRegister",
     "FinishInstanceRequest",
+    "QualitySchemaDetails",
     "QualitySchemaForCreate",
     "SpanTypeSchemaForCreate",
     # AgentSpan models
