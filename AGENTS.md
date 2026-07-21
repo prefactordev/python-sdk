@@ -1,12 +1,12 @@
 # Agents Guide for Prefactor Python SDK
 
 ## Build/Test Commands
-- **Run all tests**: `uv run pytest` (or `mise run test`)
-- **Run single test**: `uv run pytest packages/http/tests/test_client.py::TestClient::test_method -v`
-- **Run package tests**: `uv run pytest packages/http/tests/ -v`
-- **Lint**: `uv run ruff check --fix` (or `mise run lint`)
-- **Format**: `uv run ruff format` (or `mise run format`)
-- **Type check**: `uvx ty check` (or `mise run typecheck`)
+- **Run all tests**: `mise run test`
+- **Run single test**: `mise run test packages/http/tests/test_client.py::TestClient::test_method -v`
+- **Run package tests**: `mise run test packages/http/tests/ -v`
+- **Lint**: `mise run lint`
+- **Format**: `mise run format`
+- **Type check**: `mise run typecheck`
 - **Run all quality checks**: `mise run check` (runs format, lint, typecheck)
 
 ## Mise

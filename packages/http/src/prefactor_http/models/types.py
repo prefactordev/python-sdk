@@ -8,3 +8,4 @@ AgentStatus = Literal[
     "pending", "active", "complete", "failed", "cancelled", "terminated"
 ]
 FinishStatus = Literal["complete", "failed", "cancelled"]
+InstancePurpose = Literal["live", "smoke_test", "eval"]

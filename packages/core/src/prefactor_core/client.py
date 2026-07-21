@@ -19,6 +19,7 @@ from prefactor_http.exceptions import (
     is_permanent_http_error,
     is_transient_http_error,
 )
+from prefactor_http.models.types import InstancePurpose
 
 from ._version import PACKAGE_NAME as CORE_PACKAGE_NAME
 from ._version import PACKAGE_VERSION as CORE_PACKAGE_VERSION
@@ -331,6 +332,11 @@ class PrefactorCoreClient:
                         return
                     raise
 
+            elif operation.type == OperationType.UPDATE_AGENT_INSTANCE:
+                await self._http.agent_instances.update(
+                    agent_instance_id=operation.payload["instance_id"],
+                    quality_payload=operation.payload.get("quality_payload"),
+                )
             elif operation.type == OperationType.CREATE_SPAN:
                 await self._http.agent_spans.create(
                     agent_instance_id=operation.payload["instance_id"],
@@ -401,6 +407,7 @@ class PrefactorCoreClient:
         instance_id: str | None = None,
         external_schema_version_id: str | None = None,
         environment_id: str | None = None,
+        purpose: InstancePurpose | None = None,
     ) -> "AgentInstanceHandle":
         """Create a new agent instance.
 
@@ -419,6 +426,8 @@ class PrefactorCoreClient:
             external_schema_version_id: Optional external identifier for the
                 schema version. Defaults to "auto-generated" when using registry.
             environment_id: Optional environment ID used to scope the agent instance.
+            purpose: Why this instance ran — ``"live"``, ``"smoke_test"``,
+                or ``"eval"``. Omitted (None) lets the API default to ``"live"``.
 
         Returns:
             AgentInstanceHandle for the created instance.
@@ -460,6 +469,7 @@ class PrefactorCoreClient:
             agent_schema_version=final_schema_version,
             instance_id=instance_id,
             environment_id=environment_id,
+            purpose=purpose,
         )
 
         self._set_current_instance(instance_id)
@@ -519,6 +529,25 @@ class PrefactorCoreClient:
         assert self._span_manager is not None
 
         await self._span_manager.finish(span_id, result_payload=result_payload)
+
+    async def update_agent_instance(
+        self,
+        instance_id: str,
+        quality_payload: dict[str, Any] | None = None,
+    ) -> None:
+        """Update an agent instance (e.g., set quality payload).
+
+        Args:
+            instance_id: The ID of the instance to update.
+            quality_payload: Quality evaluation payload (None to clear).
+        """
+        self._ensure_initialized()
+        assert self._instance_manager is not None
+
+        await self._instance_manager.update(
+            instance_id,
+            quality_payload=quality_payload,
+        )
 
     @asynccontextmanager
     async def span(

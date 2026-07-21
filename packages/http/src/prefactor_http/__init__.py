@@ -43,10 +43,12 @@ from prefactor_http.exceptions import (
 )
 from prefactor_http.models.agent_instance import (
     AgentInstance,
+    AgentInstanceForUpdate,
     AgentInstanceSpanCounts,
     AgentSchemaVersionForRegister,
     AgentVersionForRegister,
     FinishInstanceRequest,
+    QualitySchemaForCreate,
     SpanTypeSchemaForCreate,
 )
 from prefactor_http.models.agent_span import AgentSpan
@@ -57,7 +59,7 @@ from prefactor_http.models.bulk import (
     BulkRequest,
     BulkResponse,
 )
-from prefactor_http.models.types import AgentStatus, FinishStatus
+from prefactor_http.models.types import AgentStatus, FinishStatus, InstancePurpose
 
 __all__ = [
     # Main client
@@ -76,12 +78,15 @@ __all__ = [
     # Type definitions
     "AgentStatus",
     "FinishStatus",
+    "InstancePurpose",
     # AgentInstance models
     "AgentInstance",
+    "AgentInstanceForUpdate",
     "AgentInstanceSpanCounts",
     "AgentVersionForRegister",
     "AgentSchemaVersionForRegister",
     "FinishInstanceRequest",
+    "QualitySchemaForCreate",
     "SpanTypeSchemaForCreate",
     # AgentSpan models
     "AgentSpan",

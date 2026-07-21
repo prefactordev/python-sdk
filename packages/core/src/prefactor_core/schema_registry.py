@@ -67,6 +67,8 @@ class SchemaRegistry:
         self._span_result_schemas: dict[str, dict[str, Any]] = {}
         # span_type_schemas: name → full structured entry
         self._span_type_schemas: dict[str, dict[str, Any]] = {}
+        # quality_schema: optional quality schema for instance evaluations
+        self._quality_schema: dict[str, Any] | None = None
 
     def register(
         self,
@@ -188,6 +190,46 @@ class SchemaRegistry:
 
         self._span_type_schemas[name] = entry
 
+    def register_quality_schema(
+        self,
+        schema: dict[str, Any],
+        title: str | None = None,
+        description: str | None = None,
+        template: str | None = None,
+        data_risk: dict[str, Any] | None = None,
+    ) -> None:
+        """Register a quality schema for instance evaluations.
+
+        The quality schema defines the shape of quality payloads that can be
+        set on agent instances. It uses the same ``title``, ``description``,
+        ``template``, and ``data_risk`` fields as span type schemas.
+
+        Args:
+            schema: JSON Schema dict defining the quality payload structure.
+            title: Optional human-readable title (defaults to "quality" on API).
+            description: Optional description of the quality evaluation.
+            template: Optional display template using ``{{field}}`` interpolation.
+            data_risk: Optional data risk classification dict (same structure
+                as span type data_risk).
+
+        Raises:
+            ValueError: If a quality schema is already registered.
+        """
+        if self._quality_schema is not None:
+            raise ValueError("Quality schema is already registered")
+
+        entry: dict[str, Any] = {"schema": schema}
+        if title is not None:
+            entry["title"] = title
+        if description is not None:
+            entry["description"] = description
+        if template is not None:
+            entry["template"] = template
+        if data_risk is not None:
+            entry["data_risk"] = data_risk
+
+        self._quality_schema = entry
+
     def get(self, schema_name: str) -> dict[str, Any] | None:
         """Get a params schema by name.
 
@@ -243,6 +285,9 @@ class SchemaRegistry:
 
         if self._span_type_schemas:
             result["span_type_schemas"] = list(self._span_type_schemas.values())
+
+        if self._quality_schema is not None:
+            result["quality_schema"] = dict(self._quality_schema)
 
         return result
 

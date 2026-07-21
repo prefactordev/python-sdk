@@ -8,9 +8,13 @@ from typing import TYPE_CHECKING, Any
 from pydantic import ValidationError
 
 from prefactor_http.exceptions import PrefactorResponseContractError
-from prefactor_http.models.agent_instance import AgentInstance, FinishInstanceRequest
+from prefactor_http.models.agent_instance import (
+    AgentInstance,
+    AgentInstanceForUpdate,
+    FinishInstanceRequest,
+)
 from prefactor_http.models.base import ApiResponse
-from prefactor_http.models.types import FinishStatus
+from prefactor_http.models.types import FinishStatus, InstancePurpose
 
 if TYPE_CHECKING:
     from prefactor_http.client import PrefactorHttpClient
@@ -68,6 +72,7 @@ class AgentInstanceClient:
         id: str | None = None,
         idempotency_key: str | None = None,
         update_current_version: bool = True,
+        purpose: InstancePurpose | None = None,
     ) -> AgentInstance:
         """Register a new agent instance.
 
@@ -86,6 +91,8 @@ class AgentInstanceClient:
             idempotency_key: Optional idempotency key
             update_current_version: Whether to update the deployment's pinned
                 version (defaults to True)
+            purpose: Why this instance ran — ``"live"``, ``"smoke_test"``,
+                or ``"eval"``. Omitted (None) lets the API default to ``"live"``.
 
         Returns:
             The created agent instance
@@ -110,6 +117,8 @@ class AgentInstanceClient:
             payload["id"] = id
         if idempotency_key is not None:
             payload["idempotency_key"] = idempotency_key
+        if purpose is not None:
+            payload["purpose"] = purpose
 
         response = await self._client.request(
             "POST",
@@ -217,3 +226,42 @@ class AgentInstanceClient:
             f"/api/v1/agent_instance/{agent_instance_id}",
         )
         return self._parse_response(response, "agent_instances.get")
+
+    async def update(
+        self,
+        agent_instance_id: str,
+        quality_payload: dict | None = None,
+        idempotency_key: str | None = None,
+    ) -> AgentInstance:
+        """Update an agent instance.
+
+        POST /api/v1/agent_instance/{agent_instance_id}/update
+
+        Args:
+            agent_instance_id: The instance ID
+            quality_payload: Quality evaluation payload (None to clear).
+            idempotency_key: Optional idempotency key
+
+        Returns:
+            The updated agent instance
+
+        Raises:
+            PrefactorNotFoundError: If instance not found
+            PrefactorApiError: On other errors
+        """
+        if idempotency_key is not None:
+            _validate_idempotency_key(idempotency_key)
+
+        update_request = AgentInstanceForUpdate(quality_payload=quality_payload)
+
+        payload: dict = {"details": update_request.model_dump()}
+        if idempotency_key is not None:
+            payload["idempotency_key"] = idempotency_key
+
+        response = await self._client.request(
+            "POST",
+            f"/api/v1/agent_instance/{agent_instance_id}/update",
+            json_data=payload,
+        )
+
+        return self._parse_response(response, "agent_instances.update")

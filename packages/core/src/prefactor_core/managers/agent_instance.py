@@ -14,7 +14,7 @@ from ..utils import generate_idempotency_key
 
 if TYPE_CHECKING:
     from prefactor_http.client import PrefactorHttpClient
-    from prefactor_http.models.types import FinishStatus
+    from prefactor_http.models.types import FinishStatus, InstancePurpose
 
     from ..client import PrefactorCoreClient
 
@@ -64,6 +64,7 @@ class AgentInstanceManager:
         agent_id: str | None = None,
         instance_id: str | None = None,
         environment_id: str | None = None,
+        purpose: "InstancePurpose | None" = None,
     ) -> str:
         """Register a new agent instance.
 
@@ -79,6 +80,8 @@ class AgentInstanceManager:
                 the API generates one.
             environment_id: Optional environment ID. Required when using an
                 account-scoped token; omit when using a deployment-scoped token.
+            purpose: Why this instance ran — ``"live"``, ``"smoke_test"``,
+                or ``"eval"``. Omitted (None) lets the API default to ``"live"``.
 
         Returns:
             The instance ID (API-generated).
@@ -90,6 +93,7 @@ class AgentInstanceManager:
             environment_id=environment_id,
             id=instance_id,
             idempotency_key=generate_idempotency_key(),
+            purpose=purpose,
         )
         return result.id
 
@@ -152,6 +156,30 @@ class AgentInstanceManager:
                 "instance_id": instance_id,
                 "idempotency_key": idempotency_key,
                 "status": status,
+            },
+            timestamp=datetime.now(timezone.utc),
+        )
+
+        await self._enqueue(operation)
+
+    async def update(
+        self,
+        instance_id: str,
+        quality_payload: dict[str, Any] | None = None,
+    ) -> None:
+        """Update an agent instance (e.g., set quality payload).
+
+        Queues an update operation for the instance.
+
+        Args:
+            instance_id: The ID of the instance to update.
+            quality_payload: Quality evaluation payload (None to clear).
+        """
+        operation = Operation(
+            type=OperationType.UPDATE_AGENT_INSTANCE,
+            payload={
+                "instance_id": instance_id,
+                "quality_payload": quality_payload,
             },
             timestamp=datetime.now(timezone.utc),
         )
@@ -236,6 +264,24 @@ class AgentInstanceHandle:
             self._instance_id,
             self._finish_idempotency_key,
             status=status,
+        )
+
+    async def update(
+        self,
+        quality_payload: dict[str, Any] | None = None,
+    ) -> None:
+        """Update the instance (e.g., set quality payload).
+
+        This queues an update operation for the instance.
+
+        Args:
+            quality_payload: Quality evaluation payload (None to clear).
+        """
+        manager = self._client.instance_manager
+        assert manager is not None
+        await manager.update(
+            self._instance_id,
+            quality_payload=quality_payload,
         )
 
     async def create_span(
