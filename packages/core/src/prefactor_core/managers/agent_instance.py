@@ -289,6 +289,7 @@ class AgentInstanceHandle:
         schema_name: str,
         parent_span_id: str | None = None,
         payload: dict[str, Any] | None = None,
+        started_at: datetime | None = None,
     ) -> str:
         """Create a span within this instance and return its ID.
 
@@ -298,6 +299,7 @@ class AgentInstanceHandle:
             schema_name: Name of the schema for this span.
             parent_span_id: Optional explicit parent span ID.
             payload: Optional initial payload (params/inputs) stored on creation.
+            started_at: Optional ISO 8601 start time (defaults to current time).
 
         Returns:
             The span ID.
@@ -308,20 +310,27 @@ class AgentInstanceHandle:
             schema_name=schema_name,
             parent_span_id=parent_span_id,
             payload=payload,
+            started_at=started_at,
         )
 
     async def finish_span(
         self,
         span_id: str,
         result_payload: dict[str, Any] | None = None,
+        timestamp: datetime | None = None,
     ) -> None:
         """Finish a previously created span.
 
         Args:
             span_id: The ID of the span to finish.
             result_payload: Optional result data to store on the span.
+            timestamp: Optional ISO 8601 finish time (defaults to current time).
         """
-        await self._client.finish_span(span_id, result_payload=result_payload)
+        await self._client.finish_span(
+            span_id,
+            result_payload=result_payload,
+            timestamp=timestamp,
+        )
 
     @asynccontextmanager
     async def span(

@@ -11,6 +11,7 @@ import asyncio
 import logging
 import time
 from contextlib import asynccontextmanager
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from prefactor_http.client import PrefactorHttpClient
@@ -345,6 +346,7 @@ class PrefactorCoreClient:
                     id=operation.payload.get("span_id"),
                     parent_span_id=operation.payload.get("parent_span_id"),
                     payload=operation.payload.get("payload"),
+                    started_at=operation.payload.get("started_at"),
                     control_signal_callback=self._on_control_signal,
                 )
 
@@ -485,6 +487,7 @@ class PrefactorCoreClient:
         schema_name: str,
         parent_span_id: str | None = None,
         payload: dict[str, Any] | None = None,
+        started_at: datetime | None = None,
     ) -> str:
         """Create a span and return its ID without finishing it.
 
@@ -496,6 +499,7 @@ class PrefactorCoreClient:
             schema_name: Name of the schema for this span.
             parent_span_id: Optional explicit parent span ID.
             payload: Optional initial payload (params/inputs) stored on creation.
+            started_at: Optional ISO 8601 start time (defaults to current time).
 
         Returns:
             The span ID.
@@ -512,23 +516,30 @@ class PrefactorCoreClient:
             schema_name=schema_name,
             parent_span_id=parent_span_id,
             payload=payload,
+            started_at=started_at,
         )
 
     async def finish_span(
         self,
         span_id: str,
         result_payload: dict[str, Any] | None = None,
+        timestamp: datetime | None = None,
     ) -> None:
         """Finish a previously created span.
 
         Args:
             span_id: The ID of the span to finish.
             result_payload: Optional result data to store on the span.
+            timestamp: Optional ISO 8601 finish time (defaults to current time).
         """
         self._ensure_initialized()
         assert self._span_manager is not None
 
-        await self._span_manager.finish(span_id, result_payload=result_payload)
+        await self._span_manager.finish(
+            span_id,
+            result_payload=result_payload,
+            timestamp=timestamp,
+        )
 
     async def update_agent_instance(
         self,

@@ -109,6 +109,7 @@ class SpanManager:
         self,
         temp_id: str,
         payload: dict[str, Any] | None = None,
+        started_at: datetime | None = None,
     ) -> str:
         """Post the span to the API as ``active`` and return the API-generated ID.
 
@@ -121,6 +122,7 @@ class SpanManager:
         Args:
             temp_id: The temporary ID returned by ``prepare()``.
             payload: Optional params/inputs to send with the span.
+            started_at: Optional ISO 8601 start time (defaults to current time).
 
         Returns:
             The API-generated span ID.
@@ -139,6 +141,7 @@ class SpanManager:
             status="active",
             payload=payload or {},
             parent_span_id=span.parent_span_id,
+            started_at=started_at,
             idempotency_key=generate_idempotency_key(),
         )
 
@@ -218,6 +221,7 @@ class SpanManager:
         parent_span_id: str | None = None,
         payload: dict[str, Any] | None = None,
         span_id: str | None = None,
+        started_at: datetime | None = None,
     ) -> str:
         """Create a span in one step (prepare + start).
 
@@ -230,6 +234,7 @@ class SpanManager:
             parent_span_id: Optional parent span ID (auto-detected if None).
             payload: Optional initial payload data.
             span_id: Ignored (API generates IDs).
+            started_at: Optional ISO 8601 start time (defaults to current time).
 
         Returns:
             The API-generated span ID.
@@ -239,7 +244,7 @@ class SpanManager:
             schema_name=schema_name,
             parent_span_id=parent_span_id,
         )
-        return await self.start(temp_id, payload=payload)
+        return await self.start(temp_id, payload=payload, started_at=started_at)
 
     async def finish(
         self,
@@ -247,6 +252,7 @@ class SpanManager:
         result_payload: dict[str, Any] | None = None,
         status: "FinishStatus" = "complete",
         idempotency_key: str | None = None,
+        timestamp: datetime | None = None,
     ) -> None:
         """Mark a span as finished.
 
@@ -261,6 +267,7 @@ class SpanManager:
                 to cancel a span that was never started.
             idempotency_key: Optional key to make repeated finish requests
                 duplicate-safe. When omitted, a new key is generated.
+            timestamp: Optional ISO 8601 finish time (defaults to current time).
 
         Raises:
             KeyError: If the span ID is not known.
@@ -288,7 +295,7 @@ class SpanManager:
         operation = Operation(
             type=OperationType.FINISH_SPAN,
             payload=op_payload,
-            timestamp=datetime.now(timezone.utc),
+            timestamp=timestamp or datetime.now(timezone.utc),
         )
 
         await self._enqueue(operation)

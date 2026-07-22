@@ -26,6 +26,6 @@
 - Use `async/await` for async code; use `TYPE_CHECKING` for type-only imports
 
 ## Monorepo Structure
-- 3 packages in `packages/`: core, http, langchain
+- 4 packages in `packages/`: core, http, langchain, livekit
 - Each package has own `pyproject.toml`
 - Tests live in `packages/<name>/tests/`
