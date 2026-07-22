@@ -217,7 +217,10 @@ class SpanContext:
 
         try:
             if not self._started and self._finish_status == "cancelled":
-                await self._span_manager.cancel_unstarted(self._span_id)
+                await self._span_manager.cancel_unstarted(
+                    self._span_id,
+                    timestamp=self._finish_timestamp,
+                )
                 self._finished = True
                 return
 

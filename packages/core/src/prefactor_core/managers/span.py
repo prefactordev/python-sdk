@@ -151,6 +151,7 @@ class SpanManager:
         span.id = api_id
         span.payload = payload or {}
         span.status = "active"
+        span.started_at = started_at or datetime.now(timezone.utc)
         del self._spans[temp_id]
         self._spans[api_id] = span
 
@@ -168,7 +169,11 @@ class SpanManager:
 
         return api_id
 
-    async def cancel_unstarted(self, temp_id: str) -> None:
+    async def cancel_unstarted(
+        self,
+        temp_id: str,
+        timestamp: datetime | None = None,
+    ) -> None:
         """Cancel a span that was never started.
 
         When ``cancel()`` is called before ``start()``, the span has not yet
@@ -178,6 +183,7 @@ class SpanManager:
 
         Args:
             temp_id: The temporary ID returned by ``prepare()``.
+            timestamp: Optional ISO 8601 finish time (defaults to current time).
 
         Raises:
             KeyError: If temp_id is not a known pending span.
@@ -200,11 +206,13 @@ class SpanManager:
         await self._http.agent_spans.finish(
             agent_span_id=api_id,
             status="cancelled",
+            timestamp=timestamp,
             idempotency_key=generate_idempotency_key(),
         )
 
+        effective_timestamp = timestamp or datetime.now(timezone.utc)
         span.status = "cancelled"
-        span.finished_at = datetime.now(timezone.utc)
+        span.finished_at = effective_timestamp
 
         stack = SpanContextStack.get_stack()
         if temp_id in stack:
@@ -275,8 +283,9 @@ class SpanManager:
         if span_id not in self._spans:
             raise KeyError(f"Unknown span: {span_id}")
 
+        effective_timestamp = timestamp or datetime.now(timezone.utc)
         self._spans[span_id].status = status
-        self._spans[span_id].finished_at = datetime.now(timezone.utc)
+        self._spans[span_id].finished_at = effective_timestamp
 
         stack = SpanContextStack.get_stack()
         if span_id in stack:
@@ -295,7 +304,7 @@ class SpanManager:
         operation = Operation(
             type=OperationType.FINISH_SPAN,
             payload=op_payload,
-            timestamp=timestamp or datetime.now(timezone.utc),
+            timestamp=effective_timestamp,
         )
 
         await self._enqueue(operation)
