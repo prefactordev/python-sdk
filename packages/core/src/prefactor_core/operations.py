@@ -19,6 +19,7 @@ class OperationType(Enum):
     REGISTER_AGENT_INSTANCE = auto()
     START_AGENT_INSTANCE = auto()
     FINISH_AGENT_INSTANCE = auto()
+    UPDATE_AGENT_INSTANCE = auto()
     CREATE_SPAN = auto()
     FINISH_SPAN = auto()
 

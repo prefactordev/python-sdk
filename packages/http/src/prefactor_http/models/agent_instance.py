@@ -7,7 +7,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from prefactor_http.models.types import AgentStatus, FinishStatus
+from prefactor_http.models.types import AgentStatus, FinishStatus, InstancePurpose
 
 
 class ActionProfile(BaseModel):
@@ -122,6 +122,57 @@ class SpanTypeSchemaForCreate(BaseModel):
     data_risk: DataRisk | None = None
 
 
+class QualitySchemaForCreate(BaseModel):
+    """Quality schema definition for agent schema version registration.
+
+    Attributes:
+        schema: JSON schema for the quality payload
+        title: Optional human-readable title (defaults to "quality")
+        description: Optional description
+        template: Optional display template using ``{{field}}`` interpolation
+        data_risk: Optional data risk classification
+    """
+
+    schema: dict
+    title: str | None = None
+    description: str | None = None
+    template: str | None = None
+    data_risk: DataRisk | None = None
+
+
+class QualitySchemaDetails(BaseModel):
+    """Quality schema details returned in agent schema version responses.
+
+    Attributes:
+        title: Human-readable title
+        description: Optional description
+        template: Optional display template
+        data_risk: Data risk classification
+        schema: JSON schema for the quality payload
+        schema_validation: Schema validation result
+    """
+
+    title: str
+    description: str | None = None
+    template: str | None = None
+    data_risk: DataRisk
+    schema: dict
+    schema_validation: dict
+
+
+class AgentInstanceForUpdate(BaseModel):
+    """Parameters for updating an agent instance.
+
+    Omitted fields are left unchanged on the stored record.
+
+    Attributes:
+        quality_payload: Quality evaluation payload (omit to keep current;
+            null to clear)
+    """
+
+    quality_payload: dict | None = None
+
+
 class AgentInstanceSpanCounts(BaseModel):
     """Span counts for an agent instance.
 
@@ -166,12 +217,14 @@ class AgentSchemaVersionForRegister(BaseModel):
         span_schemas: Map of span type names to JSON schemas
         span_result_schemas: Map of span type names to result JSON schemas
         span_type_schemas: List of span type schema details
+        quality_schema: Optional quality schema for instance evaluations
     """
 
     external_identifier: str | None = None
     span_schemas: dict[str, dict] | None = None
     span_result_schemas: dict[str, dict] | None = None
     span_type_schemas: list[SpanTypeSchemaForCreate] | None = None
+    quality_schema: QualitySchemaForCreate | None = None
 
 
 class RegisterAgentInstanceRequest(BaseModel):
@@ -186,6 +239,7 @@ class RegisterAgentInstanceRequest(BaseModel):
         id: Optional custom ID for the instance
         idempotency_key: Optional idempotency key
         update_current_version: Whether to update the current version
+        purpose: Why this instance ran (live, smoke_test, eval)
     """
 
     agent_id: str | None = None
@@ -195,6 +249,7 @@ class RegisterAgentInstanceRequest(BaseModel):
     id: str | None = None
     idempotency_key: str | None = None
     update_current_version: bool | None = None
+    purpose: InstancePurpose | None = None
 
 
 class TimestampRequest(BaseModel):
@@ -241,6 +296,9 @@ class AgentInstance(BaseModel):
         finished_at: When the instance finished (null if not finished)
         termination_reason: Reason for termination (null if not terminated)
         span_counts: Span counts for this instance
+        purpose: Why this instance ran (live, smoke_test, eval)
+        quality_payload: Quality evaluation payload for this instance
+        quality_summary: Human-readable quality summary
     """
 
     type: Literal["agent_instance"]
@@ -257,3 +315,6 @@ class AgentInstance(BaseModel):
     finished_at: datetime | None = None
     termination_reason: str | None = None
     span_counts: AgentInstanceSpanCounts | None = None
+    purpose: InstancePurpose | None = None
+    quality_payload: dict | None = None
+    quality_summary: str | None = None

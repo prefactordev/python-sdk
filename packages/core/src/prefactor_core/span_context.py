@@ -6,6 +6,7 @@ and ensures proper cleanup when the span completes.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from .utils import generate_idempotency_key
@@ -80,6 +81,7 @@ class SpanContext:
             tuple[FinishStatus, tuple[tuple[str, Any], ...]] | None
         ) = None
         self._finish_idempotency_key: str | None = None
+        self._finish_timestamp: datetime | None = None
 
     @property
     def id(self) -> str:
@@ -93,7 +95,11 @@ class SpanContext:
         """
         return self._span_id
 
-    async def start(self, payload: dict[str, Any] | None = None) -> None:
+    async def start(
+        self,
+        payload: dict[str, Any] | None = None,
+        started_at: datetime | None = None,
+    ) -> None:
         """Post the span to the API as ``active`` with the given params payload.
 
         This triggers ``POST /api/v1/agent_spans``. The span is created as
@@ -105,11 +111,14 @@ class SpanContext:
             payload: Optional params/inputs for the span (e.g. model name,
                 prompt text, tool input). Stored as the span's ``payload``
                 field in the API.
+            started_at: Optional ISO 8601 start time (defaults to current time).
         """
         if self._started:
             return
 
-        api_id = await self._span_manager.start(self._span_id, payload=payload)
+        api_id = await self._span_manager.start(
+            self._span_id, payload=payload, started_at=started_at
+        )
         self._span_id = api_id
         self._started = True
 
@@ -124,37 +133,53 @@ class SpanContext:
         """
         self._result_payload.update(data)
 
-    async def complete(self, result: dict[str, Any] | None = None) -> None:
+    async def complete(
+        self,
+        result: dict[str, Any] | None = None,
+        timestamp: datetime | None = None,
+    ) -> None:
         """Finish the span with ``complete`` status.
 
         Args:
             result: Optional result payload to attach to the span.
+            timestamp: Optional ISO 8601 finish time (defaults to current time).
         """
         if result:
             self.set_result(result)
         self._finish_status = "complete"
+        self._finish_timestamp = timestamp
         await self._finish()
 
-    async def fail(self, result: dict[str, Any] | None = None) -> None:
+    async def fail(
+        self,
+        result: dict[str, Any] | None = None,
+        timestamp: datetime | None = None,
+    ) -> None:
         """Finish the span with ``failed`` status.
 
         Args:
             result: Optional result payload (e.g. error details).
+            timestamp: Optional ISO 8601 finish time (defaults to current time).
         """
         if result:
             self.set_result(result)
         self._finish_status = "failed"
+        self._finish_timestamp = timestamp
         await self._finish()
 
-    async def cancel(self) -> None:
+    async def cancel(self, timestamp: datetime | None = None) -> None:
         """Finish the span with ``cancelled`` status.
 
         Can be called before or after ``start()``. If ``start()`` has not
         been called yet, the span is posted as ``pending`` then immediately
         cancelled — the API only accepts cancellation from the ``pending``
         state, so this is always a valid sequence.
+
+        Args:
+            timestamp: Optional ISO 8601 finish time (defaults to current time).
         """
         self._finish_status = "cancelled"
+        self._finish_timestamp = timestamp
         await self._finish()
 
     async def finish(self) -> None:
@@ -192,7 +217,10 @@ class SpanContext:
 
         try:
             if not self._started and self._finish_status == "cancelled":
-                await self._span_manager.cancel_unstarted(self._span_id)
+                await self._span_manager.cancel_unstarted(
+                    self._span_id,
+                    timestamp=self._finish_timestamp,
+                )
                 self._finished = True
                 return
 
@@ -206,6 +234,7 @@ class SpanContext:
                 result_payload=self._result_payload or None,
                 status=self._finish_status,
                 idempotency_key=self._finish_idempotency_key,
+                timestamp=self._finish_timestamp,
             )
             self._finished = True
         except Exception:

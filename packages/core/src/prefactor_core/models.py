@@ -28,10 +28,12 @@ class AgentInstance:
     id: str
     agent_id: str
     status: str = "pending"
+    purpose: str | None = None
     created_at: datetime = field(default_factory=datetime.now)
     started_at: datetime | None = None
     finished_at: datetime | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+    quality_payload: dict[str, Any] | None = None
 
 
 @dataclass

@@ -16,7 +16,7 @@ description = "Install all dependencies"
 run = "uv sync --all-extras"
 
 [tasks.test]
-description = "Run pytest"
+description = "Run pytest — all tests, or pass args for specific tests/packages"
 run = "uv run pytest"
 
 [tasks.lint]
