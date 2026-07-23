@@ -97,29 +97,45 @@ class AgentInstanceManager:
         )
         return result.id
 
-    async def start(self, instance_id: str) -> None:
+    async def start(
+        self,
+        instance_id: str,
+        timestamp: datetime | None = None,
+    ) -> None:
         """Mark an instance as started.
 
         Queues a start operation for the instance.
 
         Args:
             instance_id: The ID of the instance to start.
+            timestamp: Optional ISO 8601 start time (defaults to current time).
         """
-        await self.start_with_idempotency_key(instance_id, generate_idempotency_key())
+        await self.start_with_idempotency_key(
+            instance_id,
+            generate_idempotency_key(),
+            timestamp=timestamp,
+        )
 
     async def start_with_idempotency_key(
         self,
         instance_id: str,
         idempotency_key: str,
+        timestamp: datetime | None = None,
     ) -> None:
-        """Queue a start operation using a stable idempotency key."""
+        """Queue a start operation using a stable idempotency key.
+
+        Args:
+            instance_id: The ID of the instance to start.
+            idempotency_key: Stable key for idempotent retries.
+            timestamp: Optional ISO 8601 start time (defaults to current time).
+        """
         operation = Operation(
             type=OperationType.START_AGENT_INSTANCE,
             payload={
                 "instance_id": instance_id,
                 "idempotency_key": idempotency_key,
             },
-            timestamp=datetime.now(timezone.utc),
+            timestamp=timestamp or datetime.now(timezone.utc),
         )
 
         await self._enqueue(operation)
@@ -128,6 +144,7 @@ class AgentInstanceManager:
         self,
         instance_id: str,
         status: "FinishStatus" = "complete",
+        timestamp: datetime | None = None,
     ) -> None:
         """Mark an instance as finished.
 
@@ -136,11 +153,13 @@ class AgentInstanceManager:
         Args:
             instance_id: The ID of the instance to finish.
             status: Terminal status for the instance. Defaults to ``"complete"``.
+            timestamp: Optional ISO 8601 finish time (defaults to current time).
         """
         await self.finish_with_idempotency_key(
             instance_id,
             generate_idempotency_key(),
             status=status,
+            timestamp=timestamp,
         )
 
     async def finish_with_idempotency_key(
@@ -148,8 +167,16 @@ class AgentInstanceManager:
         instance_id: str,
         idempotency_key: str,
         status: "FinishStatus" = "complete",
+        timestamp: datetime | None = None,
     ) -> None:
-        """Queue a finish operation using a stable idempotency key."""
+        """Queue a finish operation using a stable idempotency key.
+
+        Args:
+            instance_id: The ID of the instance to finish.
+            idempotency_key: Stable key for idempotent retries.
+            status: Terminal status for the instance. Defaults to ``"complete"``.
+            timestamp: Optional ISO 8601 finish time (defaults to current time).
+        """
         operation = Operation(
             type=OperationType.FINISH_AGENT_INSTANCE,
             payload={
@@ -157,7 +184,7 @@ class AgentInstanceManager:
                 "idempotency_key": idempotency_key,
                 "status": status,
             },
-            timestamp=datetime.now(timezone.utc),
+            timestamp=timestamp or datetime.now(timezone.utc),
         )
 
         await self._enqueue(operation)
@@ -231,19 +258,27 @@ class AgentInstanceHandle:
         """
         return self._instance_id
 
-    async def start(self) -> None:
+    async def start(self, timestamp: datetime | None = None) -> None:
         """Mark the instance as started.
 
         This queues a start operation for the instance.
+
+        Args:
+            timestamp: Optional ISO 8601 start time (defaults to current time).
         """
         manager = self._client.instance_manager
         assert manager is not None
         await manager.start_with_idempotency_key(
             self._instance_id,
             self._start_idempotency_key,
+            timestamp=timestamp,
         )
 
-    async def finish(self, status: "FinishStatus" = "complete") -> None:
+    async def finish(
+        self,
+        status: "FinishStatus" = "complete",
+        timestamp: datetime | None = None,
+    ) -> None:
         """Mark the instance as finished.
 
         Resets the termination monitor (fence + new event) before enqueueing
@@ -253,6 +288,7 @@ class AgentInstanceHandle:
         Args:
             status: Terminal status for the instance — one of ``"complete"``,
                 ``"failed"``, or ``"cancelled"``. Defaults to ``"complete"``.
+            timestamp: Optional ISO 8601 finish time (defaults to current time).
         """
         monitor = getattr(self._client, "_termination_monitor", None)
         if monitor is not None:
@@ -264,6 +300,7 @@ class AgentInstanceHandle:
             self._instance_id,
             self._finish_idempotency_key,
             status=status,
+            timestamp=timestamp,
         )
 
     async def update(
