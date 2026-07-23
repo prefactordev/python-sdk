@@ -1,5 +1,13 @@
 """Prefactor HTTP Client models."""
 
+from prefactor_http.models.agent import (
+    Agent,
+    AgentAvailableActions,
+    AgentForCreate,
+    AgentForUpdate,
+    AgentInstanceCounts,
+    AgentSummary,
+)
 from prefactor_http.models.agent_instance import (
     ActionProfile,
     AgentInstance,
@@ -29,6 +37,13 @@ __all__ = [
     "AgentStatus",
     "FinishStatus",
     "InstancePurpose",
+    # Agent models
+    "Agent",
+    "AgentAvailableActions",
+    "AgentForCreate",
+    "AgentForUpdate",
+    "AgentInstanceCounts",
+    "AgentSummary",
     # AgentInstance models
     "AgentInstance",
     "AgentInstanceForUpdate",

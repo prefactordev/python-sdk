@@ -22,6 +22,7 @@ from prefactor_http.exceptions import (
 from prefactor_http.retry import RetryHandler
 
 if TYPE_CHECKING:
+    from prefactor_http.endpoints.agent import AgentClient
     from prefactor_http.endpoints.agent_instance import AgentInstanceClient
     from prefactor_http.endpoints.agent_span import AgentSpanClient
     from prefactor_http.endpoints.bulk import BulkClient
@@ -71,6 +72,7 @@ class PrefactorHttpClient:
         self._retry_handler = RetryHandler(config)
         self._sdk_header = sdk_header or DEFAULT_SDK_HEADER
         # Import here to avoid circular import during __init__.py loading
+        self._agents: AgentClient | None = None
         self._bulk: BulkClient | None = None
         self._agent_instances: AgentInstanceClient | None = None
         self._agent_spans: AgentSpanClient | None = None
@@ -92,6 +94,31 @@ class PrefactorHttpClient:
                 connect=self.config.connect_timeout,
             )
             self._session = aiohttp.ClientSession(timeout=timeout)
+
+    @property
+    def agents(self) -> "AgentClient":
+        """Access the agent endpoint client.
+
+        Provides methods to manage agents:
+        - create: Create a new agent
+        - get: Fetch an agent by ID
+        - update: Update an agent
+        - list: List agents
+        - show: Look up an agent by ID or external_identifier
+        - retire: Retire an agent
+        - reinstate: Reinstate a retired agent
+        - delete: Delete an agent
+
+        Example:
+            agent = await client.agents.create(
+                AgentForCreate(name="My Agent", external_identifier="ext-123")
+            )
+        """
+        if self._agents is None:
+            from prefactor_http.endpoints.agent import AgentClient
+
+            self._agents = AgentClient(self)
+        return self._agents
 
     @property
     def agent_instances(self) -> "AgentInstanceClient":
