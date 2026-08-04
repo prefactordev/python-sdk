@@ -61,7 +61,9 @@ from prefactor_core import PrefactorCoreClient, PrefactorCoreConfig
 from prefactor_http.config import HttpClientConfig
 from prefactor_langchain import PrefactorMiddleware
 
-http_config = HttpClientConfig(api_url="https://api.prefactor.ai", api_token="your-api-token")
+http_config = HttpClientConfig(
+    api_url="https://api.prefactor.ai", api_token="your-api-token"
+)
 config = PrefactorCoreConfig(http_config=http_config)
 client = PrefactorCoreClient(config)
 await client.initialize()
@@ -132,7 +134,9 @@ from prefactor_core import PrefactorCoreClient, PrefactorCoreConfig
 from prefactor_http.config import HttpClientConfig
 from prefactor_langchain import PrefactorMiddleware
 
-http_config = HttpClientConfig(api_url="https://api.prefactor.ai", api_token="your-api-token")
+http_config = HttpClientConfig(
+    api_url="https://api.prefactor.ai", api_token="your-api-token"
+)
 config = PrefactorCoreConfig(http_config=http_config)
 client = PrefactorCoreClient(config)
 await client.initialize()

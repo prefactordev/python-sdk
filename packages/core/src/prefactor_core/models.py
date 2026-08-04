@@ -33,7 +33,7 @@ class AgentInstance:
     started_at: datetime | None = None
     finished_at: datetime | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
-    quality_payload: dict[str, Any] | None = None
+    quality_payloads: dict[str, dict[str, Any]] | None = None
 
 
 @dataclass
