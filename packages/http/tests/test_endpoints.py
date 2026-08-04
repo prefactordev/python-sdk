@@ -261,6 +261,89 @@ class TestAgentInstanceEndpoints:
                         agent_schema_version={"span_schemas": {}},
                     )
 
+    @pytest.mark.asyncio
+    async def test_record_quality_sends_name_and_payload(self, config):
+        """record_quality() sends name and payload to the record_quality endpoint."""
+        with aioresponses() as m:
+            m.post(
+                "https://api.test.com/api/v1/agent_instance/inst-1/record_quality",
+                payload={"status": "success", "details": MOCK_INSTANCE},
+            )
+            async with PrefactorHttpClient(config) as client:
+                result = await client.agent_instances.record_quality(
+                    agent_instance_id="inst-1",
+                    name="summary_quality",
+                    payload={"score": 0.95},
+                )
+        body = get_request_body(
+            m,
+            "POST",
+            "https://api.test.com/api/v1/agent_instance/inst-1/record_quality",
+        )
+        assert body["name"] == "summary_quality"
+        assert body["payload"] == {"score": 0.95}
+        assert result.id == "inst-1"
+
+    @pytest.mark.asyncio
+    async def test_record_quality_with_null_payload(self, config):
+        """record_quality() sends null payload to remove a quality entry."""
+        with aioresponses() as m:
+            m.post(
+                "https://api.test.com/api/v1/agent_instance/inst-1/record_quality",
+                payload={"status": "success", "details": MOCK_INSTANCE},
+            )
+            async with PrefactorHttpClient(config) as client:
+                await client.agent_instances.record_quality(
+                    agent_instance_id="inst-1",
+                    name="summary_quality",
+                    payload=None,
+                )
+        body = get_request_body(
+            m,
+            "POST",
+            "https://api.test.com/api/v1/agent_instance/inst-1/record_quality",
+        )
+        assert body["name"] == "summary_quality"
+        assert body["payload"] is None
+
+    @pytest.mark.asyncio
+    async def test_record_quality_with_idempotency_key(self, config):
+        """record_quality() sends idempotency_key when provided."""
+        with aioresponses() as m:
+            m.post(
+                "https://api.test.com/api/v1/agent_instance/inst-1/record_quality",
+                payload={"status": "success", "details": MOCK_INSTANCE},
+            )
+            async with PrefactorHttpClient(config) as client:
+                await client.agent_instances.record_quality(
+                    agent_instance_id="inst-1",
+                    name="summary_quality",
+                    payload={"score": 0.9},
+                    idempotency_key="key-123",
+                )
+        body = get_request_body(
+            m,
+            "POST",
+            "https://api.test.com/api/v1/agent_instance/inst-1/record_quality",
+        )
+        assert body["idempotency_key"] == "key-123"
+
+    @pytest.mark.asyncio
+    async def test_record_quality_invalid_response_raises_contract_error(self, config):
+        """record_quality() should wrap response model validation failures."""
+        with aioresponses() as m:
+            m.post(
+                "https://api.test.com/api/v1/agent_instance/inst-1/record_quality",
+                payload={"status": "success", "details": {"id": "inst-1"}},
+            )
+            async with PrefactorHttpClient(config) as client:
+                with pytest.raises(PrefactorResponseContractError):
+                    await client.agent_instances.record_quality(
+                        agent_instance_id="inst-1",
+                        name="summary_quality",
+                        payload={"score": 0.9},
+                    )
+
 
 class TestAgentSpanEndpoints:
     """Tests for AgentSpanClient endpoints."""

@@ -11,7 +11,7 @@ from prefactor_http.models.agent import (
 from prefactor_http.models.agent_instance import (
     ActionProfile,
     AgentInstance,
-    AgentInstanceForUpdate,
+    AgentInstanceRecordQuality,
     AgentInstanceSpanCounts,
     AgentSchemaVersionForRegister,
     AgentVersionForRegister,
@@ -46,7 +46,7 @@ __all__ = [
     "AgentSummary",
     # AgentInstance models
     "AgentInstance",
-    "AgentInstanceForUpdate",
+    "AgentInstanceRecordQuality",
     "AgentInstanceSpanCounts",
     "AgentVersionForRegister",
     "AgentSchemaVersionForRegister",

@@ -22,6 +22,7 @@ pip install prefactor-http
 import asyncio
 from prefactor_http import PrefactorHttpClient, HttpClientConfig
 
+
 async def main():
     config = HttpClientConfig(
         api_url="https://api.prefactor.ai",
@@ -58,6 +59,7 @@ async def main():
         )
         print(f"Registered instance: {instance.id}")
 
+
 asyncio.run(main())
 ```
 
@@ -83,19 +85,19 @@ instance = await client.agent_instances.register(
         "span_type_schemas": [
             {
                 "name": "agent:llm",
-                "title": "LLM Call",                        # Optional
-                "description": "A call to a language model", # Optional
+                "title": "LLM Call",  # Optional
+                "description": "A call to a language model",  # Optional
                 "params_schema": {"type": "object", "properties": {...}},
-                "result_schema": {"type": "object", "properties": {...}}, # Optional
-                "template": "{{model}}: {{prompt}} → {{response}}",       # Optional
+                "result_schema": {"type": "object", "properties": {...}},  # Optional
+                "template": "{{model}}: {{prompt}} → {{response}}",  # Optional
             },
         ],
         # Alternatively, use flat maps for simpler cases:
         # "span_schemas": {"agent:llm": {"type": "object", ...}},
         # "span_result_schemas": {"agent:llm": {"type": "object", ...}},
     },
-    id=None,                      # Optional: pre-assign an ID
-    idempotency_key=None,         # Optional: idempotency key
+    id=None,  # Optional: pre-assign an ID
+    idempotency_key=None,  # Optional: idempotency key
     update_current_version=True,  # Optional: update the agent's current version
 )
 
@@ -114,15 +116,15 @@ instance = await client.agent_instances.register(
 # Start an instance
 instance = await client.agent_instances.start(
     agent_instance_id=instance.id,
-    timestamp=None,       # Optional: override start time
+    timestamp=None,  # Optional: override start time
     idempotency_key=None,
 )
 
 # Finish an instance
 instance = await client.agent_instances.finish(
     agent_instance_id=instance.id,
-    status=None,          # Optional: "complete" | "failed" | "cancelled"
-    timestamp=None,       # Optional: override finish time
+    status=None,  # Optional: "complete" | "failed" | "cancelled"
+    timestamp=None,  # Optional: override finish time
     idempotency_key=None,
 )
 ```
@@ -138,10 +140,10 @@ span = await client.agent_spans.create(
     schema_name="agent:llm",
     status="active",
     payload={"model": "gpt-4", "prompt": "Hello"},  # Optional
-    result_payload=None,                              # Optional
-    id=None,                                          # Optional: pre-assign an ID
-    parent_span_id=None,                              # Optional: parent for nesting
-    started_at=None,                                  # Optional: override start time
+    result_payload=None,  # Optional
+    id=None,  # Optional: pre-assign an ID
+    parent_span_id=None,  # Optional: parent for nesting
+    started_at=None,  # Optional: override start time
     finished_at=None,
     idempotency_key=None,
 )
@@ -149,9 +151,9 @@ span = await client.agent_spans.create(
 # Finish a span
 span = await client.agent_spans.finish(
     agent_span_id=span.id,
-    status=None,           # Optional: "complete" | "failed" | "cancelled"
-    result_payload=None,   # Optional: final result data
-    timestamp=None,        # Optional: override finish time
+    status=None,  # Optional: "complete" | "failed" | "cancelled"
+    result_payload=None,  # Optional: final result data
+    timestamp=None,  # Optional: override finish time
     idempotency_key=None,
 )
 ```
@@ -249,13 +251,11 @@ config = HttpClientConfig(
     # Required
     api_url="https://api.prefactor.ai",
     api_token="your-token",
-
     # Retry behavior
     max_retries=3,
     initial_retry_delay=1.0,
     max_retry_delay=60.0,
     retry_multiplier=2.0,
-
     # Timeouts
     request_timeout=30.0,
     connect_timeout=10.0,

@@ -189,24 +189,28 @@ class AgentInstanceManager:
 
         await self._enqueue(operation)
 
-    async def update(
+    async def record_quality(
         self,
         instance_id: str,
-        quality_payload: dict[str, Any] | None = None,
+        name: str,
+        payload: dict[str, Any] | None = None,
     ) -> None:
-        """Update an agent instance (e.g., set quality payload).
+        """Record a quality payload on an agent instance.
 
-        Queues an update operation for the instance.
+        Queues a record_quality operation for the instance.
 
         Args:
             instance_id: The ID of the instance to update.
-            quality_payload: Quality evaluation payload (None to clear).
+            name: Quality schema name (key in the agent schema version
+                quality_schemas).
+            payload: Quality payload for this name (None to remove).
         """
         operation = Operation(
-            type=OperationType.UPDATE_AGENT_INSTANCE,
+            type=OperationType.RECORD_QUALITY,
             payload={
                 "instance_id": instance_id,
-                "quality_payload": quality_payload,
+                "name": name,
+                "payload": payload,
             },
             timestamp=datetime.now(timezone.utc),
         )
@@ -303,22 +307,26 @@ class AgentInstanceHandle:
             timestamp=timestamp,
         )
 
-    async def update(
+    async def record_quality(
         self,
-        quality_payload: dict[str, Any] | None = None,
+        name: str,
+        payload: dict[str, Any] | None = None,
     ) -> None:
-        """Update the instance (e.g., set quality payload).
+        """Record a quality payload on the instance.
 
-        This queues an update operation for the instance.
+        This queues a record_quality operation for the instance.
 
         Args:
-            quality_payload: Quality evaluation payload (None to clear).
+            name: Quality schema name (key in the agent schema version
+                quality_schemas).
+            payload: Quality payload for this name (None to remove).
         """
         manager = self._client.instance_manager
         assert manager is not None
-        await manager.update(
+        await manager.record_quality(
             self._instance_id,
-            quality_payload=quality_payload,
+            name=name,
+            payload=payload,
         )
 
     async def create_span(

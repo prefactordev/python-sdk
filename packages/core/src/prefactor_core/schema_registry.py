@@ -25,8 +25,9 @@ class SchemaRegistry:
       description, and template per span type
 
     Use ``register()`` for simple payload schemas, ``register_result()`` to add
-    a result schema for an existing entry, or ``register_type()`` for the full
-    structured form. All three approaches can be mixed; ``to_agent_schema_version()``
+    a result schema for an existing entry, ``register_type()`` for the full
+    structured form, or ``register_quality_schema()`` for named quality
+    schemas. All approaches can be mixed; ``to_agent_schema_version()``
     emits whichever fields are populated.
 
     Example:
@@ -67,8 +68,8 @@ class SchemaRegistry:
         self._span_result_schemas: dict[str, dict[str, Any]] = {}
         # span_type_schemas: name → full structured entry
         self._span_type_schemas: dict[str, dict[str, Any]] = {}
-        # quality_schema: optional quality schema for instance evaluations
-        self._quality_schema: dict[str, Any] | None = None
+        # quality_schemas: list of named quality schema entries
+        self._quality_schemas: list[dict[str, Any]] = []
 
     def register(
         self,
@@ -192,33 +193,36 @@ class SchemaRegistry:
 
     def register_quality_schema(
         self,
+        name: str,
         schema: dict[str, Any],
         title: str | None = None,
         description: str | None = None,
         template: str | None = None,
         data_risk: dict[str, Any] | None = None,
     ) -> None:
-        """Register a quality schema for instance evaluations.
+        """Register a named quality schema for instance evaluations.
 
-        The quality schema defines the shape of quality payloads that can be
-        set on agent instances. It uses the same ``title``, ``description``,
-        ``template``, and ``data_risk`` fields as span type schemas.
+        Quality schemas define the shape of quality payloads that can be
+        recorded on agent instances. Multiple quality schemas can be
+        registered, each identified by a unique ``name``.
 
         Args:
+            name: Schema name (key used when recording quality payloads).
             schema: JSON Schema dict defining the quality payload structure.
-            title: Optional human-readable title (defaults to "quality" on API).
+            title: Optional human-readable title (defaults to name on API).
             description: Optional description of the quality evaluation.
             template: Optional display template using ``{{field}}`` interpolation.
             data_risk: Optional data risk classification dict (same structure
                 as span type data_risk).
 
         Raises:
-            ValueError: If a quality schema is already registered.
+            ValueError: If a quality schema with the same name is already
+                registered.
         """
-        if self._quality_schema is not None:
-            raise ValueError("Quality schema is already registered")
+        if any(q["name"] == name for q in self._quality_schemas):
+            raise ValueError(f"Quality schema '{name}' is already registered")
 
-        entry: dict[str, Any] = {"schema": schema}
+        entry: dict[str, Any] = {"name": name, "schema": schema}
         if title is not None:
             entry["title"] = title
         if description is not None:
@@ -228,7 +232,7 @@ class SchemaRegistry:
         if data_risk is not None:
             entry["data_risk"] = data_risk
 
-        self._quality_schema = entry
+        self._quality_schemas.append(entry)
 
     def get(self, schema_name: str) -> dict[str, Any] | None:
         """Get a params schema by name.
@@ -265,8 +269,8 @@ class SchemaRegistry:
     def to_agent_schema_version(self, external_id: str) -> dict[str, Any]:
         """Convert registry contents to API-compatible agent_schema_version format.
 
-        Emits ``span_schemas``, ``span_result_schemas``, and ``span_type_schemas``
-        for whichever have been populated.
+        Emits ``span_schemas``, ``span_result_schemas``, ``span_type_schemas``,
+        and ``quality_schemas`` for whichever have been populated.
 
         Args:
             external_id: External identifier for this combined schema version
@@ -286,8 +290,8 @@ class SchemaRegistry:
         if self._span_type_schemas:
             result["span_type_schemas"] = list(self._span_type_schemas.values())
 
-        if self._quality_schema is not None:
-            result["quality_schema"] = dict(self._quality_schema)
+        if self._quality_schemas:
+            result["quality_schemas"] = list(self._quality_schemas)
 
         return result
 
@@ -315,9 +319,11 @@ class SchemaRegistry:
             if name in self._span_type_schemas:
                 conflicts.append(f"span_type_schemas/{name}")
 
-        if other._quality_schema is not None:
-            if self._quality_schema is not None:
-                conflicts.append("quality_schema")
+        if other._quality_schemas:
+            existing_names = {q["name"] for q in self._quality_schemas}
+            for entry in other._quality_schemas:
+                if entry["name"] in existing_names:
+                    conflicts.append(f"quality_schemas/{entry['name']}")
 
         if conflicts:
             msg = f"Cannot merge registries - conflicting schemas: {conflicts}"
@@ -332,8 +338,8 @@ class SchemaRegistry:
         for name, entry in other._span_type_schemas.items():
             self._span_type_schemas[name] = entry.copy()
 
-        if other._quality_schema is not None:
-            self._quality_schema = other._quality_schema.copy()
+        for entry in other._quality_schemas:
+            self._quality_schemas.append(entry.copy())
 
 
 __all__ = ["SchemaRegistry"]

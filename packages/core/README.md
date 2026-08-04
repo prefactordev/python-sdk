@@ -43,6 +43,7 @@ registry.register_type(
     template="{{model}}: {{prompt}} → {{response}}",
 )
 
+
 async def main():
     config = PrefactorCoreConfig(
         http_config=HttpClientConfig(
@@ -66,6 +67,7 @@ async def main():
             await span.complete({"response": result})
 
         await instance.finish()
+
 
 asyncio.run(main())
 ```
@@ -105,7 +107,7 @@ async with client.span(
     instance_id="instance_123",
     schema_name="agent:llm",
     parent_span_id=None,  # Optional: auto-detected from context stack if omitted
-    payload=None,         # Optional: used as params if span.start() is never called explicitly
+    payload=None,  # Optional: used as params if span.start() is never called explicitly
 ) as span:
     await span.start({"model": "gpt-4", "prompt": "Hello"})
     result = await call_llm()
@@ -183,9 +185,9 @@ config = PrefactorCoreConfig(
         api_token="your-token",
     ),
     queue_config=QueueConfig(
-        num_workers=3,        # Number of background workers
-        max_retries=3,        # Retries per operation
-        retry_delay_base=1.0, # Base delay (seconds) for exponential backoff
+        num_workers=3,  # Number of background workers
+        max_retries=3,  # Retries per operation
+        retry_delay_base=1.0,  # Base delay (seconds) for exponential backoff
     ),
     schema_registry=None,  # Optional: SchemaRegistry instance
 )

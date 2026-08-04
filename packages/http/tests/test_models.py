@@ -3,10 +3,12 @@
 import pytest
 from prefactor_http.models.agent_instance import (
     AgentInstance,
+    AgentInstanceRecordQuality,
     AgentInstanceSpanCounts,
     AgentSchemaVersionForRegister,
     AgentVersionForRegister,
     FinishInstanceRequest,
+    QualitySchemaForCreate,
     SpanTypeSchemaForCreate,
 )
 from prefactor_http.models.agent_span import (
@@ -386,3 +388,128 @@ class TestAgentInstanceTerminatedReason:
             status="terminated", termination_reason="admin action"
         )
         assert instance.termination_reason == "admin action"
+
+
+class TestQualitySchemaModels:
+    """Tests for named quality schema models."""
+
+    def test_quality_schema_for_create_requires_name(self):
+        """QualitySchemaForCreate requires a name field."""
+        with pytest.raises(ValidationError):
+            QualitySchemaForCreate(schema={"type": "object"})
+
+    def test_quality_schema_for_create_requires_schema(self):
+        """QualitySchemaForCreate requires a schema field."""
+        with pytest.raises(ValidationError):
+            QualitySchemaForCreate(name="accuracy")
+
+    def test_quality_schema_for_create_minimal(self):
+        """QualitySchemaForCreate accepts name and schema only."""
+        q = QualitySchemaForCreate(name="accuracy", schema={"type": "object"})
+        assert q.name == "accuracy"
+        assert q.schema == {"type": "object"}
+        assert q.title is None
+        assert q.description is None
+        assert q.template is None
+        assert q.data_risk is None
+
+    def test_quality_schema_for_create_full(self):
+        """QualitySchemaForCreate accepts all optional fields."""
+        q = QualitySchemaForCreate(
+            name="safety",
+            schema={"type": "object"},
+            title="Safety Check",
+            description="Evaluates safety",
+            template="Safe: {{score}}",
+            data_risk={
+                "action_profile": {"read_data": "allowed"},
+                "params_data_categories": {},
+                "result_data_categories": {},
+            },
+        )
+        assert q.name == "safety"
+        assert q.title == "Safety Check"
+        assert q.description == "Evaluates safety"
+        assert q.template == "Safe: {{score}}"
+        assert q.data_risk is not None
+
+    def test_agent_schema_version_quality_schemas_is_list(self):
+        """AgentSchemaVersionForRegister.quality_schemas is a list."""
+        sv = AgentSchemaVersionForRegister(
+            quality_schemas=[
+                QualitySchemaForCreate(name="accuracy", schema={"type": "object"}),
+                QualitySchemaForCreate(name="fluency", schema={"type": "object"}),
+            ]
+        )
+        assert sv.quality_schemas is not None
+        assert len(sv.quality_schemas) == 2
+        assert sv.quality_schemas[0].name == "accuracy"
+        assert sv.quality_schemas[1].name == "fluency"
+
+    def test_agent_schema_version_quality_schemas_defaults_none(self):
+        """AgentSchemaVersionForRegister.quality_schemas defaults to None."""
+        sv = AgentSchemaVersionForRegister()
+        assert sv.quality_schemas is None
+
+    def test_agent_instance_quality_payloads_map(self):
+        """AgentInstance.quality_payloads is a map of name to payload."""
+        base = {
+            "type": "agent_instance",
+            "id": "inst-1",
+            "account_id": "acct-1",
+            "agent_id": "agent-1",
+            "agent_version_id": "ver-1",
+            "environment_id": "env-1",
+            "agent_deployment_id": "depl-1",
+            "status": "complete",
+            "inserted_at": NOW,
+            "updated_at": NOW,
+            "quality_payloads": {
+                "accuracy": {"score": 0.95},
+                "fluency": {"score": 0.88},
+            },
+            "quality_summaries": {
+                "accuracy": "Score: 0.95",
+            },
+        }
+        inst = AgentInstance(**base)
+        assert inst.quality_payloads == {
+            "accuracy": {"score": 0.95},
+            "fluency": {"score": 0.88},
+        }
+        assert inst.quality_summaries == {"accuracy": "Score: 0.95"}
+
+    def test_agent_instance_quality_fields_default_none(self):
+        """AgentInstance quality fields default to None when omitted."""
+        base = {
+            "type": "agent_instance",
+            "id": "inst-1",
+            "account_id": "acct-1",
+            "agent_id": "agent-1",
+            "agent_version_id": "ver-1",
+            "environment_id": "env-1",
+            "agent_deployment_id": "depl-1",
+            "status": "active",
+            "inserted_at": NOW,
+            "updated_at": NOW,
+        }
+        inst = AgentInstance(**base)
+        assert inst.quality_payloads is None
+        assert inst.quality_summaries is None
+
+    def test_agent_instance_record_quality_requires_name(self):
+        """AgentInstanceRecordQuality requires a name field."""
+        with pytest.raises(ValidationError):
+            AgentInstanceRecordQuality(payload={"score": 0.9})
+
+    def test_agent_instance_record_quality_with_payload(self):
+        """AgentInstanceRecordQuality accepts name and payload."""
+        req = AgentInstanceRecordQuality(name="accuracy", payload={"score": 0.9})
+        assert req.name == "accuracy"
+        assert req.payload == {"score": 0.9}
+
+    def test_agent_instance_record_quality_null_payload(self):
+        """AgentInstanceRecordQuality accepts null payload to remove entry."""
+        req = AgentInstanceRecordQuality(name="accuracy", payload=None)
+        assert req.name == "accuracy"
+        assert req.payload is None

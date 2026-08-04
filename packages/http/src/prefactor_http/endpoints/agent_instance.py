@@ -10,7 +10,7 @@ from pydantic import ValidationError
 from prefactor_http.exceptions import PrefactorResponseContractError
 from prefactor_http.models.agent_instance import (
     AgentInstance,
-    AgentInstanceForUpdate,
+    AgentInstanceRecordQuality,
     FinishInstanceRequest,
 )
 from prefactor_http.models.base import ApiResponse
@@ -227,41 +227,48 @@ class AgentInstanceClient:
         )
         return self._parse_response(response, "agent_instances.get")
 
-    async def update(
+    async def record_quality(
         self,
         agent_instance_id: str,
-        quality_payload: dict | None = None,
+        name: str,
+        payload: dict | None = None,
         idempotency_key: str | None = None,
     ) -> AgentInstance:
-        """Update an agent instance.
+        """Record a quality payload on an agent instance.
 
-        POST /api/v1/agent_instance/{agent_instance_id}/update
+        POST /api/v1/agent_instance/{agent_instance_id}/record_quality
+
+        Sets or clears one named quality payload. A null ``payload`` removes
+        that name from the stored map. Other names are left unchanged.
 
         Args:
-            agent_instance_id: The instance ID
-            quality_payload: Quality evaluation payload (None to clear).
-            idempotency_key: Optional idempotency key
+            agent_instance_id: The instance ID.
+            name: Quality schema name (key in the agent schema version
+                quality_schemas).
+            payload: Quality payload for this name, or None to remove the
+                recorded payload for this name.
+            idempotency_key: Optional idempotency key.
 
         Returns:
-            The updated agent instance
+            The updated agent instance.
 
         Raises:
-            PrefactorNotFoundError: If instance not found
-            PrefactorApiError: On other errors
+            PrefactorNotFoundError: If instance not found.
+            PrefactorApiError: On other errors.
         """
         if idempotency_key is not None:
             _validate_idempotency_key(idempotency_key)
 
-        update_request = AgentInstanceForUpdate(quality_payload=quality_payload)
+        record_request = AgentInstanceRecordQuality(name=name, payload=payload)
 
-        payload: dict = {"details": update_request.model_dump()}
+        req_payload: dict = record_request.model_dump()
         if idempotency_key is not None:
-            payload["idempotency_key"] = idempotency_key
+            req_payload["idempotency_key"] = idempotency_key
 
         response = await self._client.request(
             "POST",
-            f"/api/v1/agent_instance/{agent_instance_id}/update",
-            json_data=payload,
+            f"/api/v1/agent_instance/{agent_instance_id}/record_quality",
+            json_data=req_payload,
         )
 
-        return self._parse_response(response, "agent_instances.update")
+        return self._parse_response(response, "agent_instances.record_quality")

@@ -333,10 +333,11 @@ class PrefactorCoreClient:
                         return
                     raise
 
-            elif operation.type == OperationType.UPDATE_AGENT_INSTANCE:
-                await self._http.agent_instances.update(
+            elif operation.type == OperationType.RECORD_QUALITY:
+                await self._http.agent_instances.record_quality(
                     agent_instance_id=operation.payload["instance_id"],
-                    quality_payload=operation.payload.get("quality_payload"),
+                    name=operation.payload["name"],
+                    payload=operation.payload.get("payload"),
                 )
             elif operation.type == OperationType.CREATE_SPAN:
                 await self._http.agent_spans.create(
@@ -541,23 +542,28 @@ class PrefactorCoreClient:
             timestamp=timestamp,
         )
 
-    async def update_agent_instance(
+    async def record_quality(
         self,
         instance_id: str,
-        quality_payload: dict[str, Any] | None = None,
+        name: str,
+        payload: dict[str, Any] | None = None,
     ) -> None:
-        """Update an agent instance (e.g., set quality payload).
+        """Record a quality payload on an agent instance.
 
         Args:
             instance_id: The ID of the instance to update.
-            quality_payload: Quality evaluation payload (None to clear).
+            name: Quality schema name (key in the agent schema version
+                quality_schemas).
+            payload: Quality payload for this name, or None to remove the
+                recorded payload for this name.
         """
         self._ensure_initialized()
         assert self._instance_manager is not None
 
-        await self._instance_manager.update(
+        await self._instance_manager.record_quality(
             instance_id,
-            quality_payload=quality_payload,
+            name=name,
+            payload=payload,
         )
 
     @asynccontextmanager

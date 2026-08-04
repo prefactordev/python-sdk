@@ -123,16 +123,18 @@ class SpanTypeSchemaForCreate(BaseModel):
 
 
 class QualitySchemaForCreate(BaseModel):
-    """Quality schema definition for agent schema version registration.
+    """Named quality schema definition for agent schema version registration.
 
     Attributes:
+        name: Schema name (key in the quality_schemas map)
         schema: JSON schema for the quality payload
-        title: Optional human-readable title (defaults to "quality")
+        title: Optional human-readable title (defaults to name)
         description: Optional description
         template: Optional display template using ``{{field}}`` interpolation
         data_risk: Optional data risk classification
     """
 
+    name: str
     schema: dict
     title: str | None = None
     description: str | None = None
@@ -144,6 +146,7 @@ class QualitySchemaDetails(BaseModel):
     """Quality schema details returned in agent schema version responses.
 
     Attributes:
+        name: Schema name (key in the quality_schemas map)
         title: Human-readable title
         description: Optional description
         template: Optional display template
@@ -152,6 +155,7 @@ class QualitySchemaDetails(BaseModel):
         schema_validation: Schema validation result
     """
 
+    name: str
     title: str
     description: str | None = None
     template: str | None = None
@@ -160,17 +164,18 @@ class QualitySchemaDetails(BaseModel):
     schema_validation: dict
 
 
-class AgentInstanceForUpdate(BaseModel):
-    """Parameters for updating an agent instance.
-
-    Omitted fields are left unchanged on the stored record.
+class AgentInstanceRecordQuality(BaseModel):
+    """Parameters for recording a quality payload on an agent instance.
 
     Attributes:
-        quality_payload: Quality evaluation payload (omit to keep current;
-            null to clear)
+        name: Quality schema name (key in the agent schema version
+            quality_schemas)
+        payload: Quality payload for this name, or None to remove the
+            recorded payload for this name
     """
 
-    quality_payload: dict | None = None
+    name: str
+    payload: dict | None = None
 
 
 class AgentInstanceSpanCounts(BaseModel):
@@ -217,14 +222,15 @@ class AgentSchemaVersionForRegister(BaseModel):
         span_schemas: Map of span type names to JSON schemas
         span_result_schemas: Map of span type names to result JSON schemas
         span_type_schemas: List of span type schema details
-        quality_schema: Optional quality schema for instance evaluations
+        quality_schemas: Optional list of named quality schemas for instance
+            evaluations
     """
 
     external_identifier: str | None = None
     span_schemas: dict[str, dict] | None = None
     span_result_schemas: dict[str, dict] | None = None
     span_type_schemas: list[SpanTypeSchemaForCreate] | None = None
-    quality_schema: QualitySchemaForCreate | None = None
+    quality_schemas: list[QualitySchemaForCreate] | None = None
 
 
 class RegisterAgentInstanceRequest(BaseModel):
@@ -297,8 +303,8 @@ class AgentInstance(BaseModel):
         termination_reason: Reason for termination (null if not terminated)
         span_counts: Span counts for this instance
         purpose: Why this instance ran (live, smoke_test, eval)
-        quality_payload: Quality evaluation payload for this instance
-        quality_summary: Human-readable quality summary
+        quality_payloads: Map of quality schema name to evaluation payload
+        quality_summaries: Map of quality schema name to rendered summary
     """
 
     type: Literal["agent_instance"]
@@ -316,5 +322,5 @@ class AgentInstance(BaseModel):
     termination_reason: str | None = None
     span_counts: AgentInstanceSpanCounts | None = None
     purpose: InstancePurpose | None = None
-    quality_payload: dict | None = None
-    quality_summary: str | None = None
+    quality_payloads: dict[str, dict] | None = None
+    quality_summaries: dict[str, str] | None = None

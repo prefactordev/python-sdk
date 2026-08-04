@@ -43,7 +43,7 @@ from prefactor_http.exceptions import (
 )
 from prefactor_http.models.agent_instance import (
     AgentInstance,
-    AgentInstanceForUpdate,
+    AgentInstanceRecordQuality,
     AgentInstanceSpanCounts,
     AgentSchemaVersionForRegister,
     AgentVersionForRegister,
@@ -82,7 +82,7 @@ __all__ = [
     "InstancePurpose",
     # AgentInstance models
     "AgentInstance",
-    "AgentInstanceForUpdate",
+    "AgentInstanceRecordQuality",
     "AgentInstanceSpanCounts",
     "AgentVersionForRegister",
     "AgentSchemaVersionForRegister",
