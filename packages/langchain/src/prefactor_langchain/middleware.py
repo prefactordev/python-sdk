@@ -109,7 +109,7 @@ class PrefactorMiddleware(AgentMiddleware):
 
     Example - Factory Pattern:
         middleware = PrefactorMiddleware.from_config(
-            api_url="https://api.prefactor.ai",
+            api_url="https://app.prefactorai.com",
             api_token="my-token",
             agent_id="my-agent",
             agent_name="My Agent",
@@ -290,7 +290,7 @@ class PrefactorMiddleware(AgentMiddleware):
 
         Example:
             middleware = PrefactorMiddleware.from_config(
-                api_url="https://api.prefactor.ai",
+                api_url="https://app.prefactorai.com",
                 api_token="my-token",
                 agent_id="my-agent",
                 agent_name="My Agent",

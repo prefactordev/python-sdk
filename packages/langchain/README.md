@@ -16,7 +16,7 @@ pip install prefactor-langchain
 from prefactor_langchain import LangChainToolSchemaConfig, PrefactorMiddleware
 
 middleware = PrefactorMiddleware.from_config(
-    api_url="https://api.prefactor.ai",
+    api_url="https://app.prefactorai.com",
     api_token="your-api-token",
     agent_id="my-agent",  # Optional for deployment-scoped tokens
     agent_name="My Agent",  # optional
@@ -62,7 +62,7 @@ from prefactor_http.config import HttpClientConfig
 from prefactor_langchain import PrefactorMiddleware
 
 http_config = HttpClientConfig(
-    api_url="https://api.prefactor.ai", api_token="your-api-token"
+    api_url="https://app.prefactorai.com", api_token="your-api-token"
 )
 config = PrefactorCoreConfig(http_config=http_config)
 client = PrefactorCoreClient(config)
@@ -115,7 +115,7 @@ register_langchain_schemas(
 )
 
 middleware = PrefactorMiddleware.from_config(
-    api_url="https://api.prefactor.ai",
+    api_url="https://app.prefactorai.com",
     api_token="your-api-token",
     agent_id="my-agent",  # Optional for deployment-scoped tokens
     schema_registry=registry,
@@ -135,7 +135,7 @@ from prefactor_http.config import HttpClientConfig
 from prefactor_langchain import PrefactorMiddleware
 
 http_config = HttpClientConfig(
-    api_url="https://api.prefactor.ai", api_token="your-api-token"
+    api_url="https://app.prefactorai.com", api_token="your-api-token"
 )
 config = PrefactorCoreConfig(http_config=http_config)
 client = PrefactorCoreClient(config)

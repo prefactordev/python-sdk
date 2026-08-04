@@ -21,7 +21,7 @@ from prefactor_livekit import PrefactorLiveKitSession
 session = AgentSession(...)
 
 tracer = PrefactorLiveKitSession.from_config(
-    api_url="https://api.prefactor.ai",
+    api_url="https://app.prefactorai.com",
     api_token="your-api-token",
     agent_id="voice-agent",  # Optional for deployment-scoped tokens
     agent_name="Voice Agent",

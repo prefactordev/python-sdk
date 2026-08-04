@@ -10,7 +10,7 @@ class HttpClientConfig:
 
     Attributes:
         api_url: Base URL for the Prefactor API.
-            Example: 'https://api.prefactor.ai'
+            Example: 'https://app.prefactorai.com'
         api_token: Bearer token for API authentication.
         request_timeout: Total timeout for requests in seconds (default: 30.0).
         connect_timeout: Connection timeout in seconds (default: 10.0).
