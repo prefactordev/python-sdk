@@ -338,6 +338,7 @@ class PrefactorCoreClient:
                     agent_instance_id=operation.payload["instance_id"],
                     name=operation.payload["name"],
                     payload=operation.payload.get("payload"),
+                    idempotency_key=operation.payload.get("idempotency_key"),
                 )
             elif operation.type == OperationType.CREATE_SPAN:
                 await self._http.agent_spans.create(

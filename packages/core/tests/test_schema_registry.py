@@ -1,5 +1,7 @@
 """Tests for SchemaRegistry quality schema support."""
 
+from __future__ import annotations
+
 import pytest
 from prefactor_core.schema_registry import SchemaRegistry
 

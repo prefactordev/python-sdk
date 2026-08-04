@@ -126,7 +126,7 @@ class QualitySchemaForCreate(BaseModel):
     """Named quality schema definition for agent schema version registration.
 
     Attributes:
-        name: Schema name (key in the quality_schemas map)
+        name: Unique identifier for this quality schema entry
         schema: JSON schema for the quality payload
         title: Optional human-readable title (defaults to name)
         description: Optional description
@@ -146,7 +146,7 @@ class QualitySchemaDetails(BaseModel):
     """Quality schema details returned in agent schema version responses.
 
     Attributes:
-        name: Schema name (key in the quality_schemas map)
+        name: Unique identifier for this quality schema entry
         title: Human-readable title
         description: Optional description
         template: Optional display template
@@ -168,8 +168,8 @@ class AgentInstanceRecordQuality(BaseModel):
     """Parameters for recording a quality payload on an agent instance.
 
     Attributes:
-        name: Quality schema name (key in the agent schema version
-            quality_schemas)
+        name: Unique identifier of the quality schema entry to record
+            against
         payload: Quality payload for this name, or None to remove the
             recorded payload for this name
     """

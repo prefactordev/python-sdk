@@ -211,6 +211,7 @@ class AgentInstanceManager:
                 "instance_id": instance_id,
                 "name": name,
                 "payload": payload,
+                "idempotency_key": generate_idempotency_key(),
             },
             timestamp=datetime.now(timezone.utc),
         )
