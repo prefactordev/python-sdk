@@ -25,7 +25,7 @@ from prefactor_http import PrefactorHttpClient, HttpClientConfig
 
 async def main():
     config = HttpClientConfig(
-        api_url="https://api.prefactor.ai",
+        api_url="https://app.prefactorai.com",
         api_token="your-api-token",
     )
 
@@ -249,7 +249,7 @@ except PrefactorApiError as e:
 ```python
 config = HttpClientConfig(
     # Required
-    api_url="https://api.prefactor.ai",
+    api_url="https://app.prefactorai.com",
     api_token="your-token",
     # Retry behavior
     max_retries=3,

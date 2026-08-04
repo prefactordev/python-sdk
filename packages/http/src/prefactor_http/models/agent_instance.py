@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from prefactor_http.models.types import AgentStatus, FinishStatus, InstancePurpose
 
@@ -134,8 +134,10 @@ class QualitySchemaForCreate(BaseModel):
         data_risk: Optional data risk classification
     """
 
+    model_config = {"populate_by_name": True}
+
     name: str
-    schema: dict
+    schema_: dict = Field(alias="schema")
     title: str | None = None
     description: str | None = None
     template: str | None = None
@@ -155,12 +157,14 @@ class QualitySchemaDetails(BaseModel):
         schema_validation: Schema validation result
     """
 
+    model_config = {"populate_by_name": True}
+
     name: str
     title: str
     description: str | None = None
     template: str | None = None
     data_risk: DataRisk
-    schema: dict
+    schema_: dict = Field(alias="schema")
     schema_validation: dict
 
 

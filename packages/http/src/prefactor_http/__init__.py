@@ -16,7 +16,7 @@ Example:
     >>>
     >>> async def main():
     ...     config = HttpClientConfig(
-    ...         api_url="https://api.prefactor.ai",
+    ...         api_url="https://app.prefactorai.com",
     ...         api_token="your-token"
     ...     )
     ...     async with PrefactorHttpClient(config) as client:

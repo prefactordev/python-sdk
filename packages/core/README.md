@@ -47,7 +47,7 @@ registry.register_type(
 async def main():
     config = PrefactorCoreConfig(
         http_config=HttpClientConfig(
-            api_url="https://api.prefactor.ai",
+            api_url="https://app.prefactorai.com",
             api_token="your-token",
         ),
         schema_registry=registry,
@@ -181,7 +181,7 @@ from prefactor_http import HttpClientConfig
 
 config = PrefactorCoreConfig(
     http_config=HttpClientConfig(
-        api_url="https://api.prefactor.ai",
+        api_url="https://app.prefactorai.com",
         api_token="your-token",
     ),
     queue_config=QueueConfig(

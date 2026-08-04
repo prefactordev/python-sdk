@@ -22,7 +22,7 @@ Run via mise (env vars set automatically):
     mise exec -- python packages/core/examples/agent_e2e.py
 
 Or manually:
-    PREFACTOR_API_URL=https://api.prefactor.ai \\
+    PREFACTOR_API_URL=https://app.prefactorai.com \\
     PREFACTOR_API_TOKEN=your-token \\
     python packages/core/examples/agent_e2e.py
 

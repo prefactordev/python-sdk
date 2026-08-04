@@ -47,7 +47,7 @@ def calculator(expression: str) -> str:
 
 async def main():
     middleware = PrefactorMiddleware.from_config(
-        api_url="https://api.prefactor.ai",
+        api_url="https://app.prefactorai.com",
         api_token="your-token",
         agent_id="my-agent",
         agent_name="My Agent",

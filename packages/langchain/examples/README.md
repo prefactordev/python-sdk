@@ -36,7 +36,7 @@ pip install prefactor-langchain langchain
 
 ```bash
 export ANTHROPIC_API_KEY=your_api_key_here
-export PREFACTOR_API_URL=https://api.prefactor.ai
+export PREFACTOR_API_URL=https://app.prefactorai.com
 export PREFACTOR_API_TOKEN=your_token_here
 ```
 

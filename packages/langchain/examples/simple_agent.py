@@ -17,7 +17,7 @@ Prerequisites:
 
 Example:
     export ANTHROPIC_API_KEY=sk-ant-...
-    export PREFACTOR_API_URL=https://api.prefactor.ai
+    export PREFACTOR_API_URL=https://app.prefactorai.com
     export PREFACTOR_API_TOKEN=your_token
     python simple_agent.py
 """
@@ -196,7 +196,7 @@ async def main_async():
             "Get your API key from: https://console.anthropic.com/"
         )
 
-    api_url = os.getenv("PREFACTOR_API_URL", "https://api.prefactor.ai")
+    api_url = os.getenv("PREFACTOR_API_URL", "https://app.prefactorai.com")
     api_token = os.getenv("PREFACTOR_API_TOKEN")
     if not api_token:
         raise ValueError(
