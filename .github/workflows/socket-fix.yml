@@ -1,0 +1,45 @@
+name: Socket Fix
+
+on:
+  schedule:
+    - cron: "0 */12 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: socket-fix
+  cancel-in-progress: false
+
+jobs:
+  fix:
+    name: Apply Socket fixes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/create-github-app-token@v2
+        id: app-token
+        with:
+          app-id: ${{ secrets.SOCKET_APP_ID }}
+          private-key: ${{ secrets.SOCKET_APP_PRIVATE_KEY }}
+
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+
+      - uses: jdx/mise-action@v3
+        with:
+          install: true
+          cache: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Run socket fix
+        run: npx --yes socket fix --all --pr-limit 5
+        env:
+          SOCKET_CLI_API_TOKEN: ${{ secrets.SOCKET_CLI_API_TOKEN }}
+          SOCKET_CLI_GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          SOCKET_CLI_GIT_USER_NAME: "socket-fix[bot]"
+          SOCKET_CLI_GIT_USER_EMAIL: "socket-fix[bot]@users.noreply.github.com"
