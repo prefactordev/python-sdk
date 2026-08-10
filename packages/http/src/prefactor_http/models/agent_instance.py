@@ -187,7 +187,6 @@ class AgentInstanceSpanCounts(BaseModel):
 
     Attributes:
         total: Total number of spans
-        pending: Number of pending spans
         active: Number of active spans
         complete: Number of completed spans
         failed: Number of failed spans
@@ -195,13 +194,12 @@ class AgentInstanceSpanCounts(BaseModel):
         finished: Number of finished spans (complete + failed + cancelled)
     """
 
-    total: int
-    pending: int
-    active: int
-    complete: int
-    failed: int
-    cancelled: int
-    finished: int
+    total: int = 0
+    active: int = 0
+    complete: int = 0
+    failed: int = 0
+    cancelled: int = 0
+    finished: int = 0
 
 
 class AgentVersionForRegister(BaseModel):
