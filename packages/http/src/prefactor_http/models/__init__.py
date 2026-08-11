@@ -20,6 +20,7 @@ from prefactor_http.models.agent_instance import (
     FinishInstanceRequest,
     QualitySchemaDetails,
     QualitySchemaForCreate,
+    RuntimeEnvironment,
     SpanTypeSchemaForCreate,
 )
 from prefactor_http.models.agent_span import AgentSpan
@@ -53,6 +54,7 @@ __all__ = [
     "FinishInstanceRequest",
     "QualitySchemaDetails",
     "QualitySchemaForCreate",
+    "RuntimeEnvironment",
     "SpanTypeSchemaForCreate",
     # Data risk models
     "ActionProfile",

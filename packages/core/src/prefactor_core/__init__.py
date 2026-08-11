@@ -23,6 +23,7 @@ from .managers.agent_instance import AgentInstanceHandle
 from .models import AgentInstance, Span
 from .operations import Operation, OperationType
 from .queue import InMemoryQueue, Queue, QueueClosedError, TaskExecutor
+from .runtime import build_runtime_environment
 from .schema_registry import SchemaRegistry
 from .span_context import SpanContext
 from .utils import generate_idempotency_key, validate_idempotency_key
@@ -58,6 +59,8 @@ __all__ = [
     "TaskExecutor",
     # Handle
     "AgentInstanceHandle",
+    # Runtime
+    "build_runtime_environment",
     # Schema Registry
     "SchemaRegistry",
     # Utils

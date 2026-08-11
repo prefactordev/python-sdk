@@ -202,6 +202,25 @@ class AgentInstanceSpanCounts(BaseModel):
     finished: int = 0
 
 
+class RuntimeEnvironment(BaseModel):
+    """Runtime environment information for an agent version.
+
+    Captures the agent framework, Prefactor SDK, OS, and language runtime
+    in use when this agent version was registered.
+
+    Attributes:
+        agent_sdk: Agent framework packages (e.g. ["prefactor-langchain@0.2.7"]).
+        os: Operating system name (e.g. "linux", "darwin").
+        prefactor_sdk: Prefactor SDK packages in use.
+        runtime: Language runtime (e.g. "cpython@3.11").
+    """
+
+    agent_sdk: list[str] | None = None
+    os: str | None = None
+    prefactor_sdk: list[str] | None = None
+    runtime: str | None = None
+
+
 class AgentVersionForRegister(BaseModel):
     """Agent version information for registration.
 
@@ -209,11 +228,13 @@ class AgentVersionForRegister(BaseModel):
         name: Name of the agent version
         external_identifier: External identifier for the version (e.g., "v1.0.0")
         description: Optional description of the version
+        runtime_environment: Runtime environment metadata
     """
 
     name: str | None = None
     external_identifier: str | None = None
     description: str | None = None
+    runtime_environment: RuntimeEnvironment | None = None
 
 
 class AgentSchemaVersionForRegister(BaseModel):
