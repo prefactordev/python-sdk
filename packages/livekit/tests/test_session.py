@@ -278,6 +278,152 @@ class TestPrefactorLiveKitSession:
         assert wrapper._client is None
         assert wrapper._owns_instance is False
 
+    async def test_existing_instance_includes_livekit_in_runtime_environment(
+        self,
+    ) -> None:
+        """When user creates instance with LiveKit header, it appears in
+        runtime_environment."""
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        from prefactor_core import PrefactorCoreClient, PrefactorCoreConfig
+        from prefactor_http.config import HttpClientConfig
+
+        register_calls: list[dict] = []
+
+        class _StubInstances:
+            async def register(self, **kwargs):
+                register_calls.append(kwargs)
+                return SimpleNamespace(id="inst-1")
+
+            async def start(self, **kwargs):
+                return SimpleNamespace(id=kwargs["agent_instance_id"])
+
+            async def finish(self, **kwargs):
+                return SimpleNamespace(id=kwargs["agent_instance_id"])
+
+        class _StubSpans:
+            async def create(self, **kwargs):
+                return SimpleNamespace(id="span-1")
+
+            async def finish(self, **kwargs):
+                return SimpleNamespace(id=kwargs["agent_span_id"])
+
+        class _StubHttp:
+            def __init__(self, *args, **kwargs):
+                self.agent_instances = _StubInstances()
+                self.agent_spans = _StubSpans()
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                return None
+
+            async def validate_token(self):
+                return {"status": "success"}
+
+        stub_http = _StubHttp()
+        with patch("prefactor_core.client.PrefactorHttpClient", return_value=stub_http):
+            config = PrefactorCoreConfig(
+                http_config=HttpClientConfig(
+                    api_url="https://api.test.com",
+                    api_token="test-token",
+                    max_retries=0,
+                ),
+            )
+            client = PrefactorCoreClient(
+                config,
+                sdk_header_entry=f"prefactor-livekit@{PACKAGE_VERSION}",
+            )
+            await client.initialize()
+            instance = await client.create_agent_instance(
+                agent_id="agent-1",
+                agent_version={"name": "v1"},
+                agent_schema_version={"span_schemas": {}},
+            )
+            await client.close()
+
+        # Now pass the pre-created instance to the wrapper
+        wrapper = PrefactorLiveKitSession(instance=instance)
+        assert wrapper._instance is instance
+        assert wrapper._owns_instance is False
+
+        # Verify the runtime_environment was captured at registration time
+        re_env = register_calls[0]["agent_version"]["runtime_environment"]
+        assert f"prefactor-livekit@{PACKAGE_VERSION}" in re_env["agent_sdk"]
+
+    async def test_existing_instance_without_livekit_header_misses_metadata(
+        self,
+    ) -> None:
+        """Wrapper cannot add LiveKit metadata to an already-registered instance."""
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        from prefactor_core import PrefactorCoreClient, PrefactorCoreConfig
+        from prefactor_http.config import HttpClientConfig
+
+        register_calls: list[dict] = []
+
+        class _StubInstances:
+            async def register(self, **kwargs):
+                register_calls.append(kwargs)
+                return SimpleNamespace(id="inst-1")
+
+            async def start(self, **kwargs):
+                return SimpleNamespace(id=kwargs["agent_instance_id"])
+
+            async def finish(self, **kwargs):
+                return SimpleNamespace(id=kwargs["agent_instance_id"])
+
+        class _StubSpans:
+            async def create(self, **kwargs):
+                return SimpleNamespace(id="span-1")
+
+            async def finish(self, **kwargs):
+                return SimpleNamespace(id=kwargs["agent_span_id"])
+
+        class _StubHttp:
+            def __init__(self, *args, **kwargs):
+                self.agent_instances = _StubInstances()
+                self.agent_spans = _StubSpans()
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                return None
+
+            async def validate_token(self):
+                return {"status": "success"}
+
+        stub_http = _StubHttp()
+        with patch("prefactor_core.client.PrefactorHttpClient", return_value=stub_http):
+            config = PrefactorCoreConfig(
+                http_config=HttpClientConfig(
+                    api_url="https://api.test.com",
+                    api_token="test-token",
+                    max_retries=0,
+                ),
+            )
+            # No sdk_header_entry — user didn't configure it
+            client = PrefactorCoreClient(config)
+            await client.initialize()
+            instance = await client.create_agent_instance(
+                agent_id="agent-1",
+                agent_version={"name": "v1"},
+                agent_schema_version={"span_schemas": {}},
+            )
+            await client.close()
+
+        # Pass the instance to the wrapper — too late to add LiveKit metadata
+        wrapper = PrefactorLiveKitSession(instance=instance)
+        assert wrapper._instance is instance
+
+        # runtime_environment was already sent without LiveKit
+        re_env = register_calls[0]["agent_version"]["runtime_environment"]
+        assert "prefactor-livekit" not in str(re_env["agent_sdk"])
+
     async def test_attach_opens_root_session_span(self) -> None:
         instance = RecordingInstance()
         wrapper = PrefactorLiveKitSession(instance=instance)

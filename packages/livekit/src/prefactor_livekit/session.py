@@ -66,10 +66,6 @@ class PrefactorLiveKitSession:
         if instance is not None and client is not None:
             raise ValueError("Provide either 'client' or 'instance', not both.")
 
-        if instance is not None:
-            if hasattr(instance, "_client") and instance._client is not None:
-                instance._client._set_sdk_header_entry(LIVEKIT_SDK_HEADER_ENTRY)
-
         if instance is None and client is None:
             msg = (
                 "Either 'client' or 'instance' is required"
