@@ -16,28 +16,32 @@ jobs:
   fix:
     name: Apply Socket fixes
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
-      - uses: actions/create-github-app-token@v2
+      - uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
         id: app-token
         with:
           app-id: ${{ secrets.SOCKET_APP_ID }}
           private-key: ${{ secrets.SOCKET_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           token: ${{ steps.app-token.outputs.token }}
+          persist-credentials: false
 
-      - uses: jdx/mise-action@v3
+      - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3.6.3
         with:
           install: true
           cache: true
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "22"
 
       - name: Run socket fix
-        run: npx --yes socket fix --all --pr-limit 5
+        run: npx --yes socket@2.1.0 fix --all --pr-limit 5
         env:
           SOCKET_CLI_API_TOKEN: ${{ secrets.SOCKET_CLI_API_TOKEN }}
           SOCKET_CLI_GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
