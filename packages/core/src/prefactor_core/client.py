@@ -38,6 +38,7 @@ from .operations import Operation, OperationType
 from .queue.base import Queue
 from .queue.executor import TaskExecutor
 from .queue.memory import InMemoryQueue
+from .runtime import build_runtime_environment
 
 if TYPE_CHECKING:
     from .managers.agent_instance import AgentInstanceHandle
@@ -443,6 +444,17 @@ class PrefactorCoreClient:
         self._ensure_initialized()
         self._raise_if_telemetry_failed()
         assert self._instance_manager is not None
+
+        # Auto-inject runtime_environment if the caller didn't provide one.
+        # This ensures every agent version carries OS, runtime, and SDK
+        # version metadata without each adaptor having to build it manually.
+        if "runtime_environment" not in agent_version:
+            agent_version = {
+                **agent_version,
+                "runtime_environment": build_runtime_environment(
+                    sdk_header_entry=self._sdk_header_entry,
+                ),
+            }
 
         # Determine the agent_schema_version to use
         final_schema_version: dict[str, Any]

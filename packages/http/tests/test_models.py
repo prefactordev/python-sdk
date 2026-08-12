@@ -7,7 +7,9 @@ from prefactor_http.models.agent_instance import (
     AgentInstance,
     AgentInstanceRecordQuality,
     AgentSchemaVersionForRegister,
+    AgentVersionForRegister,
     QualitySchemaForCreate,
+    RuntimeEnvironment,
 )
 from prefactor_http.models.agent_span import (
     AgentSpan,
@@ -319,3 +321,49 @@ class TestQualitySchemaModels:
         req = AgentInstanceRecordQuality(name="accuracy", payload=None)
         assert req.name == "accuracy"
         assert req.payload is None
+
+
+class TestRuntimeEnvironment:
+    """Tests for RuntimeEnvironment model."""
+
+    def test_runtime_environment_defaults(self):
+        """RuntimeEnvironment defaults all fields to None."""
+        env = RuntimeEnvironment()
+        assert env.agent_sdk is None
+        assert env.os is None
+        assert env.prefactor_sdk is None
+        assert env.runtime is None
+
+    def test_runtime_environment_full(self):
+        """RuntimeEnvironment accepts all fields."""
+        env = RuntimeEnvironment(
+            agent_sdk=["prefactor-langchain@0.2.7"],
+            os="linux",
+            prefactor_sdk=["prefactor-core@0.5.1", "prefactor-http@0.4.1"],
+            runtime="cpython@3.11",
+        )
+        assert env.agent_sdk == ["prefactor-langchain@0.2.7"]
+        assert env.os == "linux"
+        assert env.prefactor_sdk == ["prefactor-core@0.5.1", "prefactor-http@0.4.1"]
+        assert env.runtime == "cpython@3.11"
+
+    def test_agent_version_for_register_with_runtime_environment(self):
+        """AgentVersionForRegister accepts runtime_environment."""
+        av = AgentVersionForRegister(
+            name="v1",
+            external_identifier="ext-1",
+            runtime_environment=RuntimeEnvironment(
+                agent_sdk=["prefactor-langchain@0.2.7"],
+                os="linux",
+                prefactor_sdk=["prefactor-core@0.5.1"],
+                runtime="cpython@3.11",
+            ),
+        )
+        assert av.name == "v1"
+        assert av.runtime_environment is not None
+        assert av.runtime_environment.os == "linux"
+
+    def test_agent_version_for_register_without_runtime_environment(self):
+        """AgentVersionForRegister defaults runtime_environment to None."""
+        av = AgentVersionForRegister(name="v1")
+        assert av.runtime_environment is None

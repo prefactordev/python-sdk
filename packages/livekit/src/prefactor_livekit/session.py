@@ -20,12 +20,16 @@ from prefactor_core import (
 )
 from prefactor_http.config import HttpClientConfig
 
+from prefactor_livekit._version import PACKAGE_NAME as LIVEKIT_PACKAGE_NAME
+from prefactor_livekit._version import PACKAGE_VERSION as LIVEKIT_PACKAGE_VERSION
 from prefactor_livekit.schemas import LiveKitToolSchemaConfig, register_livekit_schemas
 
 if TYPE_CHECKING:
     from livekit.agents import Agent, AgentSession
 
 logger = logging.getLogger("prefactor_livekit.session")
+
+LIVEKIT_SDK_HEADER_ENTRY = f"{LIVEKIT_PACKAGE_NAME}@{LIVEKIT_PACKAGE_VERSION}"
 
 
 @dataclass
@@ -78,6 +82,9 @@ class PrefactorLiveKitSession:
                 " - call await client.initialize() first"
             )
             raise ValueError(msg)
+
+        if client is not None and hasattr(client, "_set_sdk_header_entry"):
+            client._set_sdk_header_entry(LIVEKIT_SDK_HEADER_ENTRY)
 
         self._client = client
         self._agent_id = agent_id
@@ -143,7 +150,8 @@ class PrefactorLiveKitSession:
             )
 
         client = PrefactorCoreClient(
-            PrefactorCoreConfig(http_config=http_config, schema_registry=registry)
+            PrefactorCoreConfig(http_config=http_config, schema_registry=registry),
+            sdk_header_entry=LIVEKIT_SDK_HEADER_ENTRY,
         )
         wrapper = cls.__new__(cls)
         wrapper._client = client
