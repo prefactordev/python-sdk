@@ -96,7 +96,7 @@ class PrefactorLiveKitSession:
         if effective_client is not None and hasattr(
             effective_client, "_set_sdk_header_entry"
         ):
-            had_header = bool(effective_client._sdk_header_entry)
+            had_header = effective_client._sdk_header_entry == LIVEKIT_SDK_HEADER_ENTRY
             effective_client._set_sdk_header_entry(LIVEKIT_SDK_HEADER_ENTRY)
             if not had_header and instance is not None:
                 warn_missing_adaptor_config(

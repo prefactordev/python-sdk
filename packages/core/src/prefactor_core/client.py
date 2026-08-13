@@ -412,8 +412,8 @@ class PrefactorCoreClient:
         instance_id: str | None = None,
         external_schema_version_id: str | None = None,
         environment_id: str | None = None,
-        external_identifier: str | None = None,
         purpose: InstancePurpose | None = None,
+        external_identifier: str | None = None,
     ) -> "AgentInstanceHandle":
         """Create a new agent instance.
 
@@ -488,8 +488,8 @@ class PrefactorCoreClient:
             agent_schema_version=final_schema_version,
             instance_id=instance_id,
             environment_id=environment_id,
-            external_identifier=external_identifier,
             purpose=purpose,
+            external_identifier=external_identifier,
         )
 
         self._set_current_instance(instance_id)

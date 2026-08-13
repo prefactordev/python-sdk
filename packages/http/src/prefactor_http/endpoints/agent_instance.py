@@ -70,10 +70,10 @@ class AgentInstanceClient:
         agent_id: str | None = None,
         environment_id: str | None = None,
         id: str | None = None,
-        external_identifier: str | None = None,
         idempotency_key: str | None = None,
         update_current_version: bool = True,
         purpose: InstancePurpose | None = None,
+        external_identifier: str | None = None,
     ) -> AgentInstance:
         """Register a new agent instance.
 
@@ -116,14 +116,12 @@ class AgentInstanceClient:
             payload["agent_id"] = agent_id
         if environment_id is not None:
             payload["environment_id"] = environment_id
-        if id is not None:
-            payload["id"] = id
-        if external_identifier is not None:
-            payload["external_identifier"] = external_identifier
         if idempotency_key is not None:
             payload["idempotency_key"] = idempotency_key
         if purpose is not None:
             payload["purpose"] = purpose
+        if external_identifier is not None:
+            payload["external_identifier"] = external_identifier
 
         response = await self._client.request(
             "POST",

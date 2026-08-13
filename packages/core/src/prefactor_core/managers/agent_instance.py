@@ -64,8 +64,8 @@ class AgentInstanceManager:
         agent_id: str | None = None,
         instance_id: str | None = None,
         environment_id: str | None = None,
-        external_identifier: str | None = None,
         purpose: "InstancePurpose | None" = None,
+        external_identifier: str | None = None,
     ) -> str:
         """Register a new agent instance.
 
@@ -95,9 +95,9 @@ class AgentInstanceManager:
             agent_schema_version=agent_schema_version,
             environment_id=environment_id,
             id=instance_id,
-            external_identifier=external_identifier,
             idempotency_key=generate_idempotency_key(),
             purpose=purpose,
+            external_identifier=external_identifier,
         )
         return result.id
 

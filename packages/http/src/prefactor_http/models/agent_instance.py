@@ -266,6 +266,7 @@ class RegisterAgentInstanceRequest(BaseModel):
         agent_version: Version information for the agent
         agent_schema_version: Schema version for the agent
         id: Optional custom ID for the instance
+        external_identifier: Optional external identifier (unique per agent)
         idempotency_key: Optional idempotency key
         update_current_version: Whether to update the current version
         purpose: Why this instance ran (live, smoke_test, eval)
@@ -325,6 +326,7 @@ class AgentInstance(BaseModel):
         started_at: When the instance started (null if not started)
         finished_at: When the instance finished (null if not finished)
         termination_reason: Reason for termination (null if not terminated)
+        external_identifier: Optional external identifier (unique per agent)
         span_counts: Span counts for this instance
         purpose: Why this instance ran (live, smoke_test, eval)
         quality_payloads: Map of quality schema name to evaluation payload

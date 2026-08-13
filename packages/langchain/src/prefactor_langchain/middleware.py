@@ -131,7 +131,7 @@ class PrefactorMiddleware(AgentMiddleware):
         else:
             client = cast(PrefactorCoreClient, owner)
 
-        had_header = bool(client._sdk_header_entry)
+        had_header = client._sdk_header_entry == LANGCHAIN_SDK_HEADER_ENTRY
         client._set_sdk_header_entry(LANGCHAIN_SDK_HEADER_ENTRY)
 
         if not had_header and isinstance(owner, AgentInstanceHandle):
