@@ -18,6 +18,7 @@ from prefactor_core import (
     PrefactorTerminatedError,
     SchemaRegistry,
     SpanContext,
+    warn_missing_adaptor_config,
 )
 from prefactor_http.config import HttpClientConfig
 
@@ -129,7 +130,46 @@ class PrefactorMiddleware(AgentMiddleware):
             client = cast(AgentInstanceHandle, owner)._client
         else:
             client = cast(PrefactorCoreClient, owner)
+
+        had_header = bool(client._sdk_header_entry)
         client._set_sdk_header_entry(LANGCHAIN_SDK_HEADER_ENTRY)
+
+        if not had_header and isinstance(owner, AgentInstanceHandle):
+            warn_missing_adaptor_config(
+                owner.id,
+                "middleware",
+                "PrefactorMiddleware.create_client(config)",
+            )
+
+    @staticmethod
+    def create_client(
+        config: PrefactorCoreConfig,
+    ) -> PrefactorCoreClient:
+        """Create a PrefactorCoreClient configured for use with this adaptor.
+
+        Use this when you need to manage the client and instance lifecycle
+        yourself (e.g. to share a client between the middleware and eval code)
+        instead of letting :meth:`from_config` manage them for you.
+
+        Args:
+            config: Core configuration for the client.
+
+        Returns:
+            A PrefactorCoreClient ready for ``await client.initialize()``.
+
+        Example:
+            config = PrefactorCoreConfig(http_config=...)
+            client = PrefactorMiddleware.create_client(config)
+            await client.initialize()
+
+            instance = await client.create_agent_instance(
+                agent_id="my-agent",
+                agent_version={"name": "My Agent"},
+                agent_schema_version=...,
+            )
+            middleware = PrefactorMiddleware(instance=instance)
+        """
+        return PrefactorCoreClient(config, sdk_header_entry=LANGCHAIN_SDK_HEADER_ENTRY)
 
     def __init__(
         self,

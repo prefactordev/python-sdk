@@ -18,10 +18,11 @@ from prefactor_livekit.schemas import (
     compile_livekit_agent_schema,
     register_livekit_schemas,
 )
-from prefactor_livekit.session import PrefactorLiveKitSession
+from prefactor_livekit.session import LIVEKIT_SDK_HEADER_ENTRY, PrefactorLiveKitSession
 
 __all__ = [
     "PrefactorLiveKitSession",
+    "LIVEKIT_SDK_HEADER_ENTRY",
     "LiveKitToolSchemaConfig",
     "compile_livekit_agent_schema",
     "register_livekit_schemas",

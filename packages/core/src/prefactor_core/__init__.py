@@ -26,7 +26,11 @@ from .queue import InMemoryQueue, Queue, QueueClosedError, TaskExecutor
 from .runtime import build_runtime_environment
 from .schema_registry import SchemaRegistry
 from .span_context import SpanContext
-from .utils import generate_idempotency_key, validate_idempotency_key
+from .utils import (
+    generate_idempotency_key,
+    validate_idempotency_key,
+    warn_missing_adaptor_config,
+)
 
 __all__ = [
     # Client
@@ -66,5 +70,6 @@ __all__ = [
     # Utils
     "generate_idempotency_key",
     "validate_idempotency_key",
+    "warn_missing_adaptor_config",
     "__version__",
 ]
