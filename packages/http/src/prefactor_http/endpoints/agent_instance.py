@@ -116,6 +116,8 @@ class AgentInstanceClient:
             payload["agent_id"] = agent_id
         if environment_id is not None:
             payload["environment_id"] = environment_id
+        if id is not None:
+            payload["id"] = id
         if idempotency_key is not None:
             payload["idempotency_key"] = idempotency_key
         if purpose is not None:
