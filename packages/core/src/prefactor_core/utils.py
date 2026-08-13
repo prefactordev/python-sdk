@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
+
+logger = logging.getLogger(__name__)
 
 
 def generate_idempotency_key() -> str:
@@ -38,4 +41,35 @@ def validate_idempotency_key(key: str) -> str:
     return key
 
 
-__all__ = ["generate_idempotency_key", "validate_idempotency_key"]
+def warn_missing_adaptor_config(
+    instance_id: str,
+    adaptor_name: str,
+    create_client_call: str,
+) -> None:
+    """Warn that an instance was registered before the adaptor configured the client.
+
+    Called by framework adaptors (langchain, livekit, etc.) when a
+    pre-created instance is passed in and the backing client wasn't set up
+    through :meth:`create_client` or :meth:`from_config`.
+
+    Args:
+        instance_id: The agent instance ID that was registered too early.
+        adaptor_name: Human-readable adaptor name (e.g. ``"middleware"``).
+        create_client_call: The call the user should use instead
+            (e.g. ``"PrefactorMiddleware.create_client(config)"``).
+    """
+    logger.warning(
+        "Agent instance %s was registered before the %s "
+        "could configure the client. Use %s to create the "
+        "client before creating the instance.",
+        instance_id,
+        adaptor_name,
+        create_client_call,
+    )
+
+
+__all__ = [
+    "generate_idempotency_key",
+    "validate_idempotency_key",
+    "warn_missing_adaptor_config",
+]

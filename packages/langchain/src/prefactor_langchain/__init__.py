@@ -7,7 +7,10 @@ from prefactor_langchain.metadata_extractor import (
     extract_error_info,
     extract_token_usage,
 )
-from prefactor_langchain.middleware import PrefactorMiddleware
+from prefactor_langchain.middleware import (
+    LANGCHAIN_SDK_HEADER_ENTRY,
+    PrefactorMiddleware,
+)
 from prefactor_langchain.schemas import (
     DEFAULT_LANGCHAIN_AGENT_SCHEMA,
     LANGCHAIN_AGENT_SCHEMA,
@@ -29,6 +32,7 @@ from prefactor_langchain.spans import (
 __all__ = [
     # Middleware
     "PrefactorMiddleware",
+    "LANGCHAIN_SDK_HEADER_ENTRY",
     # Extractors
     "extract_token_usage",
     "extract_error_info",

@@ -17,6 +17,7 @@ from prefactor_core import (
     PrefactorTelemetryFailureError,
     SchemaRegistry,
     SpanContext,
+    warn_missing_adaptor_config,
 )
 from prefactor_http.config import HttpClientConfig
 
@@ -66,6 +67,13 @@ class PrefactorLiveKitSession:
         if instance is not None and client is not None:
             raise ValueError("Provide either 'client' or 'instance', not both.")
 
+        # When an instance is provided, extract its backing client so we can
+        # set the SDK header.  The client may already be closed — that's fine;
+        # we only need it to set _sdk_header_entry for future instances.
+        instance_client: PrefactorCoreClient | None = None
+        if instance is not None:
+            instance_client = getattr(instance, "_client", None)
+
         if instance is None and client is None:
             msg = (
                 "Either 'client' or 'instance' is required"
@@ -83,9 +91,21 @@ class PrefactorLiveKitSession:
             )
             raise ValueError(msg)
 
-        if client is not None and hasattr(client, "_set_sdk_header_entry"):
-            client._set_sdk_header_entry(LIVEKIT_SDK_HEADER_ENTRY)
+        # Set the SDK header on whichever client we have.
+        effective_client = client or instance_client
+        if effective_client is not None and hasattr(
+            effective_client, "_set_sdk_header_entry"
+        ):
+            had_header = effective_client._sdk_header_entry == LIVEKIT_SDK_HEADER_ENTRY
+            effective_client._set_sdk_header_entry(LIVEKIT_SDK_HEADER_ENTRY)
+            if not had_header and instance is not None:
+                warn_missing_adaptor_config(
+                    instance.id,
+                    "session wrapper",
+                    "PrefactorLiveKitSession.create_client(config)",
+                )
 
+        # Store the explicitly-passed client (may be None for instance path).
         self._client = client
         self._agent_id = agent_id
         self._agent_name = agent_name
@@ -125,6 +145,36 @@ class PrefactorLiveKitSession:
         self._event_worker_stopping = False
         self._event_worker_stopped = False
         self._telemetry_failure: PrefactorTelemetryFailureError | None = None
+
+    @staticmethod
+    def create_client(
+        config: PrefactorCoreConfig,
+    ) -> PrefactorCoreClient:
+        """Create a PrefactorCoreClient configured for use with this adaptor.
+
+        Use this when you need to manage the client and instance lifecycle
+        yourself (e.g. to share a client between the session wrapper and
+        other code) instead of letting :meth:`from_config` manage them for you.
+
+        Args:
+            config: Core configuration for the client.
+
+        Returns:
+            A PrefactorCoreClient ready for ``await client.initialize()``.
+
+        Example:
+            config = PrefactorCoreConfig(http_config=...)
+            client = PrefactorLiveKitSession.create_client(config)
+            await client.initialize()
+
+            instance = await client.create_agent_instance(
+                agent_id="my-agent",
+                agent_version={"name": "My Agent"},
+                agent_schema_version=...,
+            )
+            session = PrefactorLiveKitSession(instance=instance)
+        """
+        return PrefactorCoreClient(config, sdk_header_entry=LIVEKIT_SDK_HEADER_ENTRY)
 
     @classmethod
     def from_config(

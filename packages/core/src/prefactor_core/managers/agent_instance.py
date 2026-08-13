@@ -65,6 +65,7 @@ class AgentInstanceManager:
         instance_id: str | None = None,
         environment_id: str | None = None,
         purpose: "InstancePurpose | None" = None,
+        external_identifier: str | None = None,
     ) -> str:
         """Register a new agent instance.
 
@@ -80,6 +81,8 @@ class AgentInstanceManager:
                 the API generates one.
             environment_id: Optional environment ID. Required when using an
                 account-scoped token; omit when using a deployment-scoped token.
+            external_identifier: Optional external identifier for this agent
+                instance in an external system (unique per agent).
             purpose: Why this instance ran — ``"live"``, ``"smoke_test"``,
                 or ``"eval"``. Omitted (None) lets the API default to ``"live"``.
 
@@ -94,6 +97,7 @@ class AgentInstanceManager:
             id=instance_id,
             idempotency_key=generate_idempotency_key(),
             purpose=purpose,
+            external_identifier=external_identifier,
         )
         return result.id
 
