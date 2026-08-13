@@ -276,6 +276,7 @@ class RegisterAgentInstanceRequest(BaseModel):
     agent_version: AgentVersionForRegister
     agent_schema_version: AgentSchemaVersionForRegister
     id: str | None = None
+    external_identifier: str | None = None
     idempotency_key: str | None = None
     update_current_version: bool | None = None
     purpose: InstancePurpose | None = None
@@ -343,6 +344,7 @@ class AgentInstance(BaseModel):
     started_at: datetime | None = None
     finished_at: datetime | None = None
     termination_reason: str | None = None
+    external_identifier: str | None = None
     span_counts: AgentInstanceSpanCounts | None = None
     purpose: InstancePurpose | None = None
     quality_payloads: dict[str, dict] | None = None

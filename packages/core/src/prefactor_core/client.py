@@ -412,6 +412,7 @@ class PrefactorCoreClient:
         instance_id: str | None = None,
         external_schema_version_id: str | None = None,
         environment_id: str | None = None,
+        external_identifier: str | None = None,
         purpose: InstancePurpose | None = None,
     ) -> "AgentInstanceHandle":
         """Create a new agent instance.
@@ -431,6 +432,8 @@ class PrefactorCoreClient:
             external_schema_version_id: Optional external identifier for the
                 schema version. Defaults to "auto-generated" when using registry.
             environment_id: Optional environment ID used to scope the agent instance.
+            external_identifier: Optional external identifier for this agent
+                instance in an external system (unique per agent).
             purpose: Why this instance ran — ``"live"``, ``"smoke_test"``,
                 or ``"eval"``. Omitted (None) lets the API default to ``"live"``.
 
@@ -485,6 +488,7 @@ class PrefactorCoreClient:
             agent_schema_version=final_schema_version,
             instance_id=instance_id,
             environment_id=environment_id,
+            external_identifier=external_identifier,
             purpose=purpose,
         )
 
