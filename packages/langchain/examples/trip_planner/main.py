@@ -22,6 +22,7 @@ import json
 import os
 from typing import Literal
 
+from evals import QUALITY_SCHEMA, QUALITY_SCHEMA_NAME
 from graph import TripState, build_graph
 from langchain_core.messages import HumanMessage
 from langchain_openai import ChatOpenAI
@@ -38,9 +39,16 @@ Purpose = Literal["live", "smoke_test", "eval"]
 
 
 def build_registry() -> tuple[SchemaRegistry, dict[str, str]]:
-    """Register the span schemas the trip planner sends."""
+    """Register the span and quality schemas the trip planner sends."""
     registry = SchemaRegistry()
     tool_span_types = register_langchain_schemas(registry)
+    registry.register_quality_schema(
+        QUALITY_SCHEMA_NAME,
+        QUALITY_SCHEMA,
+        title="Trip plan quality",
+        description="Eval checks run on each draft of the trip plan",
+        template="{{score}}/100 on attempt {{attempt}}",
+    )
     return registry, tool_span_types
 
 
@@ -98,7 +106,10 @@ async def run_trip(request: str, purpose: Purpose = "live") -> TripState:
         try:
             state = await graph.ainvoke(
                 {"messages": [HumanMessage(request)]},
-                config={"callbacks": [handler]},
+                config={
+                    "callbacks": [handler],
+                    "configurable": {"prefactor_instance": instance},
+                },
             )
         except BaseException:
             await instance.finish("failed")
@@ -116,7 +127,12 @@ def main() -> None:
     args = parser.parse_args()
 
     state = asyncio.run(run_trip(args.request))
+    quality = state["quality"]
     print(f"Trip plan written to {state['output_path']}")
+    print(
+        f"Quality: {quality['score']}/100 on attempt {quality['attempt']}"
+        f" ({'passed' if quality['passed'] else 'failed'})"
+    )
 
 
 if __name__ == "__main__":

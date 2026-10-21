@@ -1,6 +1,6 @@
 # Trip planner (LangGraph)
 
-A LangGraph agent that plans a road trip between two places and writes the plan as a Markdown document. It is traced in Prefactor with `PrefactorCallbackHandler`.
+A LangGraph agent that plans a road trip between two places and writes the plan as a Markdown document. It checks each draft against a set of evals, records the results in Prefactor as quality, and revises the plan until the evals pass. It is traced in Prefactor with `PrefactorCallbackHandler`.
 
 The planner uses free public APIs that need no key:
 
@@ -15,7 +15,9 @@ Responses are cached for the life of the process, and Nominatim requests are spa
 
 ```mermaid
 flowchart LR
-    START --> parse_request --> plan_route --> research_stops --> draft_itinerary --> finalise --> END
+    START --> parse_request --> plan_route --> research_stops --> draft_itinerary --> evaluate
+    evaluate -- failed, fewer than 3 drafts --> draft_itinerary
+    evaluate -- passed, or 3 drafts --> finalise --> END
 ```
 
 | Node | What it does |
@@ -23,7 +25,8 @@ flowchart LR
 | `parse_request` | Extracts the origin, destination, number of days and interests from the request |
 | `plan_route` | An agent with `geocode`, `get_route` and `find_towns_along_route` that chooses 2 to 6 stops |
 | `research_stops` | Runs a research agent for each stop in turn, with `wikipedia_summary`, `nearby_attractions` and `weather_forecast` |
-| `draft_itinerary` | Writes the day-by-day plan in Markdown |
+| `draft_itinerary` | Writes the day-by-day plan in Markdown, using feedback from failed checks on later drafts |
+| `evaluate` | Runs the evals, records the result as `trip_plan_quality` quality, and sends the graph back to `draft_itinerary` when a check fails |
 | `finalise` | Saves the plan to `out/<origin>-to-<destination>.md` |
 
 Every model call sends the node's task as the system message and the original request as the only human message.
@@ -64,6 +67,42 @@ Open the agent instance and choose the conversation view:
 - an agent run divider for the graph run (`langchain:agent`)
 - a card for each node in order (`langchain:node`), named by the node
 - under each node, its model calls (`langchain:llm`), tool calls and tool results (`langchain:tool`); calls made by the route and research agents appear under the node that ran them
-- the last model call's reply is the trip plan
+- the trip plan is the reply to the last `draft_itinerary` model call
+- a `trip_plan_quality` quality entry for each draft, with its score, attempt number and the result of every check
+
+## Evals
+
+The `evaluate` node runs these checks on every draft:
+
+| Check | Passes when |
+|---|---|
+| `endpoints_named` | The plan names the origin and the destination |
+| `day_count` | The plan has a `## Day N` section for each day asked for |
+| `stops_per_day` | Every day names at least one stop in bold |
+| `only_researched_stops` | Every place in bold is the origin or a researched stop |
+| `daily_driving_limit` | No day has more than 400 km of driving, using the route distances to each stop |
+| `grounded` | A model judges that every fact about a place is in the research notes |
+
+The score is the share of checks that passed, out of 100. A draft passes only when every check passes. After 3 drafts the graph saves the last draft whether or not it passed.
+
+The deterministic checks have unit tests. From the repository root:
+
+```bash
+mise run test packages/langchain/examples/trip_planner/test_evals.py
+```
+
+### Run the eval set
+
+`run_evals.py` runs three fixed routes, each as an agent instance with the `eval` purpose, and exits with status 1 when any final plan fails. From `packages/langchain/examples/trip_planner`:
+
+```bash
+uv run python run_evals.py
+```
+
+In Prefactor, these runs carry an eval label in the agent's list of instances, which sets them apart from live runs.
+
+### Add a hosted judge
+
+Prefactor can also run a judge of its own on every completed run. In the Prefactor app, add a judge to the trip planner agent and set it to run on completion. A judge reads the whole run record, including the conversation, and records a pass or fail with an explanation as a separate quality entry on the instance. The in-graph evals decide whether to revise a draft during the run; the hosted judge gives an independent review afterwards.
 
 Each span is created with an HTTP request before the step continues, which adds a little latency to every step.

@@ -1,7 +1,10 @@
 """The trip planner LangGraph graph.
 
 START -> parse_request -> plan_route -> research_stops -> draft_itinerary
-      -> finalise -> END
+      -> evaluate -> finalise -> END
+
+``evaluate`` sends the graph back to ``draft_itinerary`` with feedback when
+a check fails, up to ``MAX_ATTEMPTS`` drafts.
 
 Every model call sends the node's task as the system message and the user's
 original request as the only human message, so Prefactor's conversation view
@@ -13,8 +16,9 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from typing import Any, TypedDict
+from typing import Any, Literal, TypedDict
 
+from evals import QUALITY_SCHEMA_NAME, judge, quality_payload, run_checks
 from langchain.agents import create_agent
 from langchain.agents.structured_output import ToolStrategy
 from langchain_core.language_models import BaseChatModel
@@ -25,6 +29,7 @@ from pydantic import BaseModel, Field
 from tools import RESEARCH_TOOLS, ROUTE_TOOLS
 
 OUT_DIR = Path(__file__).parent / "out"
+MAX_ATTEMPTS = 3
 
 
 class TripRequest(BaseModel):
@@ -73,6 +78,9 @@ class TripState(TypedDict, total=False):
     stops: list[dict[str, Any]]
     research: dict[str, dict[str, Any]]
     draft: str
+    feedback: str
+    quality: dict[str, Any]
+    attempt: int
     output_path: str
 
 
@@ -126,6 +134,11 @@ Stops, in driving order:
 
 Research notes:
 {research}"""
+
+FEEDBACK_PROMPT = """
+
+The previous draft failed these checks. Fix them in this draft:
+{feedback}"""
 
 
 def _request_message(state: TripState) -> HumanMessage:
@@ -196,10 +209,34 @@ def build_graph(model: BaseChatModel) -> Any:
             stops=json.dumps(state["stops"], indent=2),
             research=json.dumps(state["research"], indent=2),
         )
+        if state.get("feedback"):
+            prompt += FEEDBACK_PROMPT.format(feedback=state["feedback"])
         response = await model.ainvoke(
             [SystemMessage(prompt), _request_message(state)], config
         )
         return {"draft": response.text}
+
+    async def evaluate(state: TripState, config: RunnableConfig) -> TripState:
+        checks = run_checks(dict(state))
+        checks.append(await judge(model, dict(state), _request_message(state), config))
+        attempt = state.get("attempt", 0) + 1
+        payload = quality_payload(checks, attempt)
+        instance = config["configurable"]["prefactor_instance"]
+        await instance.record_quality(QUALITY_SCHEMA_NAME, payload)
+        return {
+            "quality": payload,
+            "attempt": attempt,
+            "feedback": "\n".join(
+                f"- {check.name}: {check.detail}"
+                for check in checks
+                if not check.passed
+            ),
+        }
+
+    def after_evaluate(state: TripState) -> Literal["draft_itinerary", "finalise"]:
+        if state["quality"]["passed"] or state["attempt"] >= MAX_ATTEMPTS:
+            return "finalise"
+        return "draft_itinerary"
 
     async def finalise(state: TripState) -> TripState:
         request = state["request"]
@@ -219,11 +256,13 @@ def build_graph(model: BaseChatModel) -> Any:
     graph.add_node("plan_route", plan_route)
     graph.add_node("research_stops", research_stops)
     graph.add_node("draft_itinerary", draft_itinerary)
+    graph.add_node("evaluate", evaluate)
     graph.add_node("finalise", finalise)
     graph.add_edge(START, "parse_request")
     graph.add_edge("parse_request", "plan_route")
     graph.add_edge("plan_route", "research_stops")
     graph.add_edge("research_stops", "draft_itinerary")
-    graph.add_edge("draft_itinerary", "finalise")
+    graph.add_edge("draft_itinerary", "evaluate")
+    graph.add_conditional_edges("evaluate", after_evaluate)
     graph.add_edge("finalise", END)
     return graph.compile()
