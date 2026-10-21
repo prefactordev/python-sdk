@@ -136,6 +136,20 @@ def test_daily_driving_limit_fails_when_a_day_ends_off_the_route():
     )
 
 
+def test_daily_driving_limit_ignores_bold_in_day_headings():
+    draft = GOOD_DRAFT.replace(
+        "## Day 1: Melbourne to Horsham", "## Day 1: Melbourne to **Horsham**"
+    )
+
+    check = check_named(run_checks(make_state(draft)), "daily_driving_limit")
+
+    assert check == Check(
+        "daily_driving_limit",
+        False,
+        "Day 2 has 441 km of driving, over the 400 km limit.",
+    )
+
+
 @pytest.mark.parametrize(
     ("passed", "expected_score"),
     [((True, True, True, True), 100), ((True, False, True, False), 50)],

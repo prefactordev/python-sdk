@@ -18,7 +18,13 @@ import re
 from pathlib import Path
 from typing import Any, Literal, TypedDict
 
-from evals import QUALITY_SCHEMA_NAME, judge, quality_payload, run_checks
+from evals import (
+    DAILY_DRIVING_LIMIT_KM,
+    QUALITY_SCHEMA_NAME,
+    judge,
+    quality_payload,
+    run_checks,
+)
 from langchain.agents import create_agent
 from langchain.agents.structured_output import ToolStrategy
 from langchain_core.language_models import BaseChatModel
@@ -126,8 +132,10 @@ Then a few bullet points on what to see and do.
 Repeat the day section for every day, numbered from 1 to {days}. Each day \
 must end at one of the stops below, and the last day must end at \
 {destination}. Work out each day's driving from the stops' km_from_start \
-values. Put only stop names in **bold**, and mention at least one stop in \
-bold in each day. Use only the facts in the research notes.
+values. No day may have more than {limit_km} km of driving, so choose each \
+day's end stop to keep within it. Put only stop names in **bold**, and \
+mention at least one stop in bold in each day. Use only the facts in the \
+research notes.
 
 Stops, in driving order:
 {stops}
@@ -147,11 +155,13 @@ def _request_message(state: TripState) -> HumanMessage:
     return message
 
 
-def build_graph(model: BaseChatModel) -> Any:
+def build_graph(model: BaseChatModel, judge_model: BaseChatModel | None = None) -> Any:
     """Build and compile the trip planner graph.
 
     Args:
         model: The chat model used by every node.
+        judge_model: The chat model for the grounded check; defaults to
+            ``model``.
 
     Returns:
         The compiled graph.
@@ -206,6 +216,7 @@ def build_graph(model: BaseChatModel) -> Any:
             destination=request["destination"],
             days=request["days"],
             interests=", ".join(request["interests"]),
+            limit_km=DAILY_DRIVING_LIMIT_KM,
             stops=json.dumps(state["stops"], indent=2),
             research=json.dumps(state["research"], indent=2),
         )
@@ -218,7 +229,11 @@ def build_graph(model: BaseChatModel) -> Any:
 
     async def evaluate(state: TripState, config: RunnableConfig) -> TripState:
         checks = run_checks(dict(state))
-        checks.append(await judge(model, dict(state), _request_message(state), config))
+        checks.append(
+            await judge(
+                judge_model or model, dict(state), _request_message(state), config
+            )
+        )
         attempt = state.get("attempt", 0) + 1
         payload = quality_payload(checks, attempt)
         instance = config["configurable"]["prefactor_instance"]

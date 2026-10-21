@@ -52,15 +52,24 @@ QUALITY_SCHEMA: dict[str, Any] = {
 }
 
 JUDGE_PROMPT = """\
-You check a road trip plan against the research notes it was written from.
+You check a road trip plan against the route data and research notes it \
+was written from.
 
 Pass the plan only if every fact it states about a place (what is there, \
-what to do, the weather) appears in the research notes. Travel advice that \
-states no fact about a place is fine. If anything is not in the notes, fail \
-the plan and name the unsupported claims in the reason.
+what to do, the weather) appears in the research notes. Distances may be \
+worked out from the route and the stops' km_from_start values, and may be \
+rounded. Travel advice that states no fact about a place is fine. If \
+anything is not supported, fail the plan and name the unsupported claims in \
+the reason.
 
 Plan:
 {draft}
+
+Route:
+{route}
+
+Stops, in driving order:
+{stops}
 
 Research notes:
 {research}"""
@@ -95,8 +104,8 @@ def _days(draft: str) -> list[tuple[int, str, str, str]]:
         days.append(
             (
                 int(match.group(1)),
-                match.group(2).strip(),
-                match.group(3).strip(),
+                match.group(2).strip(" *"),
+                match.group(3).strip(" *"),
                 draft[match.start() : end],
             )
         )
@@ -208,11 +217,11 @@ async def judge(
     request: HumanMessage,
     config: RunnableConfig,
 ) -> Check:
-    """Ask a model whether the plan's claims are backed by the research notes.
+    """Ask a model whether the plan's claims are backed by the data gathered.
 
     Args:
         model: The judge model.
-        state: Graph state with ``draft`` and ``research``.
+        state: Graph state with ``draft``, ``route``, ``stops`` and ``research``.
         request: The user's original request message.
         config: The run config, so the call is traced under the current node.
 
@@ -220,12 +229,16 @@ async def judge(
         The ``grounded`` check.
     """
     prompt = JUDGE_PROMPT.format(
-        draft=state["draft"], research=json.dumps(state["research"], indent=2)
+        draft=state["draft"],
+        route=json.dumps(state["route"], indent=2),
+        stops=json.dumps(state["stops"], indent=2),
+        research=json.dumps(state["research"], indent=2),
     )
-    judgement = await model.with_structured_output(Judgement).ainvoke(
-        [SystemMessage(prompt), request], config
-    )
-    assert isinstance(judgement, Judgement)
+    judgement = await model.with_structured_output(
+        Judgement, method="function_calling"
+    ).ainvoke([SystemMessage(prompt), request], config)
+    if not isinstance(judgement, Judgement):
+        return Check("grounded", False, "The judge gave no verdict.")
     return Check("grounded", judgement.passed, judgement.reason)
 
 

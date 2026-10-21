@@ -20,7 +20,7 @@ import asyncio
 import hashlib
 import json
 import os
-from typing import Literal
+from typing import Any, Literal
 
 from evals import QUALITY_SCHEMA, QUALITY_SCHEMA_NAME
 from graph import TripState, build_graph
@@ -57,6 +57,17 @@ def schema_version_id(registry: SchemaRegistry) -> str:
     schemas = registry.to_agent_schema_version("trip-planner")
     digest = hashlib.sha1(json.dumps(schemas, sort_keys=True).encode()).hexdigest()[:8]
     return f"trip-planner-{digest}"
+
+
+def together_model(**kwargs: Any) -> ChatOpenAI:
+    """Create a chat model on Together AI's OpenAI-compatible API."""
+    return ChatOpenAI(
+        model=os.environ.get("TOGETHER_MODEL", DEFAULT_MODEL),
+        base_url=TOGETHER_API_URL,
+        api_key=SecretStr(os.environ["TOGETHER_API_KEY"]),
+        max_completion_tokens=8000,
+        **kwargs,
+    )
 
 
 async def run_trip(request: str, purpose: Purpose = "live") -> TripState:
@@ -96,13 +107,12 @@ async def run_trip(request: str, purpose: Purpose = "live") -> TripState:
         handler = PrefactorCallbackHandler(
             instance=instance, tool_span_types=tool_span_types
         )
-        model = ChatOpenAI(
-            model=os.environ.get("TOGETHER_MODEL", DEFAULT_MODEL),
-            base_url=TOGETHER_API_URL,
-            api_key=SecretStr(os.environ["TOGETHER_API_KEY"]),
-            max_completion_tokens=8000,
+        # Kimi K3 thinks by default. Thinking improves the plans but can use
+        # the judge's whole token budget before it gives a verdict.
+        graph = build_graph(
+            together_model(),
+            together_model(extra_body={"chat_template_kwargs": {"thinking": False}}),
         )
-        graph = build_graph(model)
         try:
             state = await graph.ainvoke(
                 {"messages": [HumanMessage(request)]},
