@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, TypedDict
 
 from langchain.agents import create_agent
+from langchain.agents.structured_output import ToolStrategy
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
@@ -144,7 +145,7 @@ def build_graph(model: BaseChatModel) -> Any:
     """
 
     async def parse_request(state: TripState, config: RunnableConfig) -> TripState:
-        parser = model.with_structured_output(TripRequest)
+        parser = model.with_structured_output(TripRequest, method="function_calling")
         request = await parser.ainvoke(
             [SystemMessage(PARSE_PROMPT), _request_message(state)], config
         )
@@ -156,7 +157,7 @@ def build_graph(model: BaseChatModel) -> Any:
             model=model,
             tools=ROUTE_TOOLS,
             system_prompt=ROUTE_PROMPT.format(**state["request"]),
-            response_format=RoutePlan,
+            response_format=ToolStrategy(RoutePlan),
         )
         result = await agent.ainvoke({"messages": [_request_message(state)]}, config)
         plan: RoutePlan = result["structured_response"]
@@ -176,7 +177,7 @@ def build_graph(model: BaseChatModel) -> Any:
                 model=model,
                 tools=RESEARCH_TOOLS,
                 system_prompt=RESEARCH_PROMPT.format(interests=interests, **stop),
-                response_format=StopResearch,
+                response_format=ToolStrategy(StopResearch),
             )
             result = await agent.ainvoke(
                 {"messages": [_request_message(state)]}, config

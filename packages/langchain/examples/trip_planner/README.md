@@ -39,10 +39,12 @@ cp packages/langchain/examples/trip_planner/.env.example .env  # then fill it in
 
 | Variable | Meaning |
 |---|---|
-| `ANTHROPIC_API_KEY` | Anthropic API key |
+| `TOGETHER_API_KEY` | Together AI API key |
+| `TOGETHER_MODEL` | Together AI model; defaults to `moonshotai/Kimi-K3`; any model you use must support tool calling |
 | `PREFACTOR_API_URL` | Prefactor API URL, for example `http://localhost:4000` for a local server |
 | `PREFACTOR_API_TOKEN` | Prefactor API token |
 | `PREFACTOR_AGENT_ID` | Prefactor agent ID; omit it when the token is scoped to an agent deployment |
+| `PREFACTOR_ENVIRONMENT_ID` | Prefactor environment ID; needed only for the first run of an agent that has no deployments |
 
 ## Run
 

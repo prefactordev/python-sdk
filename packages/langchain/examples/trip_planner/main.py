@@ -4,10 +4,13 @@ Usage:
     python main.py "Plan a 4-day road trip from Melbourne to Adelaide."
 
 Environment:
-    ANTHROPIC_API_KEY    Anthropic API key
+    TOGETHER_API_KEY     Together AI API key
+    TOGETHER_MODEL       Together AI model (optional)
     PREFACTOR_API_URL    Prefactor API URL
     PREFACTOR_API_TOKEN  Prefactor API token
     PREFACTOR_AGENT_ID   Prefactor agent ID (omit for deployment-scoped tokens)
+    PREFACTOR_ENVIRONMENT_ID  Prefactor environment ID (needed for an agent
+                         with no deployments yet)
 """
 
 from __future__ import annotations
@@ -20,13 +23,15 @@ import os
 from typing import Literal
 
 from graph import TripState, build_graph
-from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage
+from langchain_openai import ChatOpenAI
 from prefactor_core import PrefactorCoreConfig, SchemaRegistry
 from prefactor_http.config import HttpClientConfig
 from prefactor_langchain import PrefactorCallbackHandler, register_langchain_schemas
+from pydantic import SecretStr
 
-MODEL = "claude-sonnet-5-5"
+TOGETHER_API_URL = "https://api.together.xyz/v1"
+DEFAULT_MODEL = "moonshotai/Kimi-K3"
 AGENT_NAME = "Trip planner"
 
 Purpose = Literal["live", "smoke_test", "eval"]
@@ -73,6 +78,7 @@ async def run_trip(request: str, purpose: Purpose = "live") -> TripState:
     try:
         instance = await client.create_agent_instance(
             agent_id=os.environ.get("PREFACTOR_AGENT_ID"),
+            environment_id=os.environ.get("PREFACTOR_ENVIRONMENT_ID"),
             agent_version={"name": AGENT_NAME, "external_identifier": version_id},
             external_schema_version_id=version_id,
             purpose=purpose,
@@ -82,7 +88,13 @@ async def run_trip(request: str, purpose: Purpose = "live") -> TripState:
         handler = PrefactorCallbackHandler(
             instance=instance, tool_span_types=tool_span_types
         )
-        graph = build_graph(ChatAnthropic(model=MODEL, max_tokens=8000))
+        model = ChatOpenAI(
+            model=os.environ.get("TOGETHER_MODEL", DEFAULT_MODEL),
+            base_url=TOGETHER_API_URL,
+            api_key=SecretStr(os.environ["TOGETHER_API_KEY"]),
+            max_completion_tokens=8000,
+        )
+        graph = build_graph(model)
         try:
             state = await graph.ainvoke(
                 {"messages": [HumanMessage(request)]},
