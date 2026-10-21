@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from prefactor_langchain._version import __version__
+from prefactor_langchain.callback_handler import PrefactorCallbackHandler
 from prefactor_langchain.metadata_extractor import (
     extract_error_info,
     extract_token_usage,
@@ -15,6 +16,7 @@ from prefactor_langchain.schemas import (
     DEFAULT_LANGCHAIN_AGENT_SCHEMA,
     LANGCHAIN_AGENT_SCHEMA,
     LANGCHAIN_LLM_SCHEMA,
+    LANGCHAIN_NODE_SCHEMA,
     LANGCHAIN_TOOL_SCHEMA,
     LangChainToolSchemaConfig,
     compile_langchain_agent_schema,
@@ -32,6 +34,8 @@ from prefactor_langchain.spans import (
 __all__ = [
     # Middleware
     "PrefactorMiddleware",
+    # Callback handler
+    "PrefactorCallbackHandler",
     "LANGCHAIN_SDK_HEADER_ENTRY",
     # Extractors
     "extract_token_usage",
@@ -43,6 +47,7 @@ __all__ = [
     "DEFAULT_LANGCHAIN_AGENT_SCHEMA",
     "LANGCHAIN_AGENT_SCHEMA",
     "LANGCHAIN_LLM_SCHEMA",
+    "LANGCHAIN_NODE_SCHEMA",
     "LANGCHAIN_TOOL_SCHEMA",
     # Spans
     "LangChainSpan",

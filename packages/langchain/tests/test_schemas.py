@@ -255,3 +255,31 @@ class TestRegisterLangChainSchemas:
         assert registry.to_agent_schema_version("schema-v1") == {
             "external_identifier": "schema-v1"
         }
+
+    def test_registers_langgraph_node_span_schema(self):
+        """The langchain:node span type is registered with a node template."""
+        registry = SchemaRegistry()
+
+        register_langchain_schemas(registry)
+
+        schema_version = registry.to_agent_schema_version("schema-v1")
+        node_schema = next(
+            entry
+            for entry in schema_version["span_type_schemas"]
+            if entry["name"] == "langchain:node"
+        )
+        assert node_schema["template"] == "{{node}}"
+        assert node_schema["params_schema"]["properties"]["node"] == {
+            "type": "string",
+            "description": "Name of the graph node",
+        }
+        assert node_schema["result_schema"]["properties"]["updated_keys"] == {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "State keys the node updated",
+        }
+
+    def test_default_agent_schema_includes_langgraph_node(self):
+        """The default agent schema covers langchain:node spans."""
+        assert "langchain:node" in DEFAULT_LANGCHAIN_AGENT_SCHEMA["span_schemas"]
+        assert "langchain:node" in DEFAULT_LANGCHAIN_AGENT_SCHEMA["span_result_schemas"]

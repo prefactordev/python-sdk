@@ -234,15 +234,56 @@ LANGCHAIN_TOOL_RESULT_SCHEMA: dict[str, Any] = {
     },
 }
 
+LANGCHAIN_NODE_PARAMS_SCHEMA: dict[str, Any] = {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+        "node": {
+            "type": "string",
+            "description": "Name of the graph node",
+        },
+        "step": {
+            "type": "integer",
+            "description": "Graph step the node ran in",
+        },
+    },
+}
+
+LANGCHAIN_NODE_RESULT_SCHEMA: dict[str, Any] = {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+        "status": {
+            "type": "string",
+            "enum": ["completed", "error"],
+        },
+        "updated_keys": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "State keys the node updated",
+        },
+        "error": {
+            "type": "object",
+            "properties": {
+                "error_type": {"type": "string"},
+                "message": {"type": "string"},
+                "stacktrace": {"type": "string"},
+            },
+        },
+    },
+}
+
 DEFAULT_LANGCHAIN_AGENT_SCHEMA: dict[str, Any] = {
     "external_identifier": "langchain-schema",
     "span_schemas": {
         "langchain:agent": deepcopy(LANGCHAIN_AGENT_PARAMS_SCHEMA),
+        "langchain:node": deepcopy(LANGCHAIN_NODE_PARAMS_SCHEMA),
         "langchain:llm": deepcopy(LANGCHAIN_LLM_PARAMS_SCHEMA),
         "langchain:tool": deepcopy(LANGCHAIN_TOOL_PARAMS_SCHEMA),
     },
     "span_result_schemas": {
         "langchain:agent": deepcopy(LANGCHAIN_AGENT_RESULT_SCHEMA),
+        "langchain:node": deepcopy(LANGCHAIN_NODE_RESULT_SCHEMA),
         "langchain:llm": deepcopy(LANGCHAIN_LLM_RESULT_SCHEMA),
         "langchain:tool": deepcopy(LANGCHAIN_TOOL_RESULT_SCHEMA),
     },
@@ -276,6 +317,7 @@ ToolSchemaMapping = Mapping[str, LangChainToolSchemaConfig | Mapping[str, Any]]
 LANGCHAIN_AGENT_SCHEMA = LANGCHAIN_AGENT_PARAMS_SCHEMA
 LANGCHAIN_LLM_SCHEMA = LANGCHAIN_LLM_PARAMS_SCHEMA
 LANGCHAIN_TOOL_SCHEMA = LANGCHAIN_TOOL_PARAMS_SCHEMA
+LANGCHAIN_NODE_SCHEMA = LANGCHAIN_NODE_PARAMS_SCHEMA
 
 
 def compile_langchain_agent_schema(
@@ -333,7 +375,7 @@ def register_langchain_schemas(
     """Register all LangChain span schemas with a schema registry.
 
     Registers the built-in schemas for LangChain-specific span types
-    (agent, llm, tool) using the full ``span_type_schemas`` form, which
+    (agent, node, llm, tool) using the full ``span_type_schemas`` form, which
     includes params schemas, result schemas, titles, and descriptions. When
     tool schemas are configured, this also registers per-tool span types.
 
@@ -354,7 +396,8 @@ def register_langchain_schemas(
         registry = SchemaRegistry()
         register_langchain_schemas(registry)
 
-        # Now the registry has langchain:agent, langchain:llm, langchain:tool
+        # Now the registry has langchain:agent, langchain:node, langchain:llm,
+        # and langchain:tool
         assert registry.has_schema("langchain:llm")
     """
     compiled_schema, tool_span_types = compile_langchain_agent_schema(
@@ -369,6 +412,15 @@ def register_langchain_schemas(
         result_schema=LANGCHAIN_AGENT_RESULT_SCHEMA,
         title="LangChain Agent",
         description="A LangChain agent execution span",
+    )
+    _register_type_if_missing(
+        registry,
+        name="langchain:node",
+        params_schema=LANGCHAIN_NODE_PARAMS_SCHEMA,
+        result_schema=LANGCHAIN_NODE_RESULT_SCHEMA,
+        title="LangGraph Node",
+        description="A LangGraph graph node execution span",
+        template="{{node}}",
     )
     _register_type_if_missing(
         registry,
@@ -675,12 +727,15 @@ __all__ = [
     "LANGCHAIN_AGENT_RESULT_SCHEMA",
     "LANGCHAIN_LLM_PARAMS_SCHEMA",
     "LANGCHAIN_LLM_RESULT_SCHEMA",
+    "LANGCHAIN_NODE_PARAMS_SCHEMA",
+    "LANGCHAIN_NODE_RESULT_SCHEMA",
     "LANGCHAIN_TOOL_PARAMS_SCHEMA",
     "LANGCHAIN_TOOL_RESULT_SCHEMA",
     "LangChainToolSchemaConfig",
     # Legacy aliases
     "LANGCHAIN_AGENT_SCHEMA",
     "LANGCHAIN_LLM_SCHEMA",
+    "LANGCHAIN_NODE_SCHEMA",
     "LANGCHAIN_TOOL_SCHEMA",
     "compile_langchain_agent_schema",
     "register_langchain_schemas",

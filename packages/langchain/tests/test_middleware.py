@@ -491,6 +491,7 @@ class TestPrefactorMiddleware:
         ]
         assert registered_names == [
             "langchain:agent",
+            "langchain:node",
             "langchain:llm",
             "langchain:tool",
         ]
