@@ -246,6 +246,22 @@ class TestPayloads:
             "outputs": {"messages": [{"role": "ai", "content": "hi"}]},
         }
 
+    async def test_llm_span_records_tool_calls(self):
+        instance = RecordingInstance()
+
+        await run_graph(PrefactorCallbackHandler(instance=instance))
+
+        llm = spans_named(instance, "langchain:llm")[1]
+        assert llm["result"]["outputs"] == {
+            "messages": [
+                {
+                    "role": "ai",
+                    "content": "",
+                    "tool_calls": [{"name": "add", "args": {"a": 1, "b": 2}}],
+                }
+            ]
+        }
+
     async def test_tool_span_payloads(self):
         instance = RecordingInstance()
 

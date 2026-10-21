@@ -44,6 +44,12 @@ def message_to_dict(message: Any) -> dict[str, Any]:
             result["tool_calls"] = [
                 {"name": t.get("name"), "args": t.get("input", {})} for t in tool_uses
             ]
+    # OpenAI-style providers return tool calls on the message, not in content
+    tool_calls = getattr(message, "tool_calls", None)
+    if isinstance(tool_calls, list) and tool_calls and "tool_calls" not in result:
+        result["tool_calls"] = [
+            {"name": t.get("name"), "args": t.get("args", {})} for t in tool_calls
+        ]
     return result
 
 
