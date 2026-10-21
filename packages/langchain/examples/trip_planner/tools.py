@@ -127,6 +127,24 @@ SETTLEMENT_TYPES = {
     "municipality",
 }
 
+# Address fields that name a settlement, from largest to smallest.
+SETTLEMENT_ADDRESS_KEYS = ("city", "town", "village", "hamlet")
+
+
+async def _settlement_near(lat: float, lon: float) -> str | None:
+    """Name the settlement at a point, or None when there is none nearby."""
+    params = {"lat": lat, "lon": lon, "format": "json"}
+    result = await _get_nominatim("/reverse", {**params, "zoom": 12})
+    if result.get("addresstype") in SETTLEMENT_TYPES and result.get("name"):
+        return result["name"]
+    # On rural roads zoom 12 names the county; a closer look finds small towns
+    address = (await _get_nominatim("/reverse", {**params, "zoom": 14})).get(
+        "address", {}
+    )
+    return next(
+        (address[key] for key in SETTLEMENT_ADDRESS_KEYS if address.get(key)), None
+    )
+
 
 @tool
 async def geocode(place: str) -> dict[str, Any]:
@@ -188,12 +206,8 @@ async def find_towns_along_route(
     towns: list[dict[str, Any]] = []
     seen: set[str] = set()
     for point in _sample_route(route, every_km):
-        result = await _get_nominatim(
-            "/reverse",
-            {"lat": point["lat"], "lon": point["lon"], "format": "json", "zoom": 12},
-        )
-        name = result.get("name")
-        if result.get("addresstype") in SETTLEMENT_TYPES and name and name not in seen:
+        name = await _settlement_near(point["lat"], point["lon"])
+        if name and name not in seen:
             seen.add(name)
             towns.append({"name": name, **point})
     return towns
