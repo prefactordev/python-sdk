@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import functools
 import logging
 import sys
 import traceback
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any
@@ -38,6 +39,33 @@ class _OpenSpan:
     context: Any
     schema_name: str
     data: Any = None
+
+
+def _guarded(
+    callback: Callable[..., Awaitable[None]],
+) -> Callable[..., Awaitable[None]]:
+    """Log a callback's errors instead of letting them stop the graph.
+
+    Termination and latched telemetry failures still propagate. When the
+    callback leaves its run's span open, the span is closed as failed.
+    """
+
+    name = getattr(callback, "__name__", "callback")
+
+    @functools.wraps(callback)
+    async def guarded(
+        self: PrefactorCallbackHandler, *args: Any, run_id: UUID, **kwargs: Any
+    ) -> None:
+        try:
+            await callback(self, *args, run_id=run_id, **kwargs)
+        except PrefactorTerminatedError:
+            raise
+        except Exception as e:
+            _raise_if_telemetry_failure(e)
+            logger.error("Error in %s: %s", name, e, exc_info=True)
+            await self._close_after_error(run_id, e)
+
+    return guarded
 
 
 class PrefactorCallbackHandler(AsyncCallbackHandler):
@@ -83,7 +111,7 @@ class PrefactorCallbackHandler(AsyncCallbackHandler):
     """
 
     # Lets the termination check stop the graph. Every other error is caught
-    # and logged inside the callbacks.
+    # and logged by ``_guarded``.
     raise_error = True
 
     @staticmethod
@@ -118,6 +146,7 @@ class PrefactorCallbackHandler(AsyncCallbackHandler):
 
     # Chains: graph runs and graph nodes
 
+    @_guarded
     async def on_chain_start(
         self,
         serialized: dict[str, Any] | None,
@@ -154,6 +183,7 @@ class PrefactorCallbackHandler(AsyncCallbackHandler):
                 {"node": name, "step": metadata.get("langgraph_step")},
             )
 
+    @_guarded
     async def on_chain_end(
         self,
         outputs: Any,
@@ -177,6 +207,7 @@ class PrefactorCallbackHandler(AsyncCallbackHandler):
             result = {"status": "completed"}
         await self._finish_span(run_id, result, failed=False)
 
+    @_guarded
     async def on_chain_error(
         self,
         error: BaseException,
@@ -200,6 +231,7 @@ class PrefactorCallbackHandler(AsyncCallbackHandler):
 
     # Chat models
 
+    @_guarded
     async def on_chat_model_start(
         self,
         serialized: dict[str, Any],
@@ -233,6 +265,7 @@ class PrefactorCallbackHandler(AsyncCallbackHandler):
             run_id, "langchain:llm", payloads.build_llm_params(span_data), span_data
         )
 
+    @_guarded
     async def on_llm_end(
         self,
         response: LLMResult,
@@ -263,6 +296,7 @@ class PrefactorCallbackHandler(AsyncCallbackHandler):
             run_id, payloads.build_llm_result(span_data), failed=False
         )
 
+    @_guarded
     async def on_llm_error(
         self,
         error: BaseException,
@@ -276,6 +310,7 @@ class PrefactorCallbackHandler(AsyncCallbackHandler):
 
     # Tools
 
+    @_guarded
     async def on_tool_start(
         self,
         serialized: dict[str, Any],
@@ -306,6 +341,7 @@ class PrefactorCallbackHandler(AsyncCallbackHandler):
             span_data,
         )
 
+    @_guarded
     async def on_tool_end(
         self,
         output: Any,
@@ -328,6 +364,7 @@ class PrefactorCallbackHandler(AsyncCallbackHandler):
             run_id, payloads.build_tool_result(open_span.data), failed=False
         )
 
+    @_guarded
     async def on_tool_error(
         self,
         error: BaseException,
@@ -416,6 +453,16 @@ class PrefactorCallbackHandler(AsyncCallbackHandler):
         open_span.data.status = "failed"
         open_span.data.error = _error_info(error)
         await self._finish_span(run_id, build_result(open_span.data), failed=True)
+
+    async def _close_after_error(self, run_id: UUID, error: Exception) -> None:
+        """Close the run's span as failed after its callback raised."""
+        open_span = self._open_spans.get(run_id)
+        if open_span is None:
+            return
+        result: dict[str, Any] = {"error": _error_info(error).to_dict()}
+        if open_span.schema_name == "langchain:node":
+            result["status"] = "error"
+        await self._finish_span(run_id, result, failed=True)
 
     def _throw_if_terminated(self) -> None:
         monitor = getattr(self._instance._client, "_termination_monitor", None)
