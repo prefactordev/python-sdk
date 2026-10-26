@@ -109,6 +109,16 @@ def test_lists_attractions_with_what_they_are_nearest_first():
     ]
 
 
+def test_samples_every_interval_a_long_route_segment_crosses():
+    # One straight segment of about 250 km going north.
+    route = {"geometry": {"coordinates": [[145.0, -38.0], [145.0, -35.75]]}}
+
+    samples = tools._sample_route(route, every_km=80)
+
+    assert [sample["km_from_start"] for sample in samples] == [80, 160, 240]
+    assert samples[0]["lat"] < samples[1]["lat"] < samples[2]["lat"] < -35.75
+
+
 def respond_with(status: int, location: str | None = None) -> httpx.MockTransport:
     def handle(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/moved":

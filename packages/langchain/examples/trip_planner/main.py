@@ -110,14 +110,15 @@ async def run_trip(request: str, purpose: Purpose = "live") -> TripState:
         )
         await instance.start()
 
-        handler = PrefactorCallbackHandler(
-            instance=instance, tool_span_types=tool_span_types
-        )
-        graph = build_graph(
-            together_model(os.environ.get("TOGETHER_MODEL", DEFAULT_MODEL)),
-            PrefactorJudges(api_url, api_token),
-        )
+        # Setup failures, such as a missing API key, also fail the instance.
         try:
+            handler = PrefactorCallbackHandler(
+                instance=instance, tool_span_types=tool_span_types
+            )
+            graph = build_graph(
+                together_model(os.environ.get("TOGETHER_MODEL", DEFAULT_MODEL)),
+                PrefactorJudges(api_url, api_token),
+            )
             state = await graph.ainvoke(
                 {"messages": [HumanMessage(request)]},
                 config={

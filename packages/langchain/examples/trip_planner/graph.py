@@ -21,7 +21,7 @@ import json
 import math
 import re
 from collections.abc import Awaitable, Callable
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal, TypedDict
 
@@ -38,7 +38,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, START, StateGraph
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from tools import RESEARCH_TOOLS, ROUTE_TOOLS, find_accommodation, weather_forecast
 
 OUT_DIR = Path(__file__).parent / "out"
@@ -79,8 +79,9 @@ class RoutePlan(BaseModel):
     distance_km: float
     duration_hours: float
     stops: list[Stop] = Field(
+        max_length=6,
         description="2 to 6 stops in driving order, ending at the destination. "
-        "Empty when there is a problem."
+        "Empty when there is a problem.",
     )
     problem: str | None = Field(
         default=None,
@@ -88,6 +89,12 @@ class RoutePlan(BaseModel):
         "found, geocode found a different place from the one the user meant, "
         "or there is no driving route. Otherwise null.",
     )
+
+    @model_validator(mode="after")
+    def _stops_unless_problem(self) -> RoutePlan:
+        if self.problem is None and len(self.stops) < 2:
+            raise ValueError("Choose at least 2 stops, or explain the problem")
+        return self
 
 
 class StopResearch(BaseModel):
@@ -416,7 +423,8 @@ def build_graph(model: BaseChatModel, judges: Judges) -> Any:
             f"{request['origin']} to {request['destination']}".lower(),
         ).strip("-")
         OUT_DIR.mkdir(exist_ok=True)
-        path = OUT_DIR / f"{slug}.md"
+        # A timestamp keeps plans from separate runs in separate files.
+        path = OUT_DIR / f"{slug}-{datetime.now():%Y%m%d-%H%M%S}.md"
         path.write_text(state["draft"])
         return {"output_path": str(path)}
 

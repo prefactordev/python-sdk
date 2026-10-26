@@ -157,22 +157,28 @@ async def _route(
 
 
 def _sample_route(route: dict[str, Any], every_km: float) -> list[dict[str, float]]:
-    """Return points along the route roughly every ``every_km`` kilometres."""
+    """Return points along the route every ``every_km`` kilometres.
+
+    A long straight segment can cross several sample distances, so each point
+    is interpolated along the segment that crosses it.
+    """
     points = [(lat, lon) for lon, lat in route["geometry"]["coordinates"]]
     samples: list[dict[str, float]] = []
     travelled = 0.0
     next_sample = every_km
     for previous, current in zip(points, points[1:]):
-        travelled += _haversine_km(previous, current)
-        if travelled >= next_sample:
+        length = _haversine_km(previous, current)
+        while length > 0 and travelled + length >= next_sample:
+            share = (next_sample - travelled) / length
             samples.append(
                 {
-                    "lat": current[0],
-                    "lon": current[1],
-                    "km_from_start": round(travelled),
+                    "lat": previous[0] + share * (current[0] - previous[0]),
+                    "lon": previous[1] + share * (current[1] - previous[1]),
+                    "km_from_start": round(next_sample),
                 }
             )
             next_sample += every_km
+        travelled += length
     return samples
 
 
