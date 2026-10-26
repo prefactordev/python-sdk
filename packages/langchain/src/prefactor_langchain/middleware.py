@@ -25,6 +25,7 @@ from prefactor_http.config import HttpClientConfig
 if TYPE_CHECKING:
     pass
 
+from . import payloads
 from ._version import PACKAGE_NAME as LANGCHAIN_PACKAGE_NAME
 from ._version import PACKAGE_VERSION as LANGCHAIN_PACKAGE_VERSION
 from .metadata_extractor import extract_token_usage
@@ -553,32 +554,7 @@ class PrefactorMiddleware(AgentMiddleware):
 
     def _message_to_dict(self, message: Any) -> dict[str, Any]:
         """Convert a LangChain message to a compact dict."""
-        role = getattr(message, "type", "unknown")
-        content = getattr(message, "content", "")
-        result: dict[str, Any] = {"role": role}
-        # content may be a string or a list of content blocks
-        if isinstance(content, str):
-            result["content"] = content
-        elif isinstance(content, list):
-            # Extract text blocks; summarise tool-use blocks
-            texts = [
-                b.get("text", "") if isinstance(b, dict) else str(b)
-                for b in content
-                if not isinstance(b, dict) or b.get("type") != "tool_use"
-            ]
-            tool_uses = [
-                b
-                for b in content
-                if isinstance(b, dict) and b.get("type") == "tool_use"
-            ]
-            if texts:
-                result["content"] = " ".join(t for t in texts if t)
-            if tool_uses:
-                result["tool_calls"] = [
-                    {"name": t.get("name"), "args": t.get("input", {})}
-                    for t in tool_uses
-                ]
-        return result
+        return payloads.message_to_dict(message)
 
     def _extract_model_inputs(self, request: Any) -> dict[str, Any]:
         """Extract inputs from ModelRequest."""
@@ -654,65 +630,27 @@ class PrefactorMiddleware(AgentMiddleware):
 
     def _build_llm_params(self, span_data: Any) -> dict[str, Any]:
         """Build the payload (params) dict for an LLM span."""
-        params: dict[str, Any] = {}
-        if span_data.model_name:
-            params["model_name"] = span_data.model_name
-        if span_data.provider:
-            params["provider"] = span_data.provider
-        if span_data.inputs:
-            params["inputs"] = span_data.inputs
-        if span_data.temperature is not None:
-            params["temperature"] = span_data.temperature
-        return params
+        return payloads.build_llm_params(span_data)
 
     def _build_llm_result(self, span_data: Any) -> dict[str, Any]:
         """Build the result_payload dict for an LLM span."""
-        result: dict[str, Any] = {}
-        if span_data.outputs:
-            result["outputs"] = span_data.outputs
-        if span_data.token_usage:
-            result["token_usage"] = span_data.token_usage.to_dict()
-        if span_data.error:
-            result["error"] = span_data.error.to_dict()
-        return result
+        return payloads.build_llm_result(span_data)
 
     def _build_tool_params(self, span_data: Any, schema_name: str) -> dict[str, Any]:
         """Build the payload (params) dict for a tool span."""
-        params: dict[str, Any] = {}
-        if span_data.tool_name:
-            params["tool_name"] = span_data.tool_name
-        if schema_name != "langchain:tool":
-            params["inputs"] = span_data.arguments
-        elif span_data.inputs:
-            params["inputs"] = span_data.inputs
-        return params
+        return payloads.build_tool_params(span_data, schema_name)
 
     def _build_tool_result(self, span_data: Any) -> dict[str, Any]:
         """Build the result_payload dict for a tool span."""
-        result: dict[str, Any] = {}
-        if span_data.outputs:
-            result["outputs"] = span_data.outputs
-        if span_data.error:
-            result["error"] = span_data.error.to_dict()
-        return result
+        return payloads.build_tool_result(span_data)
 
     def _build_agent_params(self, span_data: Any) -> dict[str, Any]:
         """Build the payload (params) dict for an agent span."""
-        params: dict[str, Any] = {}
-        if span_data.inputs:
-            params["inputs"] = span_data.inputs
-        if span_data.agent_name:
-            params["agent_name"] = span_data.agent_name
-        return params
+        return payloads.build_agent_params(span_data)
 
     def _build_agent_result(self, span_data: Any) -> dict[str, Any]:
         """Build the result_payload dict for an agent span."""
-        result: dict[str, Any] = {}
-        if span_data.outputs:
-            result["outputs"] = span_data.outputs
-        if span_data.error:
-            result["error"] = span_data.error.to_dict()
-        return result
+        return payloads.build_agent_result(span_data)
 
     def set_parent_span(self, span_id: str | None) -> None:
         """Set the parent span ID for the next agent invocation (sync path only).

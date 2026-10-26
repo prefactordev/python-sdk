@@ -168,11 +168,49 @@ already-registered schema version is not mutated, so you must register matching
 tool schemas before creating the instance if you want those per-tool span types
 to appear in the backend schema version.
 
+### LangGraph graphs
+
+The middleware only sees agents built with `create_agent`. To trace a custom LangGraph `StateGraph`, pass `PrefactorCallbackHandler` in the run config instead. The handler records a `langchain:agent` span for the graph run, a `langchain:node` span for each node, and `langchain:llm` and `langchain:tool` spans for the model and tool calls inside each node. Model and tool calls made by a `create_agent` subagent inside a node appear under that node.
+
+```python
+from prefactor_core import PrefactorCoreConfig, SchemaRegistry
+from prefactor_http.config import HttpClientConfig
+from prefactor_langchain import PrefactorCallbackHandler, register_langchain_schemas
+
+registry = SchemaRegistry()
+tool_span_types = register_langchain_schemas(registry)
+
+config = PrefactorCoreConfig(
+    http_config=HttpClientConfig(
+        api_url="https://app.prefactorai.com", api_token="your-api-token"
+    ),
+    schema_registry=registry,
+)
+client = PrefactorCallbackHandler.create_client(config)
+await client.initialize()
+
+instance = await client.create_agent_instance(
+    agent_id="my-agent",
+    agent_version={"name": "My Graph", "external_identifier": "my-graph-v1"},
+)
+await instance.start()
+
+handler = PrefactorCallbackHandler(instance=instance, tool_span_types=tool_span_types)
+result = await graph.ainvoke(state, config={"callbacks": [handler]})
+
+# You own the instance and client; clean them up yourself
+await instance.finish()
+await client.close()
+```
+
+Do not add `PrefactorMiddleware` to agents that run inside a traced graph; each model and tool call would be recorded twice. Each span is created with an HTTP request before the node, model or tool call continues, which adds a little latency to every step.
+
 ## Span Types
 
 This package creates LangChain-specific spans with the `langchain:*` namespace:
 
-- **`langchain:agent`** - Agent executions and chain runs
+- **`langchain:agent`** - Agent executions and LangGraph graph runs
+- **`langchain:node`** - LangGraph node executions (callback handler only)
 - **`langchain:llm`** - LLM calls with model metadata (name, provider, token usage)
 - **`langchain:tool`** - Tool executions including retrievers
 
