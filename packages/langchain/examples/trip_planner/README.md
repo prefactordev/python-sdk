@@ -24,7 +24,7 @@ flowchart LR
 | `plan_route` | An agent with `geocode`, `get_route` and `find_towns_along_route` that chooses 2 to 6 stops |
 | `research_stops` | Runs a research agent for each stop in turn, with `wikipedia_summary`, `nearby_attractions` and `weather_forecast` |
 | `draft_itinerary` | Writes the day-by-day plan in Markdown |
-| `finalise` | Saves the plan to `out/<origin>-to-<destination>.md` |
+| `finalise` | Saves the plan to `out/<origin>-to-<destination>-<timestamp>.md` |
 
 Every model call sends the node's task as the system message and the original request as the only human message.
 
@@ -52,6 +52,12 @@ From `packages/langchain/examples/trip_planner`:
 
 ```bash
 uv run python main.py "Plan a 4-day road trip from Melbourne to Adelaide. I like wine and the coast."
+```
+
+mise loads `.env` from the repository root. Without mise, pass the file to uv:
+
+```bash
+uv run --env-file ../../../../.env python main.py "Plan a 4-day road trip from Melbourne to Adelaide."
 ```
 
 A run takes a few minutes, mostly in route lookups and research.

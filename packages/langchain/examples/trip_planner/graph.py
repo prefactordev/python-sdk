@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import datetime
 from pathlib import Path
 from typing import Any, TypedDict
 
@@ -51,7 +52,9 @@ class RoutePlan(BaseModel):
     distance_km: float
     duration_hours: float
     stops: list[Stop] = Field(
-        description="2 to 6 stops in driving order, ending at the destination"
+        min_length=2,
+        max_length=6,
+        description="2 to 6 stops in driving order, ending at the destination",
     )
 
 
@@ -209,7 +212,8 @@ def build_graph(model: BaseChatModel) -> Any:
             f"{request['origin']} to {request['destination']}".lower(),
         ).strip("-")
         OUT_DIR.mkdir(exist_ok=True)
-        path = OUT_DIR / f"{slug}.md"
+        # A timestamp keeps plans from separate runs in separate files.
+        path = OUT_DIR / f"{slug}-{datetime.now():%Y%m%d-%H%M%S}.md"
         path.write_text(state["draft"])
         return {"output_path": str(path)}
 

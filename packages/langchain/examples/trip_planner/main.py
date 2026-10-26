@@ -85,17 +85,18 @@ async def run_trip(request: str, purpose: Purpose = "live") -> TripState:
         )
         await instance.start()
 
-        handler = PrefactorCallbackHandler(
-            instance=instance, tool_span_types=tool_span_types
-        )
-        model = ChatOpenAI(
-            model=os.environ.get("TOGETHER_MODEL", DEFAULT_MODEL),
-            base_url=TOGETHER_API_URL,
-            api_key=SecretStr(os.environ["TOGETHER_API_KEY"]),
-            max_completion_tokens=8000,
-        )
-        graph = build_graph(model)
+        # Setup failures, such as a missing API key, also fail the instance.
         try:
+            handler = PrefactorCallbackHandler(
+                instance=instance, tool_span_types=tool_span_types
+            )
+            model = ChatOpenAI(
+                model=os.environ.get("TOGETHER_MODEL", DEFAULT_MODEL),
+                base_url=TOGETHER_API_URL,
+                api_key=SecretStr(os.environ["TOGETHER_API_KEY"]),
+                max_completion_tokens=8000,
+            )
+            graph = build_graph(model)
             state = await graph.ainvoke(
                 {"messages": [HumanMessage(request)]},
                 config={"callbacks": [handler]},
