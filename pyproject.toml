@@ -22,6 +22,7 @@ dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
     "aioresponses>=0.7.6",
+    "rich>=13.0.0",
     "ty==0.0.66",
     "ruff>=0.8.0",
     "prefactor-core",

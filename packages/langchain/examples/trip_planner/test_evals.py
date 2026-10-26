@@ -1,4 +1,4 @@
-"""Tests for the trip planner's deterministic checks.
+"""Tests for running the trip plan evals through Prefactor judges.
 
 Run from the repository root:
     mise run test packages/langchain/examples/trip_planner/test_evals.py
@@ -6,147 +6,142 @@ Run from the repository root:
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
+import httpx
 import pytest
-from evals import Check, quality_payload, run_checks
+from evals import Check, PrefactorJudges, quality_payload
 
-GOOD_DRAFT = """\
-# Melbourne to Adelaide
-
-Two days of wineries and coast.
-
-## Day 1: Melbourne to Horsham
-
-Driving: 285 km
-
-- Stop for lunch in **Beaufort**
-- Walk along the Wimmera River in **Horsham**
-
-## Day 2: Horsham to Adelaide
-
-Driving: 441 km
-
-- Arrive in **Adelaide** for dinner
-"""
+INSTANCE_ID = "instance-1"
+AGENT_ID = "trip-planner"
+JUDGES = {"judge-rules": "Trip plan rules", "judge-grounded": "Trip plan grounded"}
 
 
-def make_state(draft: str = GOOD_DRAFT, days: int = 2) -> dict[str, Any]:
+def span(schema_name: str, status: str, node: str | None = None) -> dict[str, Any]:
+    payload = {"node": node} if node else {}
+    return {"schema_name": schema_name, "status": status, "payload": payload}
+
+
+SETTLED_SPANS = [
+    span("langchain:agent", "active"),
+    span("langchain:node", "complete", "draft_itinerary"),
+    span("langchain:llm", "complete"),
+    span("langchain:tool", "complete"),
+    span("langchain:node", "active", "evaluate"),
+]
+
+
+class FakePrefactor:
+    """Answers the Prefactor API calls that ``PrefactorJudges`` makes."""
+
+    def __init__(
+        self,
+        span_pages: list[list[dict[str, Any]]],
+        judge_runs: dict[str, list[dict[str, Any]]],
+    ) -> None:
+        self.span_pages = span_pages
+        self.judge_runs = judge_runs
+        self.asked: list[str] = []
+        self.span_lists = 0
+
+    def handle(self, request: httpx.Request) -> httpx.Response:
+        path = request.url.path.removeprefix("/api/v1")
+        if path == f"/agent_instance/{INSTANCE_ID}":
+            return ok({"details": {"id": INSTANCE_ID, "agent_id": AGENT_ID}})
+        if path == "/agent_association/to":
+            assert request.url.params["agent_id"] == AGENT_ID
+            summaries = [
+                {"from_agent_id": judge_id, "association_type": "judge"}
+                for judge_id in JUDGES
+            ]
+            return ok({"summaries": summaries})
+        if path.startswith("/agent/"):
+            judge_id = path.removeprefix("/agent/")
+            return ok({"details": {"id": judge_id, "name": JUDGES[judge_id]}})
+        if path == "/agent_spans":
+            assert request.url.params["agent_instance_id"] == INSTANCE_ID
+            page = self.span_pages[min(self.span_lists, len(self.span_pages) - 1)]
+            self.span_lists += 1
+            return ok({"summaries": page})
+        if path == f"/agent_instance/{INSTANCE_ID}/judge":
+            judge_id = json.loads(request.content)["judge_agent_id"]
+            self.asked.append(judge_id)
+            return ok({"details": {"id": f"run-{judge_id}", "status": "preparing"}})
+        if path.startswith("/agent_instance/run-"):
+            runs = self.judge_runs[path.removeprefix("/agent_instance/run-")]
+            return ok({"details": runs.pop(0) if len(runs) > 1 else runs[0]})
+        raise AssertionError(f"Unexpected request: {request.method} {request.url}")
+
+
+def ok(body: dict[str, Any]) -> httpx.Response:
+    return httpx.Response(200, json={"status": "success", **body})
+
+
+def finished(verdict: str, explanation: str) -> dict[str, Any]:
     return {
-        "request": {
-            "origin": "Melbourne",
-            "destination": "Adelaide",
-            "days": days,
-            "interests": ["wine"],
-        },
-        "stops": [
-            {"name": "Beaufort", "lat": 0, "lon": 0, "km_from_start": 153},
-            {"name": "Horsham", "lat": 0, "lon": 0, "km_from_start": 285},
-            {"name": "Coombe", "lat": 0, "lon": 0, "km_from_start": 502},
-            {"name": "Adelaide", "lat": 0, "lon": 0, "km_from_start": 726},
-        ],
-        "research": {
-            "Beaufort": {"name": "Beaufort"},
-            "Horsham": {"name": "Horsham"},
-            "Coombe": {"name": "Coombe"},
-            "Adelaide": {"name": "Adelaide"},
-        },
-        "draft": draft,
+        "status": "complete",
+        "result_payload": {"verdict": verdict, "explanation": explanation},
     }
 
 
-def check_named(checks: list[Check], name: str) -> Check:
-    return next(check for check in checks if check.name == name)
+def judges_for(fake: FakePrefactor) -> PrefactorJudges:
+    return PrefactorJudges(
+        api_url="http://prefactor.test",
+        api_token="token",
+        poll_seconds=0,
+        flush_seconds=0,
+        transport=httpx.MockTransport(fake.handle),
+    )
 
 
-def test_runs_every_check_in_order():
-    checks = run_checks(make_state())
+async def test_asks_every_judge_of_the_agent_and_returns_their_verdicts():
+    fake = FakePrefactor(
+        [SETTLED_SPANS],
+        {
+            "judge-rules": [
+                {"status": "active"},
+                finished("pass", "Every rule holds."),
+            ],
+            "judge-grounded": [finished("fail", "Gold history is not in the record.")],
+        },
+    )
 
-    assert [(check.name, check.passed) for check in checks] == [
-        ("endpoints_named", True),
-        ("day_count", True),
-        ("stops_per_day", True),
-        ("only_researched_stops", True),
-        ("daily_driving_limit", False),
+    checks = await judges_for(fake)(INSTANCE_ID)
+
+    assert sorted(fake.asked) == sorted(JUDGES)
+    assert sorted(checks, key=lambda check: check.name) == [
+        Check("Trip plan grounded", False, "Gold history is not in the record."),
+        Check("Trip plan rules", True, "Every rule holds."),
     ]
 
 
-def test_endpoints_named_fails_without_destination():
-    draft = GOOD_DRAFT.replace("Adelaide", "the city")
-
-    check = check_named(run_checks(make_state(draft)), "endpoints_named")
-
-    assert check == Check("endpoints_named", False, "The plan never names Adelaide.")
-
-
-def test_day_count_fails_when_days_are_missing():
-    check = check_named(run_checks(make_state(days=3)), "day_count")
-
-    assert check == Check("day_count", False, "Asked for 3 days but the plan has 2.")
-
-
-def test_stops_per_day_fails_when_a_day_names_no_stop():
-    draft = GOOD_DRAFT.replace("**Adelaide**", "Adelaide")
-
-    check = check_named(run_checks(make_state(draft)), "stops_per_day")
-
-    assert check == Check("stops_per_day", False, "Day 2 names no stop in bold.")
-
-
-def test_only_researched_stops_fails_on_an_unresearched_place():
-    draft = GOOD_DRAFT.replace("**Beaufort**", "**Ararat**")
-
-    check = check_named(run_checks(make_state(draft)), "only_researched_stops")
-
-    assert check == Check(
-        "only_researched_stops",
-        False,
-        "The plan names places that were not researched: Ararat.",
+async def test_waits_for_model_and_tool_spans_to_finish_before_asking():
+    still_sending = [*SETTLED_SPANS[:2], span("langchain:llm", "active")]
+    fake = FakePrefactor(
+        [still_sending, SETTLED_SPANS],
+        {judge_id: [finished("pass", "Fine.")] for judge_id in JUDGES},
     )
 
+    await judges_for(fake)(INSTANCE_ID)
 
-def test_daily_driving_limit_uses_route_distances():
-    check = check_named(run_checks(make_state()), "daily_driving_limit")
+    assert fake.span_lists == 2
 
-    assert check == Check(
-        "daily_driving_limit",
-        False,
-        "Day 2 has 441 km of driving, over the 400 km limit.",
+
+async def test_a_judge_that_does_not_finish_fails_its_check():
+    fake = FakePrefactor(
+        [SETTLED_SPANS],
+        {
+            "judge-rules": [{"status": "failed", "result_payload": None}],
+            "judge-grounded": [finished("pass", "Fine.")],
+        },
     )
 
+    checks = await judges_for(fake)(INSTANCE_ID)
 
-def test_daily_driving_limit_passes_when_days_are_short():
-    draft = GOOD_DRAFT.replace(
-        "## Day 2: Horsham to Adelaide", "## Day 2: Horsham to Coombe\n\n**Coombe**"
-    )
-    state = make_state(draft + "\n## Day 3: Coombe to Adelaide\n\n**Adelaide**\n", 3)
-
-    check = check_named(run_checks(state), "daily_driving_limit")
-
-    assert check == Check("daily_driving_limit", True, "Every day is within 400 km.")
-
-
-def test_daily_driving_limit_fails_when_a_day_ends_off_the_route():
-    draft = GOOD_DRAFT.replace("Horsham to Adelaide", "Horsham to Ararat")
-
-    check = check_named(run_checks(make_state(draft)), "daily_driving_limit")
-
-    assert check == Check(
-        "daily_driving_limit", False, "Day 2 ends at Ararat, which is not a stop."
-    )
-
-
-def test_daily_driving_limit_ignores_bold_in_day_headings():
-    draft = GOOD_DRAFT.replace(
-        "## Day 1: Melbourne to Horsham", "## Day 1: Melbourne to **Horsham**"
-    )
-
-    check = check_named(run_checks(make_state(draft)), "daily_driving_limit")
-
-    assert check == Check(
-        "daily_driving_limit",
-        False,
-        "Day 2 has 441 km of driving, over the 400 km limit.",
+    assert (
+        Check("Trip plan rules", False, "The judge gave no verdict (status failed).")
+        in checks
     )
 
 

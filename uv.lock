@@ -1609,6 +1609,7 @@ dev = [
     { name = "prefactor-livekit" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
+    { name = "rich" },
     { name = "ruff" },
     { name = "ty" },
 ]
@@ -1629,6 +1630,7 @@ dev = [
     { name = "prefactor-livekit", editable = "packages/livekit" },
     { name = "pytest", specifier = ">=8.0.0" },
     { name = "pytest-asyncio", specifier = ">=0.23.0" },
+    { name = "rich", specifier = ">=13.0.0" },
     { name = "ruff", specifier = ">=0.8.0" },
     { name = "ty", specifier = "==0.0.66" },
 ]
