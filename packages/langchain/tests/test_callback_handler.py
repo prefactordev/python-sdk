@@ -14,7 +14,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_core.tools import tool
 from langgraph.graph import END, START, StateGraph
 from prefactor_core import PrefactorTerminatedError
-from prefactor_langchain import PrefactorCallbackHandler
+from prefactor_langchain import PrefactorCallbackHandler, payloads
 
 
 class RecordingSpanContext:
@@ -316,6 +316,25 @@ class TestFailures:
 
         assert result["out"] == "3"
         assert "span start failed" in caplog.text
+
+    async def test_payload_errors_fail_the_span_and_do_not_stop_the_graph(
+        self, caplog, monkeypatch
+    ):
+        def broken_result(span_data):
+            raise RuntimeError("result payload failed")
+
+        monkeypatch.setattr(payloads, "build_llm_result", broken_result)
+        instance = RecordingInstance()
+
+        with caplog.at_level(logging.ERROR, logger="prefactor_langchain"):
+            result = await run_graph(PrefactorCallbackHandler(instance=instance))
+
+        assert result["out"] == "3"
+        assert "result payload failed" in caplog.text
+        for span in spans_named(instance, "langchain:llm"):
+            assert span["status"] == "failed"
+            assert span["exited"] is True
+            assert span["result"]["error"]["message"] == "result payload failed"
 
     async def test_terminated_instance_stops_the_graph(self):
         event = asyncio.Event()
