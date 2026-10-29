@@ -172,7 +172,7 @@ class PrefactorJudges:
             json={"judge_agent_id": judge_id},
         )
         response.raise_for_status()
-        run_id = response.json()["details"]["id"]
+        run_id = response.json()["summary"]["id"]
         deadline = time.monotonic() + JUDGE_TIMEOUT_SECONDS
         run: dict[str, Any] = {"status": "preparing"}
         while time.monotonic() < deadline:

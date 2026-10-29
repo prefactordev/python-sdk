@@ -43,8 +43,11 @@ from prefactor_http.exceptions import (
 )
 from prefactor_http.models.agent_instance import (
     AgentInstance,
+    AgentInstanceJudgeResponse,
+    AgentInstanceLimitedSummary,
     AgentInstanceRecordQuality,
     AgentInstanceSpanCounts,
+    AgentLimitedJudgeSummary,
     AgentSchemaVersionForRegister,
     AgentVersionForRegister,
     FinishInstanceRequest,
@@ -61,7 +64,13 @@ from prefactor_http.models.bulk import (
     BulkRequest,
     BulkResponse,
 )
-from prefactor_http.models.types import AgentStatus, FinishStatus, InstancePurpose
+from prefactor_http.models.types import (
+    AgentInstanceStatus,
+    AgentStatus,
+    FinishStatus,
+    InstancePurpose,
+    JudgeTrigger,
+)
 
 __all__ = [
     # Main client
@@ -79,10 +88,15 @@ __all__ = [
     "PrefactorValidationError",
     # Type definitions
     "AgentStatus",
+    "AgentInstanceStatus",
     "FinishStatus",
     "InstancePurpose",
+    "JudgeTrigger",
     # AgentInstance models
     "AgentInstance",
+    "AgentInstanceJudgeResponse",
+    "AgentInstanceLimitedSummary",
+    "AgentLimitedJudgeSummary",
     "AgentInstanceRecordQuality",
     "AgentInstanceSpanCounts",
     "AgentVersionForRegister",

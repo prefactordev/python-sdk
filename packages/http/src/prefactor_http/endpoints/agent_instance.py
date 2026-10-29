@@ -10,6 +10,8 @@ from pydantic import ValidationError
 from prefactor_http.exceptions import PrefactorResponseContractError
 from prefactor_http.models.agent_instance import (
     AgentInstance,
+    AgentInstanceJudgeResponse,
+    AgentInstanceLimitedSummary,
     AgentInstanceRecordQuality,
     FinishInstanceRequest,
 )
@@ -42,6 +44,8 @@ class AgentInstanceClient:
     - register: Create a new agent instance
     - start: Mark an instance as started
     - finish: Mark an instance as finished
+    - get: Fetch an instance, optionally including its judges
+    - judge: Ask a judge to score an instance
     """
 
     def __init__(self, http_client: "PrefactorHttpClient"):
@@ -62,6 +66,19 @@ class AgentInstanceClient:
                 cause=exc,
             ) from exc
         return api_response.details
+
+    def _parse_judge_response(
+        self, response: dict, operation: str
+    ) -> AgentInstanceLimitedSummary:
+        """Parse a judge-action response and wrap schema mismatches."""
+        try:
+            parsed = AgentInstanceJudgeResponse.model_validate(response)
+        except ValidationError as exc:
+            raise PrefactorResponseContractError(
+                f"Invalid response payload for {operation}",
+                cause=exc,
+            ) from exc
+        return parsed.summary
 
     async def register(
         self,
@@ -211,13 +228,23 @@ class AgentInstanceClient:
 
         return self._parse_response(response, "agent_instances.finish")
 
-    async def get(self, agent_instance_id: str) -> AgentInstance:
+    async def get(
+        self,
+        agent_instance_id: str,
+        *,
+        include_judges: bool = False,
+    ) -> AgentInstance:
         """Fetch an agent instance by ID.
 
         GET /api/v1/agent_instance/{agent_instance_id}
 
+        This is the agent instance show payload. ``judges`` is null unless
+        ``include_judges`` is set.
+
         Args:
             agent_instance_id: The instance ID to fetch.
+            include_judges: Include each judge of the instance's agent, with
+                its latest run on this instance and its latest judgement.
 
         Returns:
             The agent instance.
@@ -226,11 +253,54 @@ class AgentInstanceClient:
             PrefactorNotFoundError: If instance not found.
             PrefactorApiError: On other errors.
         """
+        params = {"include_judges": "true"} if include_judges else None
         response = await self._client.request(
             "GET",
             f"/api/v1/agent_instance/{agent_instance_id}",
+            params=params,
         )
         return self._parse_response(response, "agent_instances.get")
+
+    async def judge(
+        self,
+        agent_instance_id: str,
+        judge_agent_id: str,
+        idempotency_key: str | None = None,
+    ) -> AgentInstanceLimitedSummary:
+        """Ask a judge to score an agent instance.
+
+        POST /api/v1/agent_instance/{agent_instance_id}/judge
+
+        Creates a preparing judge run and returns a limited summary of it.
+        The run is prepared and started in the background.
+
+        Args:
+            agent_instance_id: The instance to score.
+            judge_agent_id: Judge that should score this instance.
+            idempotency_key: Optional idempotency key.
+
+        Returns:
+            A limited summary of the new judge run.
+
+        Raises:
+            PrefactorNotFoundError: If the instance is not found.
+            PrefactorApiError: On other errors.
+            PrefactorResponseContractError: If the response is not a limited
+                summary.
+        """
+        if idempotency_key is not None:
+            _validate_idempotency_key(idempotency_key)
+
+        payload: dict[str, Any] = {"judge_agent_id": judge_agent_id}
+        if idempotency_key is not None:
+            payload["idempotency_key"] = idempotency_key
+
+        response = await self._client.request(
+            "POST",
+            f"/api/v1/agent_instance/{agent_instance_id}/judge",
+            json_data=payload,
+        )
+        return self._parse_judge_response(response, "agent_instances.judge")
 
     async def record_quality(
         self,

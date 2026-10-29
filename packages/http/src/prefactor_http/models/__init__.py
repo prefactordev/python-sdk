@@ -11,8 +11,11 @@ from prefactor_http.models.agent import (
 from prefactor_http.models.agent_instance import (
     ActionProfile,
     AgentInstance,
+    AgentInstanceJudgeResponse,
+    AgentInstanceLimitedSummary,
     AgentInstanceRecordQuality,
     AgentInstanceSpanCounts,
+    AgentLimitedJudgeSummary,
     AgentSchemaVersionForRegister,
     AgentVersionForRegister,
     DataCategories,
@@ -31,13 +34,21 @@ from prefactor_http.models.bulk import (
     BulkRequest,
     BulkResponse,
 )
-from prefactor_http.models.types import AgentStatus, FinishStatus, InstancePurpose
+from prefactor_http.models.types import (
+    AgentInstanceStatus,
+    AgentStatus,
+    FinishStatus,
+    InstancePurpose,
+    JudgeTrigger,
+)
 
 __all__ = [
     # Type definitions
     "AgentStatus",
+    "AgentInstanceStatus",
     "FinishStatus",
     "InstancePurpose",
+    "JudgeTrigger",
     # Agent models
     "Agent",
     "AgentAvailableActions",
@@ -47,6 +58,9 @@ __all__ = [
     "AgentSummary",
     # AgentInstance models
     "AgentInstance",
+    "AgentInstanceJudgeResponse",
+    "AgentInstanceLimitedSummary",
+    "AgentLimitedJudgeSummary",
     "AgentInstanceRecordQuality",
     "AgentInstanceSpanCounts",
     "AgentVersionForRegister",
