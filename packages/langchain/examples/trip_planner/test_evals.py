@@ -67,7 +67,7 @@ class FakePrefactor:
         if path == f"/agent_instance/{INSTANCE_ID}/judge":
             judge_id = json.loads(request.content)["judge_agent_id"]
             self.asked.append(judge_id)
-            return ok({"details": {"id": f"run-{judge_id}", "status": "preparing"}})
+            return ok({"summary": {"id": f"run-{judge_id}", "status": "preparing"}})
         if path.startswith("/agent_instance/run-"):
             runs = self.judge_runs[path.removeprefix("/agent_instance/run-")]
             return ok({"details": runs.pop(0) if len(runs) > 1 else runs[0]})

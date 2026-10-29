@@ -304,6 +304,54 @@ class TestQualitySchemaModels:
         inst = AgentInstance(**base)
         assert inst.quality_payloads is None
         assert inst.quality_summaries is None
+        assert inst.judges is None
+
+    def test_agent_instance_keeps_judges_from_show(self):
+        """A show payload's judges list is kept, including the latest run."""
+        inst = AgentInstance(
+            type="agent_instance",
+            id="inst-1",
+            account_id="acct-1",
+            agent_id="agent-1",
+            agent_version_id="ver-1",
+            environment_id="env-1",
+            agent_deployment_id="depl-1",
+            status="complete",
+            inserted_at=NOW,
+            updated_at=NOW,
+            judges=[
+                {
+                    "type": "agent",
+                    "id": "judge-1",
+                    "name": "Answer accuracy",
+                    "external_identifier": "answer-accuracy",
+                    "trigger": "on_completion",
+                    "latest_judgement": {
+                        "verdict": "pass",
+                        "explanation": "The answer matches the source.",
+                    },
+                    "latest_instance": {
+                        "type": "agent_instance",
+                        "id": "run-1",
+                        "agent_id": "judge-1",
+                        "status": "preparing",
+                        "started_at": None,
+                        "finished_at": None,
+                    },
+                }
+            ],
+        )
+        assert inst.judges is not None
+        judge = inst.judges[0]
+        assert judge.name == "Answer accuracy"
+        assert judge.trigger == "on_completion"
+        assert judge.latest_judgement == {
+            "verdict": "pass",
+            "explanation": "The answer matches the source.",
+        }
+        assert judge.latest_instance is not None
+        assert judge.latest_instance.id == "run-1"
+        assert judge.latest_instance.status == "preparing"
 
     def test_agent_instance_record_quality_requires_name(self):
         """AgentInstanceRecordQuality requires a name field."""

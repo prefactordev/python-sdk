@@ -3,11 +3,17 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from prefactor_http.models.types import AgentStatus, FinishStatus, InstancePurpose
+from prefactor_http.models.types import (
+    AgentInstanceStatus,
+    AgentStatus,
+    FinishStatus,
+    InstancePurpose,
+    JudgeTrigger,
+)
 
 
 class ActionProfile(BaseModel):
@@ -309,6 +315,70 @@ class FinishInstanceRequest(BaseModel):
     idempotency_key: str | None = None
 
 
+class AgentInstanceLimitedSummary(BaseModel):
+    """Limited view of an agent instance.
+
+    Returned by the judge action, and nested on each judge in an instance's
+    ``judges`` list. It carries only the run's identity, agent, status, and
+    timing.
+
+    Attributes:
+        type: Resource type (always "agent_instance").
+        id: Instance ID.
+        agent_id: Agent ID.
+        status: Instance status, including ``preparing``.
+        started_at: When the instance started (null if not started).
+        finished_at: When the instance finished (null if still in progress).
+    """
+
+    type: Literal["agent_instance"]
+    id: str
+    agent_id: str
+    status: AgentInstanceStatus
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+
+
+class AgentLimitedJudgeSummary(BaseModel):
+    """A judge of an agent instance, with its latest run and judgement.
+
+    Readable by any caller that can show the instance. Present on
+    ``AgentInstance.judges`` when the show request sets ``include_judges``.
+
+    Attributes:
+        type: Resource type (always "agent").
+        id: Judge agent ID.
+        name: Name of the judge agent.
+        external_identifier: External identifier, unique per account.
+        trigger: When the judge runs (``on_demand`` or ``on_completion``).
+        latest_judgement: Judgement stored on this instance for this judge,
+            from the most recent completed run that returned a result.
+            Null when none is stored.
+        latest_instance: The judge's most recent run linked to this
+            instance, or null if it has not run.
+    """
+
+    type: Literal["agent"]
+    id: str
+    name: str
+    external_identifier: str | None = None
+    trigger: JudgeTrigger
+    latest_judgement: dict[str, Any] | None = None
+    latest_instance: AgentInstanceLimitedSummary | None = None
+
+
+class AgentInstanceJudgeResponse(BaseModel):
+    """Response from asking a judge to score an agent instance.
+
+    Attributes:
+        status: Response status (always "success" for successful requests).
+        summary: Limited summary of the new judge run.
+    """
+
+    status: str
+    summary: AgentInstanceLimitedSummary
+
+
 class AgentInstance(BaseModel):
     """Agent instance model.
 
@@ -331,6 +401,9 @@ class AgentInstance(BaseModel):
         purpose: Why this instance ran (live, smoke_test, eval)
         quality_payloads: Map of quality schema name to evaluation payload
         quality_summaries: Map of quality schema name to rendered summary
+        judges: Judges of this instance's agent, each with its latest run
+            and its latest judgement. Null when the request omits
+            ``include_judges``.
     """
 
     type: Literal["agent_instance"]
@@ -351,3 +424,4 @@ class AgentInstance(BaseModel):
     purpose: InstancePurpose | None = None
     quality_payloads: dict[str, dict] | None = None
     quality_summaries: dict[str, str] | None = None
+    judges: list[AgentLimitedJudgeSummary] | None = None

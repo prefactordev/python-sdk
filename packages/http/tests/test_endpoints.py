@@ -558,6 +558,79 @@ class TestAgentInstanceGet:
         assert result.id == "inst-123"
         assert result.status == "terminated"
         assert result.termination_reason == "admin terminated"
+        assert result.judges is None
+
+    async def test_get_include_judges_sends_the_flag_and_keeps_the_list(self, config):
+        """include_judges asks for the list and the parsed instance keeps it."""
+        instance_data = {
+            "status": "success",
+            "details": {
+                **MOCK_INSTANCE,
+                "judges": [
+                    {
+                        "type": "agent",
+                        "id": "judge-1",
+                        "name": "Answer accuracy",
+                        "external_identifier": None,
+                        "trigger": "on_demand",
+                        "latest_judgement": None,
+                        "latest_instance": None,
+                    }
+                ],
+            },
+        }
+
+        with aioresponses() as m:
+            m.get(
+                "https://api.test.com/api/v1/agent_instance/inst-1?include_judges=true",
+                payload=instance_data,
+            )
+            async with PrefactorHttpClient(config) as client:
+                result = await client.agent_instances.get("inst-1", include_judges=True)
+
+        assert result.judges is not None
+        assert result.judges[0].id == "judge-1"
+        assert result.judges[0].trigger == "on_demand"
+        assert result.judges[0].latest_instance is None
+
+    async def test_judge_returns_limited_summary(self, config):
+        """judge() posts the judge id and reads the summary, not details."""
+        with aioresponses() as m:
+            m.post(
+                "https://api.test.com/api/v1/agent_instance/inst-1/judge",
+                payload={
+                    "status": "success",
+                    "summary": {
+                        "type": "agent_instance",
+                        "id": "run-1",
+                        "agent_id": "judge-1",
+                        "status": "preparing",
+                        "started_at": None,
+                        "finished_at": None,
+                    },
+                },
+            )
+            async with PrefactorHttpClient(config) as client:
+                result = await client.agent_instances.judge("inst-1", "judge-1")
+
+        assert result.id == "run-1"
+        assert result.agent_id == "judge-1"
+        assert result.status == "preparing"
+        body = get_request_body(
+            m, "POST", "https://api.test.com/api/v1/agent_instance/inst-1/judge"
+        )
+        assert body == {"judge_agent_id": "judge-1"}
+
+    async def test_judge_invalid_response_raises_contract_error(self, config):
+        """A details envelope is not the judge action's summary contract."""
+        with aioresponses() as m:
+            m.post(
+                "https://api.test.com/api/v1/agent_instance/inst-1/judge",
+                payload={"status": "success", "details": {"id": "run-1"}},
+            )
+            async with PrefactorHttpClient(config) as client:
+                with pytest.raises(PrefactorResponseContractError):
+                    await client.agent_instances.judge("inst-1", "judge-1")
 
 
 class TestAgentSpanControlSignal:
