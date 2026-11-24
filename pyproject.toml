@@ -19,11 +19,11 @@ dev = [
     "langchain-openai>=0.3.0",
     "langchain-anthropic>=0.4.0",
     "livekit-agents~=1.5",
-    "pytest>=8.0.0",
-    "pytest-asyncio>=0.23.0",
+    "pytest>=8.2.0",
+    "pytest-asyncio>=0.24.0",
     "aioresponses>=0.7.6",
     "rich>=13.0.0",
-    "ty==0.0.66",
+    "ty==0.0.109",
     "ruff>=0.8.0",
     "prefactor-core",
     "prefactor-http",
@@ -60,27 +60,28 @@ possibly-missing-attribute = "ignore"
 invalid-argument-type = "ignore"
 missing-argument = "ignore"
 not-subscriptable = "ignore"
-unresolved-import = "ignore"
+import-not-found = "ignore"
 
-# Suppress unresolved-import for langchain source and examples — langchain
+# Suppress import-not-found for langchain source and examples — langchain
 # is an optional peer dependency not installed in all environments
 [[tool.ty.overrides]]
 include = ["packages/langchain/**"]
 
 [tool.ty.overrides.rules]
-unresolved-import = "ignore"
+import-not-found = "ignore"
 
 [[tool.ty.overrides]]
 include = ["packages/livekit/**"]
 
 [tool.ty.overrides.rules]
-unresolved-import = "ignore"
+import-not-found = "ignore"
 
 [tool.pytest.ini_options]
 testpaths = [
     "packages/core/tests",
     "packages/http/tests",
     "packages/langchain/tests",
+    "packages/langchain/examples/trip_planner",
     "packages/livekit/tests",
 ]
 python_files = ["test_*.py"]

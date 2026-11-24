@@ -1,0 +1,23 @@
+version: 2
+updates:
+  # Keeps uv.lock current. `increase-if-necessary` leaves the published
+  # packages' version ranges alone when they already allow the new release
+  # (their minimums are tested by the lowest-deps CI job), and only edits
+  # pyproject.toml for exact pins such as `ty`.
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    versioning-strategy: "increase-if-necessary"
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types: ["minor", "patch"]
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      actions:
+        patterns: ["*"]

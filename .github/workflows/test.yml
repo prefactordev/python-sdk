@@ -4,6 +4,9 @@ on:
   pull_request:
   push:
 
+permissions:
+  contents: read
+
 jobs:
   lint:
     name: Lint & type check
@@ -35,3 +38,31 @@ jobs:
           cache: true
       - run: uv sync --all-extras --python ${{ matrix.python-version }}
       - run: uv run pytest
+
+  lowest-deps:
+    name: Tests (lowest dependency versions)
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v3
+        with:
+          install: true
+          cache: true
+      # prefactor-http and prefactor-core on their own, with aiohttp and
+      # pydantic resolved to the lowest versions their pyproject.toml allows.
+      - name: Test http and core at their minimum versions
+        run: |
+          uv venv --python 3.11 .venv-floors
+          uv pip install --python .venv-floors --resolution lowest-direct \
+            -e packages/http -e packages/core aiohttp pydantic \
+            "pytest-asyncio>=0.24.0" "aioresponses>=0.7.6" pytest
+          .venv-floors/bin/python -m pytest packages/http/tests packages/core/tests
+      # The whole workspace with every direct dependency at its minimum.
+      - run: uv sync --all-extras --resolution lowest-direct
+      # langsmith (pulled in by langchain-core) declares support for old
+      # pydantic releases but fails to import on them; pydantic's own floor is
+      # covered by the step above, so raise it here.
+      - run: uv pip install --upgrade pydantic
+      - name: Test the workspace at minimum direct versions
+        run: uv run --no-sync pytest
