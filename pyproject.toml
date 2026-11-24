@@ -81,6 +81,7 @@ testpaths = [
     "packages/core/tests",
     "packages/http/tests",
     "packages/langchain/tests",
+    "packages/langchain/examples/trip_planner",
     "packages/livekit/tests",
 ]
 python_files = ["test_*.py"]
