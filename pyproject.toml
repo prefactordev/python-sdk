@@ -6,13 +6,6 @@ requires-python = ">=3.11.0, <4.0.0"
 [tool.uv.workspace]
 members = ["packages/*"]
 
-[tool.uv]
-# Dev/CI only; does not affect the published packages' requirements.
-# aioresponses 0.7.9 breaks on aiohttp 3.14 (ClientResponse gained a required
-# `stream_writer` argument). Drop this once a fixed aioresponses is released:
-# https://github.com/pnuckowski/aioresponses/issues/289
-constraint-dependencies = ["aiohttp<3.14"]
-
 [tool.uv.sources]
 prefactor-core = { workspace = true }
 prefactor-http = { workspace = true }
