@@ -47,12 +47,12 @@ It prints the Prefactor instance ID plus ready-to-run Prefactor CLI commands
 for retrieving the instance and listing spans for the example's time window.
 
 ```bash
-prefactor agent_instances retrieve <instance-id>
-prefactor agent_spans list \
-  --agent_instance_id <instance-id> \
-  --start_time <recent-start-time> \
-  --end_time <recent-end-time> \
-  --include_summaries
+prefactor agent-instances retrieve <instance-id>
+prefactor agent-spans list \
+  --agent-instance-id <instance-id> \
+  --start-time <recent-start-time> \
+  --end-time <recent-end-time> \
+  --include-summaries
 ```
 
 There is also a model-backed mode for a real text turn:

@@ -352,13 +352,13 @@ def print_cli_hints(instance_id: str, started_at: float) -> None:
 
     print(f"INSTANCE_ID={instance_id}")
     print("Inspect the run with:")
-    print(f"  prefactor agent_instances retrieve {instance_id}")
+    print(f"  prefactor agent-instances retrieve {instance_id}")
     print(
-        "  prefactor agent_spans list "
-        f"--agent_instance_id {instance_id} "
-        f"--start_time {start_time.isoformat().replace('+00:00', 'Z')} "
-        f"--end_time {end_time.isoformat().replace('+00:00', 'Z')} "
-        "--include_summaries"
+        "  prefactor agent-spans list "
+        f"--agent-instance-id {instance_id} "
+        f"--start-time {start_time.isoformat().replace('+00:00', 'Z')} "
+        f"--end-time {end_time.isoformat().replace('+00:00', 'Z')} "
+        "--include-summaries"
     )
 
 
